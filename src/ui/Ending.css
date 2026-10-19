@@ -138,7 +138,6 @@
   opacity: 0.85;
 }
 
-.end-credits { position: relative; z-index: 1; margin: 26px 0 12px; font-family: var(--pixel); font-size: 13px; color: var(--muted); text-align: center; }
 .end-actions {
   position: sticky;
   bottom: 0;

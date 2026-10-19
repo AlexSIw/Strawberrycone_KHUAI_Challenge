@@ -119,8 +119,6 @@ export function Ending() {
         </div>
       </article>
 
-      <p className="end-credits">KHU AI Challenge 2026 · 풀스택서비스네트워킹 × 마이크로서비스프로그래밍</p>
-
       {/* Sticky so the next step is visible without scrolling past the certificate */}
       <div className="end-actions">
         <p className="end-next">

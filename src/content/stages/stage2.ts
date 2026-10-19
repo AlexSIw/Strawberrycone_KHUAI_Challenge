@@ -35,7 +35,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'dns add db 10.0.1.20', host: 'ops' }],
     concept: 'dns',
     lesson: '컴퓨터는 이름이 아니라 IP로 찾아가요. 이름 → IP 변환은 DNS(전화번호부)의 일!',
-    courseRef: ['풀서네 Lec02', '마서프 Lec01'],
   },
   {
     id: 's2-conflict',
@@ -71,7 +70,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'ip set dhcp', host: 'spare' }],
     concept: 'ip',
     lesson: '한 IP는 한 장비만! 이미 누가 쓰는 주소를 손으로 박으면 충돌해요. 손으로 정할 땐 비어 있는 주소인지 꼭 확인하고, 헷갈리면 DHCP에 맡기세요. (겹친 장비를 끄기만 했다면, 다시 켜기 전에 주소부터!)',
-    courseRef: ['풀서네 Lec02'],
   },
   {
     id: 's2-gateway',
@@ -100,7 +98,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'ip set gw 10.0.1.1', host: 'web' }],
     concept: 'gateway',
     lesson: '같은 네트워크 안은 스위치가, 밖(인터넷)은 게이트웨이(라우터)가 길을 열어줘요. 게이트웨이는 라우터의 진짜 주소여야 해요 (DHCP로 다시 받아도 맞춰져요).',
-    courseRef: ['풀서네 Lec02'],
   },
 ];
 

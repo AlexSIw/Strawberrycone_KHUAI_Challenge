@@ -42,7 +42,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'server set port 80', host: 'web' }],
     concept: 'port',
     lesson: 'IP가 건물 주소라면 포트는 호실 번호. 학생(80)과 서버(8080)가 다른 문 앞에 있었어요.',
-    courseRef: ['풀서네 Lec03', '마서프 Lec01'],
   },
   {
     id: 's3-thread',
@@ -66,7 +65,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'server set threads multi', host: 'web' }],
     concept: 'socket',
     lesson: '직원 한 명(동기 서버)은 손님이 몰리면 줄이 끝없이 길어져요. 연결마다 스레드를 붙이면 해결!',
-    courseRef: ['풀서네 Lec04'],
   },
   {
     id: 's3-404',
@@ -99,7 +97,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'notice set /enroll', host: 'ops' }],
     concept: 'http',
     lesson: '200은 "여기 있어요", 404는 "그런 메뉴 없어요". 상태 코드만 봐도 어디가 문제인지 보여요.',
-    courseRef: ['풀서네 Lec06'],
   },
 ];
 

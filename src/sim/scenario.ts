@@ -39,7 +39,6 @@ export interface Scenario {
   concept: string;
   /** One line shown when solved: what just happened */
   lesson: string;
-  courseRef: string[];
 }
 
 export interface ScenarioRuntime {

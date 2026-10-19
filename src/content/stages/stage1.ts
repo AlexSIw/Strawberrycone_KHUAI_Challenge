@@ -37,7 +37,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ label: 'DB 케이블 교체', action: (w) => { const c = cableAt(w, 'db:eth0'); if (c) replaceCable(w, c.id); } }],
     concept: 'osi',
     lesson: '케이블 속이 끊어지면 전기는 들어와도 데이터는 못 지나가요. 문제 찾기는 L1(물리)부터!',
-    courseRef: ['풀서네 Lec01–02'],
   },
   {
     id: 's1-blackout',
@@ -75,7 +74,6 @@ const scenarios: Scenario[] = [
     }],
     concept: 'spof',
     lesson: '바깥 전기 하나에만 기대면 그게 단일 장애점! UPS(비상 배터리)가 정전 동안 버텨줘요. 단, 배터리 뒤의 줄(A)을 받는 장비만요.',
-    courseRef: ['마서프 Lec03'],
   },
   {
     id: 's1-pdu',
@@ -104,7 +102,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ label: 'A·B 이중 전원', action: (w) => { for (const id of GEAR) setFeeds(w, id, ['A', 'B']); } }],
     concept: 'spof',
     lesson: '전원이 한 줄뿐이면 그 줄이 단일 장애점(SPOF)! A·B 두 줄로 받으면 PDU 하나가 고장 나도 버텨요.',
-    courseRef: ['마서프 Lec03'],
   },
 ];
 

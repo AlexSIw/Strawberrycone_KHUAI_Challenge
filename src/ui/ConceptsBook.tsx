@@ -3,7 +3,6 @@ import { FIRST_STAGE } from '../content/cards';
 import { STAGES } from '../content/stages';
 import { useGame } from '../store/game';
 import { ModalFrame } from './ModalFrame';
-import { courseLabel } from './courseNames';
 import './ConceptsBook.css';
 
 // 개념 도감: every concept card; collected ones are readable, the rest stay locked.
@@ -55,7 +54,6 @@ export function ConceptsBook() {
                 {c.analogy}
               </div>
               <p className="cbk-def">{c.definition}</p>
-              <div className="cbk-course">📚 {courseLabel(c.course)}</div>
             </article>
           );
         })}

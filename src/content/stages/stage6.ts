@@ -46,7 +46,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'pods', host: 'ops' }],
     concept: 'selfHealing',
     lesson: '내가 손대기도 전에 새 pod가 떴어요! 죽은 pod가 되살아난 게 아니라, 이름도 IP도 새로 받은 새 pod예요. 적어둔 원하는 개수를 쿠버네티스가 계속 맞추거든요 (self-healing).',
-    courseRef: ['마서프 Lec13, 16'],
   },
   {
     id: 's6-ip',
@@ -81,7 +80,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'env set enroll COURSE_URL=course-svc', host: 'ops' }],
     concept: 'service',
     lesson: 'pod IP는 계속 바뀌어요. Service 이름(대표 번호)으로 부르면 살아 있는 pod로 알아서 연결돼요. Stage 2에서 db를 숫자 대신 이름(DNS)으로 찾았던 것과 같은 원리예요.',
-    courseRef: ['마서프 Lec18'],
   },
   {
     id: 's6-crac',
@@ -107,7 +105,6 @@ const scenarios: Scenario[] = [
     concept: 'reschedule',
     lesson:
       '과열된 노드의 pod는 사라지고, 쿠버네티스가 살아 있는 노드에 새 pod를 대신 띄웠어요(재스케줄링 · 이름도 IP도 새로). 하지만 방을 식히는 건 사람 몫! 그리고 2022년 카카오 판교 데이터센터 화재처럼 건물 전체 전원이 끊기면 노드끼리 돕는 걸로는 못 버텨요. 그땐 다른 데이터센터로의 이중화(DR)가 필요해요.',
-    courseRef: ['마서프 Lec13–14'],
   },
   {
     id: 's6-traffic',
@@ -131,7 +128,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'scale enroll 10', host: 'ops' }],
     concept: 'scaleOut',
     lesson: '숫자 하나만 바꿨는데 몇 초 만에 pod가 늘어났어요. 손으로 서버를 깔던 Stage 4와 비교해보세요!',
-    courseRef: ['마서프 Lec20'],
   },
   {
     id: 's6-rollout',
@@ -161,7 +157,6 @@ const scenarios: Scenario[] = [
     concept: 'rollback',
     lesson:
       '쿠버네티스가 이전 버전(:v1)을 기록해 둬서 명령 한 줄로 되돌렸어요. 버전 태그(:v1, :v2) 덕분이에요. :latest였다면 어디로 돌아가야 할지 몰랐을 거예요! 그리고 rolling update는 새 pod가 준비돼야 옛 pod를 하나씩 내리니까, 일찍 알아챌수록 덜 망가진 상태에서 되돌릴 수 있어요.',
-    courseRef: ['마서프 Lec16, 19–20'],
   },
 ];
 

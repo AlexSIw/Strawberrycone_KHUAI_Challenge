@@ -48,7 +48,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'scale enroll 12', host: 'ops' }],
     concept: 'scaleOut',
     lesson: '트래픽에 맞춰 바로 늘렸어요!',
-    courseRef: ['마서프 Lec20'],
   },
   {
     id: 's7-cable',
@@ -74,7 +73,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ label: 'n3 케이블 교체', action: (w) => replaceCable(w, 'c_n3') }],
     concept: 'osi',
     lesson: '쿠버네티스 시대에도 케이블 한 줄이 노드를 쓰러뜨려요. 문제는 L1부터!',
-    courseRef: ['풀서네 Lec01–02'],
   },
   {
     id: 's7-cooling',
@@ -100,7 +98,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ label: 'CRAC 수리', action: repairCrac }],
     concept: 'reschedule',
     lesson: '자동화가 버텨주는 동안 사람은 근본 원인(냉각)을 고쳤어요. 이게 운영!',
-    courseRef: ['마서프 Lec13–14'],
   },
   {
     // Feedback, not a game over: it only fires when the other incidents have been left to pile up,
@@ -139,7 +136,6 @@ const scenarios: Scenario[] = [
     ],
     concept: 'reschedule',
     lesson: '쿠버네티스도 살아 있는 노드와 넉넉한 pod가 있어야 버텨요. 장애를 쌓아두면 학생 피해가 커져요. 피해가 큰 것부터 빨리 끊는 게 triage!',
-    courseRef: ['마서프 Lec13–14, 20'],
   },
 ];
 

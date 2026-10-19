@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { CONCEPTS } from '../content/concepts';
 import { gameStore, useGame } from '../store/game';
-import { courseLabel } from './courseNames';
 import './ConceptCardPopup.css';
 
 const CONCEPT_IDS = Object.keys(CONCEPTS);
@@ -45,7 +44,7 @@ export function ConceptCardPopup() {
 
   if (!visible || !popup) return null;
   // Never render nothing here: the game stays paused until this card is dismissed.
-  const c = CONCEPTS[popup.concept] ?? { id: popup.concept, name: popup.concept, analogy: '새로운 개념', definition: '', course: '' };
+  const c = CONCEPTS[popup.concept] ?? { id: popup.concept, name: popup.concept, analogy: '새로운 개념', definition: '' };
   const no = CONCEPT_IDS.indexOf(c.id) + 1;
 
   return (
@@ -75,9 +74,6 @@ export function ConceptCardPopup() {
             <dt>방금 일어난 일</dt>
             <dd className="ccard-lesson">{popup.lesson}</dd>
           </dl>
-          <footer className="ccard-foot">
-            {c.course && <span className="ccard-course">📚 {courseLabel(c.course)}</span>}
-          </footer>
         </article>
         <div className="ccard-actions">
           {queued > 1 && <span className="ccard-more">카드 {queued - 1}장 더 있어요</span>}

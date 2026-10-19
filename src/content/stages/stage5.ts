@@ -108,7 +108,6 @@ const scenarios: Scenario[] = [
     ],
     concept: 'container',
     lesson: '서버마다 환경이 달라서(configuration drift) 실패했어요. 이미지로 묶으면 어디서든 똑같이 실행돼요!',
-    courseRef: ['마서프 Lec04–08'],
   },
   {
     id: 's5-port',
@@ -134,7 +133,6 @@ const scenarios: Scenario[] = [
     ],
     concept: 'portMapping',
     lesson: 'EXPOSE는 "안쪽 창구 번호" 메모일 뿐! -p 80:8000 으로 바깥 문과 이어야 들어와요.',
-    courseRef: ['마서프 Lec08–09'],
   },
   {
     id: 's5-volume',
@@ -181,7 +179,6 @@ const scenarios: Scenario[] = [
     ],
     concept: 'volume',
     lesson: '컨테이너 안(쓰기 레이어)은 컨테이너를 지우면 같이 사라지는 임시 메모장! (재시작은 괜찮아요) 중요한 데이터는 볼륨(사물함)에 저장해야 컨테이너를 새로 만들어도 남아요.',
-    courseRef: ['마서프 Lec10'],
   },
 ];
 

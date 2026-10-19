@@ -98,7 +98,6 @@ export function TitleScreen() {
         </p>
       </section>
 
-      <footer className="title-footer">KHU AI Challenge 2026 · ChatKHU 사용</footer>
     </main>
   );
 }

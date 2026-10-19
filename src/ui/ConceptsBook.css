@@ -50,7 +50,6 @@
 .cbk-label { display: block; font-size: 11px; color: var(--tan); margin-bottom: 2px; }
 
 .cbk-def { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--text); flex: 1; }
-.cbk-course { font-size: 12px; color: var(--muted); }
 
 .cbk-card.locked {
   align-items: center;

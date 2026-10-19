@@ -76,7 +76,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ label: '서비스 분해', action: decompose }],
     concept: 'monolith',
     lesson: '한 덩어리(모놀리스)는 알림 버그 하나에도 전체가 멈춰요. 기능별로 나누면 그 매장만 문을 닫아요.',
-    courseRef: ['마서프 Lec11–12', '풀서네 Lec06'],
   },
   {
     id: 's4-notify',
@@ -101,7 +100,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'svc restart notify', host: 'ops' }],
     concept: 'isolation',
     lesson: '알림이 죽어도 신청은 됐어요! 서비스를 나눈 덕분에 장애가 번지지 않았어요 (장애 격리).',
-    courseRef: ['마서프 Lec11'],
   },
   {
     id: 's4-course',
@@ -125,7 +123,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'svc scale course 3', host: 'ops' }],
     concept: 'scaling',
     lesson: '바쁜 과목조회만 골라 늘렸어요(독립 확장). 근데 서버를 손으로 깔다 보니 너무 느리죠? → 다음 단계에서 해결!',
-    courseRef: ['마서프 Lec11'],
   },
   {
     id: 's4-shared-db',
@@ -151,7 +148,6 @@ const scenarios: Scenario[] = [
     solutionSteps: [{ cmd: 'svc config enroll course-source api', host: 'ops' }],
     concept: 'dbPerService',
     lesson: '남의 DB를 직접 읽으면 나눠놓고도 다시 한 덩어리(분산 모놀리스)! 서비스끼리는 API로만 대화해요.',
-    courseRef: ['마서프 Lec11–12'],
   },
 ];
 
@@ -167,7 +163,7 @@ export const stage4: StageDef = {
   ],
   outro: [
     { who: 'mentor', text: '"공짜 점심은 없다." 서비스를 나누면 장애 격리·독립 확장을 얻지만, 네트워크 호출과 운영할 게 늘어나.' },
-    { who: 'mentor', text: '그리고 모놀리스가 나쁜 건 아니야. 상황에 맞게 고르는 거지. 교수님 말씀처럼 "Monoliths are not evil".' },
+    { who: 'mentor', text: '그리고 모놀리스가 나쁜 건 아니야. 상황에 맞게 고르는 거지. 작고 단순한 서비스라면 한 덩어리가 오히려 편할 때도 있어.' },
     { who: 'boss', text: '근데 서버 하나 늘리는 데 이렇게 오래 걸려서야… 더 빠른 방법이 필요해.' },
   ],
   initialWorld: stage4World,
