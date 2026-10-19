@@ -33,8 +33,8 @@ const scenarios: Scenario[] = [
     inject: () => {},
     check: (w) => !!w.web?.running && w.web.port === 80,
     hints: [
-      '서버는 분명 켜져 있어. 그런데 학생들은 어느 "호실 번호"로 찾아오고 있을까?',
-      '웹은 보통 80번 문으로 들어와. 서버는 지금 몇 번 문 앞에서 기다리고 있는지 확인해봐.',
+      '학생 화면엔 "느려요"가 아니라 "거부됐어요"래. 서버는 켜져 있는데 왜 거부했을까? 서버 쪽 상태부터 직접 볼래?',
+      '학생들은 어느 "호실 번호"로 찾아오고 있을까? 웹은 보통 80번 문으로 들어와. 서버는 지금 몇 번 문 앞에서 기다리고 있는지 확인해봐.',
       'web 서버에서 열려 있는 포트를 보는 명령어와, 서버 설정을 바꾸는 명령어가 help에 있어.',
     ],
     bannedPhrases: ['server set port 80', '8080'],
@@ -72,7 +72,7 @@ const scenarios: Scenario[] = [
     id: 's3-404',
     stage: 3,
     title: '404 Not Found',
-    alert: '수강신청 안내 공지가 올라갔어요. 그런데 학생 커뮤니티: "공지 링크 누르면 Not Found 떠요ㅠ" (직접 주소 친 학생은 괜찮대요)',
+    alert: '수강신청 안내 공지가 올라갔어요. 그런데 학생 커뮤니티: "공지 링크 누르면 Not Found 떠요ㅠ"',
     severity: 'warning',
     room: 'noc',
     trigger: { type: 'after', scenario: 's3-thread', delay: 6 },
@@ -82,8 +82,8 @@ const scenarios: Scenario[] = [
     },
     check: (w) => !!w.notice && !!w.web?.routes.includes(w.notice.url),
     hints: [
-      '서버는 잘 응답하고 있어. "공지 링크"로 온 학생만 문제라면 그 링크엔 뭐가 적혀 있을까?',
-      '404는 "그런 메뉴는 없어요"라는 뜻이야. 서버가 가진 경로 목록과 공지의 경로를 비교해봐.',
+      '모든 학생이 404야, 일부만이야? 되는 학생과 안 되는 학생은 어떻게 들어왔을까?',
+      '404는 "그런 메뉴는 없어요"라는 뜻이야. 공지 링크로 온 학생만 문제라면, 서버가 가진 경로 목록과 공지의 경로를 비교해봐.',
       '공지를 보는 명령어와, 로봇 손님(curl)으로 경로를 직접 시험해보는 방법이 있어.',
     ],
     // The typo path is the whole diagnosis. A leading/trailing space marks a word edge for the mentor's guard, so
@@ -121,14 +121,15 @@ export const stage3: StageDef = {
   // networkedWorld: a handful of beta testers, no notice posted yet — each later problem arrives with its incident.
   initialWorld: networkedWorld,
   objectives: [
-    { id: 'start', text: 'web 서버에 접속해 수강신청 앱 실행하기 (ssh web → server start)', done: (w) => !!w.web?.running },
+    { id: 'start', text: 'web 서버에 접속해 수강신청 앱 실행하기 (ssh web → server start)', spot: 'desk', done: (w) => !!w.web?.running },
     {
       id: 'curl',
-      text: 'curl 로 /enroll 페이지 직접 요청해보기 (200 OK 받기)',
+      text: 'curl로 /enroll 페이지 직접 요청해보기 (200 OK 받기)',
+      spot: 'desk',
       done: (_w, c) => c.events.includes('curl:200:/enroll'),
       after: ['start'],
       concept: 'tcp',
-      lesson: 'curl -v 로 보면 요청 전에 SYN → SYN-ACK → ACK 인사(3-way handshake)를 먼저 나눠요. 그다음 GET /enroll 주문서가 가고 200 OK가 돌아와요.',
+      lesson: 'curl -v로 보면 요청 전에 SYN → SYN-ACK → ACK 인사(3-way handshake)를 먼저 나눠요. 그다음 GET /enroll 주문서가 가고 200 OK가 돌아와요.',
     },
   ],
   scenarios,

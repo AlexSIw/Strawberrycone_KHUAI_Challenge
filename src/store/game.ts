@@ -40,7 +40,12 @@ export interface Toast {
   id: number;
   kind: 'alert' | 'resolved' | 'objective' | 'info';
   text: string;
+  /** Incident an alert toast belongs to (dropped once that incident is solved) */
+  scenarioId?: string;
 }
+
+/** At most this many toasts at once, so the stack stays clear of the map's upper rooms. */
+const MAX_TOASTS = 3;
 
 export interface HintMessage {
   from: 'mentor' | 'player' | 'system';
@@ -76,6 +81,8 @@ export interface GameState {
   hints: Record<string, HintMessage[]>;
   hintPending: boolean;
   lastScore: Score | null;
+  /** Best points for this stage before the run that just ended (null: first clear) */
+  lastPrevBest: number | null;
   /** Is the lion working on a device (plays the fix animation)? */
   fixing: boolean;
   /** Extra pause requested by UI (e.g. the HUD's exit confirm) */
@@ -174,9 +181,9 @@ const FIXING_MODALS: Modal['type'][] = ['terminal', 'rack', 'cable', 'power', 'r
 // ---------- store ----------
 
 export const gameStore = createStore<GameState>()((set, get) => {
-  const toast = (kind: Toast['kind'], text: string) => {
-    const t: Toast = { id: ++toastSeq, kind, text };
-    set((s) => ({ toasts: [...s.toasts.slice(-4), t] }));
+  const toast = (kind: Toast['kind'], text: string, scenarioId?: string) => {
+    const t: Toast = { id: ++toastSeq, kind, text, scenarioId };
+    set((s) => ({ toasts: [...s.toasts.slice(-(MAX_TOASTS - 1)), t] }));
   };
 
   const awardCards = (popups: ConceptPopup[]) => {
@@ -210,7 +217,15 @@ export const gameStore = createStore<GameState>()((set, get) => {
     if (!prev || score.points > prev.points) save.best[run.stage] = { stars: score.stars, points: score.points };
     save.unlocked = Math.max(save.unlocked, Math.min(STAGES.length - 1, run.stage + 1));
     writeSave(save);
-    set({ save, lastScore: score, modal: null, fixing: false, dialogue: { lines: def.outro, index: 0, then: 'results' } });
+    set({
+      save,
+      lastScore: score,
+      lastPrevBest: prev?.points ?? null,
+      modal: null,
+      fixing: false,
+      toasts: [],
+      dialogue: { lines: def.outro, index: 0, then: 'results' },
+    });
   };
 
   return {
@@ -225,12 +240,13 @@ export const gameStore = createStore<GameState>()((set, get) => {
     hints: {},
     hintPending: false,
     lastScore: null,
+    lastPrevBest: null,
     fixing: false,
     paused: false,
     setPaused: (paused) => set({ paused }),
 
-    goTitle: () => set({ screen: 'title', run: null, modal: null, dialogue: null }),
-    goSelect: () => set({ screen: 'select', run: null, modal: null, dialogue: null }),
+    goTitle: () => set({ screen: 'title', run: null, modal: null, dialogue: null, toasts: [] }),
+    goSelect: () => set({ screen: 'select', run: null, modal: null, dialogue: null, toasts: [] }),
 
     play: (stage) => {
       const def = getStage(stage);
@@ -244,6 +260,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
         hintPending: false,
         terminal: { host: 'ops', log: [] },
         lastScore: null,
+        lastPrevBest: null,
         fixing: false,
         paused: false,
         dialogue: { lines: def.intro, index: 0, then: 'play' },
@@ -274,12 +291,14 @@ export const gameStore = createStore<GameState>()((set, get) => {
       set({ run });
       for (const id of activated) {
         const sc = def.scenarios.find((x) => x.id === id)!;
-        toast('alert', `🚨 ${sc.alert}`);
+        toast('alert', `🚨 ${sc.alert}`, id);
       }
       awardCards(
         resolved.map((id) => {
           const sc = def.scenarios.find((x) => x.id === id)!;
-          toast('resolved', `🎉 해결: ${sc.title}`);
+          // The alert for a solved incident would read as if it were still going on.
+          set((st) => ({ toasts: st.toasts.filter((t) => t.scenarioId !== id) }));
+          toast('resolved', `🎉 '${sc.title}' 장애를 해결했어요!`);
           return { concept: sc.concept, lesson: sc.lesson, scenarioId: id };
         }),
       );

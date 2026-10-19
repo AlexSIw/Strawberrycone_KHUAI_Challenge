@@ -13,6 +13,9 @@ export function Ending() {
   const totalStars = STAGES.reduce((a, st) => a + (save.best[st.id]?.stars ?? 0), 0);
   const owned = [...new Set(save.cards)].filter((c) => c in CONCEPTS);
   const cardTotal = Object.keys(CONCEPTS).length; // same total as the 개념 도감
+  // Name the cards still to collect, so a gap reads as a goal rather than a counting bug.
+  const missing = Object.keys(CONCEPTS).filter((id) => !owned.includes(id));
+  const perfect = totalStars === STAGES.length * 3;
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
   useEffect(() => {
@@ -74,6 +77,9 @@ export function Ending() {
                 🃏 {owned.length}
                 <small>/{cardTotal}</small>
               </span>
+              {missing.length > 0 && missing.length <= 3 && (
+                <small className="end-stat-note">남은 카드: {missing.map((id) => CONCEPTS[id].name).join(', ')}</small>
+              )}
             </div>
             <div>
               <span className="end-stat-label">클리어한 스테이지</span>
@@ -117,7 +123,9 @@ export function Ending() {
 
       {/* Sticky so the next step is visible without scrolling past the certificate */}
       <div className="end-actions">
-        <p className="end-next">축하해요! 별 3개를 못 받은 스테이지는 스테이지 선택에서 다시 도전할 수 있어요.</p>
+        <p className="end-next">
+          {perfect ? '모든 스테이지 별 3개! 완벽한 수료예요 🎓' : '축하해요! 별 3개를 못 받은 스테이지는 스테이지 선택에서 다시 도전할 수 있어요.'}
+        </p>
         <button className="btn primary end-btn" onClick={() => gameStore.getState().goTitle()}>
           처음 화면으로
         </button>

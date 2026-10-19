@@ -20,6 +20,10 @@ export interface Objective {
   concept?: string;
   /** "What just happened" line on that card */
   lesson?: string;
+  /** Where on the map this objective is done (gets a "여기" marker while it is the current one) */
+  spot?: SpotId;
+  /** Short progress suffix shown after the text, e.g. "2/5" */
+  progress?: (w: World, ctx: PlayContext) => string;
 }
 
 /** What pressing E on an interactable opens in this stage. */

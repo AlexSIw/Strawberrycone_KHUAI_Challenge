@@ -283,7 +283,9 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
                   <div className="cb-dev">
                     <div className="cb-dev-line">
                       <span className="cb-dev-name">
-                        {d.label} <span className="cb-id">{d.id}</span>
+                        {d.label}
+                        {/* "노드 n1" already names the device: no second id chip */}
+                        {!d.label.includes(d.id) && <span className="cb-id"> {d.id}</span>}
                       </span>
                       {d.installed ? (
                         <span className={`cb-pwr${on ? ' on' : ''}`}>{on ? '⚡ 전원 ON' : '전원 OFF'}</span>

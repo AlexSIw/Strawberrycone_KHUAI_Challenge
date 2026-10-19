@@ -1,4 +1,4 @@
-// 전원실 미니게임: 상용 전원 · UPS · PDU A/B 상태를 보고, 장비마다 A/B 플러그를 꽂는다.
+// 전원실 미니게임: 한전 전기 · UPS · PDU A/B 상태를 보고, 장비마다 A/B 플러그를 꽂는다.
 // A = UPS 뒤의 줄(정전 대비), B = 따로 들어오는 두 번째 줄(PDU·회로 고장 대비).
 import { setFeeds, setUps } from '../../sim/actions';
 import { feedLive, powered } from '../../sim/network';
@@ -82,7 +82,7 @@ export function PowerGame() {
   else task = '완료! 모든 장비에 전원이 들어왔어요.';
 
   const batteryMode = !ups ? 'idle' : mains ? 'full' : 'draining';
-  const upsState = !ups ? '연결 안 됨 · A는 상용 전원만 받아요' : mains ? '충전 완료' : '배터리로 버티는 중';
+  const upsState = !ups ? '연결 안 됨 · A는 한전 전기만 받아요' : mains ? '충전 완료' : '배터리로 버티는 중';
 
   return (
     <MiniGameFrame
@@ -96,7 +96,8 @@ export function PowerGame() {
       {/* power path: mains → (UPS) → PDU A, mains → PDU B */}
       <div className="pw-diagram">
         <div className={`pw-node pw-mains${mains ? ' live' : ' dead'}`}>
-          <div className="pw-node-title">🏭 상용 전원(mains)</div>
+          <div className="pw-node-title">🏭 한전 전기</div>
+          <div className="pw-node-sub">건물 바깥에서 오는 전기</div>
           <div className={`pw-big ${mains ? 'ok' : 'bad'}`} role="status">
             {mains ? '정상' : '⚡정전!'}
           </div>
@@ -136,7 +137,8 @@ export function PowerGame() {
       </div>
 
       <div className="pw-legend">
-        <b>A</b> = UPS 뒤에 있는 줄(UPS를 연결하면 정전에도 버팀) · <b>B</b> = 따로 들어오는 두 번째 줄(A쪽 PDU가 고장 나도 살아 있음)
+        {/* Wiring only: what each line is good for is what the incidents teach (see the stage 1 lessons). */}
+        <b>A</b> = UPS를 거쳐 오는 줄 · <b>B</b> = 바깥 전기에서 바로 오는 줄
       </div>
 
       <table className="pw-table">

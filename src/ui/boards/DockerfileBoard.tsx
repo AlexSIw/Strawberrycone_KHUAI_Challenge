@@ -66,8 +66,24 @@ const MEMO: { n: string; parts: { text: string; cmd?: boolean }[] }[] = [
 
 export function DockerfileBoard() {
   const done = useGame((s) => s.run?.world.flags['dockerfile:enroll'] === 'ok');
+  // Like the stage 4 board: packaging the app before seeing the new server fail would skip the lesson.
+  const problemSeen = useGame((s) => {
+    const r = s.run;
+    if (!r) return true;
+    return 'log' in r.objectivesDone || r.scenarios.some((x) => x.id === 's5-drift' && x.state !== 'waiting');
+  });
   const [justDone, setJustDone] = useState(false);
   if (done) return <Finished celebrate={justDone} />;
+  if (!problemSeen) {
+    return (
+      <ModalFrame title="설계 보드 · 레시피 카드" icon="📋" size="narrow">
+        <p style={{ lineHeight: 1.7, margin: 0 }}>새 서버(srv-new)에 신청 앱을 설치하는 중이에요.</p>
+        <p className="muted">
+          새 서버 배포 결과부터 확인해봐요: 관리 PC 터미널에서 <code>ssh srv-new</code> → <code>deploy log</code>
+        </p>
+      </ModalFrame>
+    );
+  }
   return <Recipe onSolved={() => setJustDone(true)} />;
 }
 

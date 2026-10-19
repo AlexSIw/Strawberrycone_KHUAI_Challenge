@@ -138,7 +138,7 @@ export function RepairGame({ target }: { target: 'crac' }) {
       else removeOld();
     } else {
       if (zone === 'slot') insertNew();
-      else showNote('info', '새 필터는 냉각기의 빈 필터 자리에 끼워 주세요.');
+      else showNote('info', '새 필터는 항온항습기의 빈 필터 자리에 끼워 주세요.');
     }
   };
   const { drag, bind } = useDragDrop<FilterItem>(onDrop);
@@ -155,7 +155,7 @@ export function RepairGame({ target }: { target: 'crac' }) {
   }
 
   const pullLever = () => {
-    if (cracOk) return showNote('info', '냉각기는 정상이에요. 멀쩡한 기계는 끄지 않아요 🙂');
+    if (cracOk) return showNote('info', '항온항습기는 정상이에요. 멀쩡한 기계는 끄지 않아요 🙂');
     if (leverDown) return showNote('info', '전원은 이미 차단됐어요. 수리가 끝나면 아래 "재가동" 버튼으로 켜요.');
     setLeverDown(true);
     showNote('ok', '덜컥! 전원 차단. 이제 안전하게 열 수 있어요.');
@@ -166,7 +166,7 @@ export function RepairGame({ target }: { target: 'crac' }) {
     gameStore.getState().act((w) => repairCrac(w), 'repair:crac');
     setLeverDown(false);
     setRepairedHere(true);
-    showNote('ok', '위이잉~ 냉각기 재가동! 찬 바람이 나오기 시작했어요. ❄️');
+    showNote('ok', '위이잉~ 항온항습기 재가동! 찬 바람이 나오기 시작했어요. ❄️');
   };
 
   const step = cracOk ? 4 : !leverDown ? 1 : !newIn ? 2 : 3;
@@ -174,12 +174,12 @@ export function RepairGame({ target }: { target: 'crac' }) {
   const hottest = Math.max(...cooling.cracRacks.map((r) => cooling.temps[r] ?? 24), 24);
 
   let task: string;
-  if (cracOk && repairedHere) task = '완료! 냉각기가 다시 돌아가요. 온도가 내려가는 걸 지켜보세요.';
-  else if (cracOk) task = '냉각기는 정상 작동 중이에요. 지금은 할 일이 없어요.';
-  else if (step === 1) task = '① 오른쪽 빨간 레버를 클릭해서 냉각기 전원을 차단하세요.';
+  if (cracOk && repairedHere) task = '완료! 항온항습기가 다시 돌아가요. 온도가 내려가는 걸 지켜보세요.';
+  else if (cracOk) task = '항온항습기는 정상 작동 중이에요. 지금은 할 일이 없어요.';
+  else if (step === 1) task = '① 오른쪽 빨간 레버를 클릭해서 항온항습기 전원을 차단하세요.';
   else if (!oldOut) task = '② 먼지로 막힌 필터를 끌어서 🗑 폐기함에 버리세요. (클릭해도 돼요)';
   else if (!newIn) task = '② 📦 새 필터를 끌어서 빈 필터 자리에 끼우세요. (클릭해도 돼요)';
-  else task = '③ "재가동" 버튼을 눌러 냉각기를 다시 켜세요.';
+  else task = '③ "재가동" 버튼을 눌러 항온항습기를 다시 켜세요.';
 
   const slotZone = drag?.item === 'new' && drag.over === 'slot';
   const trashZone = drag?.item === 'old' && drag.over === 'trash';
@@ -286,8 +286,8 @@ export function RepairGame({ target }: { target: 'crac' }) {
               cracOk
                 ? hottest >= SAFE
                   ? '찬 바람이 나오는 중… 온도가 천천히 내려가요.'
-                  : '바람 소리 좋다~ 냉각기는 건강해요.'
-                : `냉각기가 멈춘 동안 ${cooling.cracRacks.map(rackName).join('·')} 온도가 계속 올라가요!`
+                  : '바람 소리 좋다~ 항온항습기는 건강해요.'
+                : `항온항습기가 멈춘 동안 ${cooling.cracRacks.map(rackName).join('·')} 온도가 계속 올라가요!`
             }
           />
         </section>

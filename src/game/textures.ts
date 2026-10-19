@@ -709,6 +709,8 @@ export function generateWorldTextures(scene: Phaser.Scene): void {
   bake(scene, 'bubble-question', 10 * PX, 12 * PX, (p) => p.art(BUBBLE_QUESTION, BUBBLE_PALETTE));
   bake(scene, 'warn', 11 * PX, 10 * PX, (p) => p.art(WARN_TRIANGLE, WARN_PALETTE));
   bake(scene, 'arrow', 7 * PX, 7 * PX, (p) => p.art(ARROW, ARROW_PALETTE));
+  // same arrow in blue, for the "go here" objective marker
+  bake(scene, 'arrow-blue', 7 * PX, 7 * PX, (p) => p.art(ARROW, { ...ARROW_PALETTE, r: 0x3987e5 }));
 
   // mentor NPC: 2-frame strip (16 x 20 pixels each)
   const mw = 16 * PX;

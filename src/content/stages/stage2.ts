@@ -14,8 +14,8 @@ const scenarios: Scenario[] = [
   {
     id: 's2-dns',
     stage: 2,
-    title: '웹 서버가 DB를 못 찾음',
-    alert: '웹 서버가 DB를 못 찾는대요! "db가 누구야?"라고 에러가 떠요.',
+    title: 'web 서버가 db를 못 찾음',
+    alert: 'web 서버가 db를 못 찾는대요! "db가 누구야?"라고 에러가 떠요.',
     severity: 'critical',
     room: 'noc',
     trigger: { type: 'objective', objective: 'dhcp', delay: 3 },
@@ -26,9 +26,9 @@ const scenarios: Scenario[] = [
     // The name has to lead to the DB machine itself: a guessed address that some other box answers doesn't count.
     check: (w) => webReachesDb(w).ok,
     hints: [
-      'ping을 이름(db)으로 해보고, db의 숫자 주소로도 해볼래? 숫자 주소는 주소를 나눠준 안내데스크(DHCP)가 알고 있어. 결과가 다르면 큰 힌트야.',
-      '숫자로는 되는데 이름으로는 안 된다면 길은 멀쩡한 거야. 이름을 숫자로 바꿔주는 "전화번호부"가 누구였지?',
-      '그 전화번호부 장부(dns 명령어)를 열어서 db가 있는지 봐. db의 진짜 주소는 안내데스크가 나눠준 주소 목록(dhcp status)이나 db 서버의 ip addr 에서 확인할 수 있어.',
+      '에러를 다시 읽어봐. web이 db까지 가는 "길"을 모르는 걸까, db가 "누군지" 모르는 걸까? ping db 하면 정확히 뭐라고 나와?',
+      'db의 숫자 주소로도 ping 해봐 (숫자 주소는 주소를 나눠준 안내데스크(DHCP)가 알고 있어). 숫자로는 되는데 이름으로 안 되면, 이름을 숫자로 바꿔주는 "전화번호부"가 누구였지?',
+      '그 전화번호부 장부(dns 명령어)를 열어서 db가 있는지 봐. db의 진짜 주소는 안내데스크가 나눠준 주소 목록(dhcp status)이나 db 서버의 ip addr에서 확인할 수 있어.',
     ],
     bannedPhrases: ['dns add db', '10.0.1.20'],
     solution: 'DNS 장부에 db를 등록한다: dns add db 10.0.1.20',
@@ -43,7 +43,8 @@ const scenarios: Scenario[] = [
     title: 'DB 연결이 됐다 안 됐다',
     alert: 'DB 연결이 됐다 안 됐다 해요… 수강신청 페이지가 반쯤 깨져요.',
     severity: 'warning',
-    room: 'server',
+    // Where the symptom is seen (ping db from the NOC desk), not where the culprit sits.
+    room: 'noc',
     trigger: { type: 'after', scenario: 's2-dns', delay: 6 },
     inject: (w) => {
       // A teammate "fixed" the spare server by hand and copied the DB's address.
@@ -78,7 +79,8 @@ const scenarios: Scenario[] = [
     title: '학생들만 접속 불가',
     alert: '학생들이 집에서 접속이 안 된대요! 그런데 관리 PC에서는 web이 잘 보여요.',
     severity: 'critical',
-    room: 'network',
+    // The comparison in the alert is made from the NOC; the router is for the player to work out.
+    room: 'noc',
     trigger: { type: 'after', scenario: 's2-conflict', delay: 6 },
     inject: (w) => {
       const l3 = w.devices.web.l3!;
@@ -88,8 +90,8 @@ const scenarios: Scenario[] = [
     },
     check: (w) => ping(w, 'internet', 'web').ok,
     hints: [
-      '건물 안에서는 되는데 건물 밖에서만 안 된다… 안과 밖을 이어주는 건 뭐였지?',
-      'web 서버가 "밖으로 나가는 문"을 어디로 알고 있는지 확인해봐. 실제 라우터 주소랑 같아?',
+      '관리 PC에서 web까지 가는 길이랑, 학생 집에서 web까지 가는 길은 뭐가 다를까?',
+      '건물 안에서는 되는데 밖에서만 안 된다면, 안과 밖을 잇는 문이 수상해. web 서버가 "밖으로 나가는 문"을 어디로 알고 있는지, 실제 라우터 주소랑 같은지 확인해봐.',
       'web에 접속해서 주소 설정을 보고, 밖으로 나가는 문(gateway) 주소를 라우터 주소로 맞춰봐.',
     ],
     // Re-asking DHCP on web also restores the right gateway, so that command is a full answer too.
@@ -119,16 +121,17 @@ export const stage2: StageDef = {
   ],
   initialWorld: cabledWorld,
   objectives: [
-    { id: 'terminal', text: '관제실 관리 PC에서 터미널 열기', done: (_w, c) => c.events.includes('open:terminal') },
+    { id: 'terminal', text: '관제실 관리 PC에서 터미널 열기', spot: 'desk', done: (_w, c) => c.events.includes('open:terminal') },
     {
       id: 'dhcp',
       text: 'DHCP 서버 켜서 서버들에 주소 나눠주기',
       done: (w) => !!w.net?.dhcpServer && SERVERS.every((id) => !!w.devices[id].l3?.ip),
       after: ['terminal'],
+      spot: 'desk',
       concept: 'dhcp',
       lesson: 'DHCP 서버를 켜자 서버들이 알아서 주소를 받았어요. 주소를 손으로 하나하나 박지 않아도 돼요!',
     },
-    { id: 'ping', text: 'ping 으로 web 서버 응답 확인하기', done: (_w, c) => c.events.some((e) => e.startsWith('ping:web:ok') || e.startsWith('ping:10.0.1.10:ok')), after: ['dhcp'] },
+    { id: 'ping', text: 'ping으로 web 서버 응답 확인하기', spot: 'desk', done: (_w, c) => c.events.some((e) => e.startsWith('ping:web:ok') || e.startsWith('ping:10.0.1.10:ok')), after: ['dhcp'] },
   ],
   scenarios,
   interactions: {

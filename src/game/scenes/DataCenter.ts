@@ -2,7 +2,7 @@
 import Phaser from 'phaser';
 import { getStage } from '../../content/stages';
 import type { InteractionKind, SpotId, StageDef } from '../../content/types';
-import { activeScenarios, type StageRun } from '../../sim/engine';
+import { activeScenarios, visibleObjectives, type StageRun } from '../../sim/engine';
 import type { World } from '../../sim/types';
 import { gameStore, type GameState } from '../../store/game';
 import { EventBus } from '../EventBus';
@@ -66,6 +66,16 @@ const FONT = 'Galmuri11, "Noto Sans KR", monospace';
 /** Screen px covered by the React ObjectivePanel (8 px margin + 300 px wide) and the HUD (top). */
 const PANEL_W = 308;
 const HUD_H = 56;
+/** How often (ms) the on-screen rects of the React overlays are re-read for the edge arrows. */
+const COVER_REFRESH_MS = 200;
+
+/** A screen rect (canvas px) covered by a React overlay. */
+interface Cover {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
 
 const DEPTH = { floor: 0, wallDecor: 2, label: 3, overhead: 5000, overlay: 6000, marker: 7000, prompt: 8000, arrow: 8500 };
 
@@ -143,6 +153,8 @@ interface Marker {
   arrow: Phaser.GameObjects.Image;
   x: number;
   y: number;
+  /** Half the width of the marker's tag (world px), to keep the whole tag on screen */
+  half: number;
 }
 
 type KeyName = 'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd' | 'e' | 'space';
@@ -199,6 +211,12 @@ export class DataCenter extends Phaser.Scene {
   private mentorBubble!: Phaser.GameObjects.Image;
   private markers = new Map<string, Marker>();
   private markerKey = '';
+  /** Blue "여기" marker over the device of the current objective (hidden during incidents) */
+  private goal!: Marker;
+  private goalSpot: SpotId | null = null;
+  /** Objective panel and toast stack, in canvas px (re-read every COVER_REFRESH_MS) */
+  private covers: Cover[] = [];
+  private coversAt = 0;
 
   constructor() {
     super('DataCenter');
@@ -224,6 +242,9 @@ export class DataCenter extends Phaser.Scene {
     this.boxes = [];
     this.markers = new Map();
     this.markerKey = '';
+    this.goalSpot = null;
+    this.covers = [];
+    this.coversAt = 0;
     this.cracSpinning = true;
   }
 
@@ -242,6 +263,7 @@ export class DataCenter extends Phaser.Scene {
     this.buildPlayer();
     this.physics.add.collider(this.player, solids);
     this.buildPrompt();
+    this.goal = this.createGoalMarker();
     this.buildInput();
     this.buildCamera();
 
@@ -257,6 +279,7 @@ export class DataCenter extends Phaser.Scene {
     if (run) {
       this.refreshWorld(run.world);
       this.refreshIncidents(run);
+      this.refreshGoal(run);
     }
     this.cleanups.push(gameStore.subscribe((s, prev) => this.onStore(s, prev)));
 
@@ -603,6 +626,7 @@ export class DataCenter extends Phaser.Scene {
     }
     if (s.run && s.run.world !== prev.run?.world) this.refreshWorld(s.run.world);
     if (s.run && s.run.scenarios !== prev.run?.scenarios) this.refreshIncidents(s.run);
+    if (s.run && s.run !== prev.run) this.refreshGoal(s.run);
     // A window opened/closed: drop held keys so the lion doesn't keep walking.
     if (isBlocked(s) !== isBlocked(prev)) this.input.keyboard?.resetKeys();
   }
@@ -763,9 +787,11 @@ export class DataCenter extends Phaser.Scene {
     for (const a of active) byRoom.set(a.def.room, [...(byRoom.get(a.def.room) ?? []), a]);
     for (const [room, list] of byRoom) {
       const r = ROOM_BY_ID[room];
+      // Clear of the room name painted on the floor, so neither hides the other.
+      const at = r.marker ?? { x: r.label.x, y: r.label.y - 1.5 };
       list.forEach((a, i) => {
-        const x = Math.round(r.label.x * TILE + (i - (list.length - 1) / 2) * 170);
-        const y = Math.round(r.label.y * TILE - 42);
+        const x = Math.round(at.x * TILE + (i - (list.length - 1) / 2) * 170);
+        const y = Math.round(at.y * TILE);
         let m = this.markers.get(a.rt.id);
         if (!m) {
           m = this.createMarker(a.def.title, a.def.severity);
@@ -794,30 +820,122 @@ export class DataCenter extends Phaser.Scene {
     this.tweens.add({ targets: bubble, scale: 1.8, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     const arrow = this.add.image(0, 0, 'arrow').setDepth(DEPTH.arrow).setVisible(false);
     this.tweens.add({ targets: arrow, alpha: 0.45, duration: 380, yoyo: true, repeat: -1 });
-    return { container, arrow, x: 0, y: 0 };
+    return { container, arrow, x: 0, y: 0, half: Math.ceil(tag.width / 2) };
   }
 
-  /** Off-screen incidents get an arrow at the edge of the view pointing at them. */
-  private updateArrows(): void {
-    if (this.markers.size === 0) return;
+  /** The "go here" marker for the current objective: a small blue tag that bobs over the device. */
+  private createGoalMarker(): Marker {
+    const tag = this.add
+      .text(0, 0, '▼ 여기', {
+        fontFamily: FONT,
+        fontSize: '12px',
+        color: '#ffffff',
+        backgroundColor: '#2f6fc0',
+        padding: { x: 5, y: 2 },
+      })
+      .setOrigin(0.5, 1);
+    const container = this.add.container(0, 0, [tag]).setDepth(DEPTH.marker - 2).setVisible(false);
+    this.tweens.add({ targets: tag, y: -6, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    const arrow = this.add.image(0, 0, 'arrow-blue').setDepth(DEPTH.arrow - 1).setVisible(false);
+    this.tweens.add({ targets: arrow, alpha: 0.5, duration: 500, yoyo: true, repeat: -1 });
+    return { container, arrow, x: 0, y: 0, half: Math.ceil(tag.width / 2) };
+  }
+
+  /** Point at the device of the first unfinished objective, unless an incident needs the player. */
+  private refreshGoal(run: StageRun): void {
+    const next = visibleObjectives(this.def, run).find((o) => !(o.id in run.objectivesDone));
+    const spot = activeScenarios(run).length === 0 && next?.spot && this.def.interactions[next.spot] ? next.spot : null;
+    if (spot === this.goalSpot) return;
+    this.goalSpot = spot;
+    if (!spot) {
+      this.goal.container.setVisible(false);
+      this.goal.arrow.setVisible(false);
+      return;
+    }
+    const s = SPOT_BY_ID[spot];
+    this.goal.x = Math.round((s.x + s.w / 2) * TILE);
+    this.goal.y = Math.round(s.y * TILE - (OVERHANG[spot] ?? 24) - 4);
+    this.goal.container.setPosition(this.goal.x, this.goal.y);
+  }
+
+  /** Where the objective panel and the toast stack sit on the canvas (they change size as the game goes). */
+  private readCovers(time: number): void {
+    if (time < this.coversAt) return;
+    this.coversAt = time + COVER_REFRESH_MS;
+    const canvas = this.game.canvas.getBoundingClientRect();
+    const k = canvas.width > 0 ? this.scale.gameSize.width / canvas.width : 1;
+    this.covers = [];
+    for (const sel of ['.obj-panel', '.toast-stack']) {
+      const r = document.querySelector(sel)?.getBoundingClientRect();
+      if (!r || r.width === 0 || r.height === 0) continue;
+      this.covers.push({ x0: (r.left - canvas.left) * k, y0: (r.top - canvas.top) * k, x1: (r.right - canvas.left) * k, y1: (r.bottom - canvas.top) * k });
+    }
+  }
+
+  /**
+   * Off-screen markers get an arrow at the edge of the view pointing at them. A marker hidden under
+   * the objective panel or the toast stack counts as off-screen too, and a marker whose tag only
+   * partly sticks under one of them is nudged sideways so the whole tag can be read.
+   */
+  private updateArrows(time: number): void {
+    const goalOn = this.goalSpot !== null;
+    if (this.markers.size === 0 && !goalOn) return;
+    this.readCovers(time);
     const cam = this.cameras.main;
     const v = cam.worldView;
     const z = cam.zoom;
-    const wide = this.scale.gameSize.width >= 900;
-    const left = v.x + (wide ? PANEL_W + 24 : 24) / z;
-    const right = Math.max(left, v.right - 28 / z);
-    const top = v.y + (HUD_H + 24) / z;
-    const bottom = Math.max(top, v.bottom - 28 / z);
+    const { width, height } = this.scale.gameSize;
+    // screen-px bounds of the visible map
+    const top = HUD_H + 24;
+    const bottom = Math.max(top, height - 28);
+    const pad = 16;
+    const covers = this.covers;
+
+    const place = (m: Marker, alpha: number) => {
+      // screen-px vertical span of the marker (bubble above its anchor, tag below)
+      const sy = (m.y - v.y) * z;
+      const y0 = sy - 40 * z;
+      const y1 = sy + 24 * z;
+      let left = 24;
+      let right = width - 28;
+      for (const c of covers) {
+        if (y1 < c.y0 - 8 || y0 > c.y1 + 8) continue;
+        // a cover hugging the left edge pushes the visible area right, one on the right pushes it left
+        if (c.x0 < width / 2) left = Math.max(left, c.x1 + pad);
+        else right = Math.min(right, c.x0 - pad);
+      }
+      const half = m.half * z;
+      const sx = (m.x - v.x) * z;
+      let x = sx;
+      if (sx >= left && sx <= right && right - left >= 2 * half) x = Phaser.Math.Clamp(sx, left + half, right - half);
+      m.container.setPosition(v.x + x / z, m.y).setAlpha(alpha);
+      const inside = x - half >= left - 1 && x + half <= right + 1 && y0 >= top - 16 && sy <= bottom;
+      m.arrow.setVisible(!inside);
+      if (inside) return;
+      // Arrow on the edge of the view, then pushed out from under the panel / toasts.
+      let ax = Phaser.Math.Clamp(sx, 24, width - 28);
+      let ay = Phaser.Math.Clamp(sy, top, bottom);
+      for (const c of covers) {
+        if (ax < c.x0 - pad || ax > c.x1 + pad || ay < c.y0 - pad || ay > c.y1 + pad) continue;
+        if (c.y1 + pad + 12 <= bottom) ay = c.y1 + pad + 12; // below it (keeps the arrow at the same edge)
+        else ax = c.x0 < width / 2 ? c.x1 + pad + 12 : c.x0 - pad - 12;
+      }
+      const wx = v.x + ax / z;
+      const wy = v.y + ay / z;
+      m.arrow.setPosition(wx, wy).setRotation(Math.atan2(m.y - wy, m.x - wx)).setScale(1.6 / z);
+    };
+
     for (const m of this.markers.values()) {
       // fade a marker the lion is standing under so it doesn't hide him
       const close = Math.abs(m.x - this.player.x) < 90 && m.y - 70 < this.player.y && this.player.y < m.y + 70;
-      m.container.setAlpha(close ? 0.35 : 1);
-      const inside = m.x >= left && m.x <= right && m.y - 40 >= top && m.y <= bottom;
-      m.arrow.setVisible(!inside);
-      if (inside) continue;
-      const ax = Phaser.Math.Clamp(m.x, left, right);
-      const ay = Phaser.Math.Clamp(m.y, top, bottom);
-      m.arrow.setPosition(ax, ay).setRotation(Math.atan2(m.y - ay, m.x - ax)).setScale(1.6 / z);
+      place(m, close ? 0.35 : 1);
+    }
+    if (goalOn) {
+      // The [E] prompt takes over once the lion is at the device.
+      const there = this.near?.spot.id === this.goalSpot;
+      this.goal.container.setVisible(!there);
+      if (there) this.goal.arrow.setVisible(false);
+      else place(this.goal, 1);
     }
   }
 
@@ -878,7 +996,7 @@ export class DataCenter extends Phaser.Scene {
     this.updatePrompt(time);
 
     if (this.cracSpinning) this.cracFan.rotation += delta * 0.012;
-    this.updateArrows();
+    this.updateArrows(time);
   }
 
   private tryInteract(): void {
@@ -928,7 +1046,10 @@ export class DataCenter extends Phaser.Scene {
     let lift = 0;
     if (spot.id === 'crac' && this.cracWarn.visible) lift = 44;
     else if (this.racks.some((r) => r.rack === spot.id && r.temp.visible)) lift = 22;
-    const y = Math.round(spot.y * TILE - (OVERHANG[spot.id] ?? 24) - lift - 4 + Math.sin(time / 260) * 2);
+    let y = Math.round(spot.y * TILE - (OVERHANG[spot.id] ?? 24) - lift - 4 + Math.sin(time / 260) * 2);
+    // The lion standing just above the device (e.g. between the switch and the patch panel) would be
+    // covered by the prompt: lift it over his head instead.
+    y = Math.min(y, Math.round(this.player.y - 60));
     this.prompt.setPosition(x, y).setVisible(true);
   }
 

@@ -83,12 +83,31 @@
 .obj-item.done { opacity: 0.55; }
 .obj-item.done .obj-check { background: var(--green); border-color: var(--green); }
 .obj-item.done .obj-text { text-decoration: line-through; text-decoration-color: rgba(244, 236, 228, 0.5); }
+.obj-progress { color: var(--muted); font-variant-numeric: tabular-nums; }
+.obj-item.current .obj-progress { color: var(--tan); }
+.obj-item.locked { opacity: 0.6; font-size: 13px; color: var(--muted); }
+.obj-item.locked .obj-check { border-style: dashed; font-size: 10px; }
+.obj-fold-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+.obj-fold-btn:hover, .obj-fold-btn:focus-visible { color: var(--text); text-decoration: underline; outline: none; }
+.obj-item.done.obj-fold { opacity: 0.7; }
 
 @keyframes obj-nudge {
   50% { box-shadow: 0 0 0 3px rgba(233, 183, 124, 0.3); }
 }
 
 .obj-incidents h3 { margin: 4px 0 6px; font-family: var(--pixel); font-weight: 400; font-size: 14px; color: var(--red-2); }
+.obj-incidents h3.calm { color: var(--muted); }
+/* Several incidents at once: one line of alert each, so the panel stays off the map. */
+.obj-incidents.compact .obj-alert { -webkit-line-clamp: 1; margin-bottom: 4px; }
+.obj-incidents.compact .obj-incident { padding: 6px 10px; margin-bottom: 6px; }
 .obj-calm { margin: 0; font-size: 13px; color: var(--muted); }
 
 .obj-incident {

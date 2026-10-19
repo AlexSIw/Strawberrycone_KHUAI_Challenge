@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { getStage } from '../content/stages';
-import { activeScenarios, visibleObjectives, type StageRun } from '../sim/engine';
+import { activeScenarios, HINT_COST, visibleObjectives, type StageRun } from '../sim/engine';
 import type { Scenario } from '../sim/scenario';
 import type { RoomId } from '../sim/types';
 import { gameStore, useGame, type HintMessage } from '../store/game';
@@ -18,6 +18,21 @@ const ROOM_NAME: Record<RoomId, string> = {
   cooling: '냉각실',
   noc: '관제실',
 };
+
+/** Example question for the input box: on this stage's topic, but never an incident's answer (no UPS, port, API…). */
+const ASK_EXAMPLE: Record<number, string> = {
+  0: '데이터센터가 뭐예요?',
+  1: '랙이 뭐예요?',
+  2: 'ping이 뭐예요?',
+  3: 'curl이 뭐예요?',
+  4: '모놀리스가 뭐예요?',
+  5: '레지스트리가 뭐예요?',
+  6: 'pod가 뭐예요?',
+  7: '뭐부터 고쳐야 해요?',
+};
+
+/** Points the next hint costs on this incident (Lv1 is free). */
+const nextHintCost = (level: number) => (level >= 3 ? 0 : (HINT_COST[level + 1] - HINT_COST[level]) * 5);
 
 const CALM_LINES = [
   '지금은 조용하네! 이럴 때 목표를 하나씩 끝내두자.',
@@ -220,7 +235,7 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
       {showLadder && !resolved && (
         <div className="hc-ladder">
           <p>
-            <b>Lv1</b> 관찰 질문 → <b>Lv2</b> 방향 → <b>Lv3</b> 도구. 힌트를 쓸수록 점수가 조금 깎여요.
+            <b>Lv1</b> 관찰 질문 → <b>Lv2</b> 방향 → <b>Lv3</b> 도구.
           </p>
           <button type="button" className="btn ghost hc-ladder-ok" onClick={closeLadder}>
             알겠어요
@@ -268,9 +283,11 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
             <span className="hc-cost muted">
               {pending && !typingHere
                 ? '다른 장애에 답하는 중이에요. 잠깐만요!'
-                : level === 0
-                  ? 'Lv1 힌트는 부담 없이 받아도 돼요.'
-                  : '힌트를 쓸수록 점수가 조금 깎여요.'}
+                : level >= MAX_LEVEL
+                  ? ''
+                  : nextHintCost(level) === 0
+                    ? `Lv${level + 1} 힌트는 무료예요.`
+                    : `다음 힌트(Lv${level + 1})는 −${nextHintCost(level)}점이에요.`}
             </span>
           </div>
 
@@ -294,7 +311,7 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={onKey}
-              placeholder="쿠사수에게 질문하기 (예: ping 이 뭐예요?)"
+              placeholder={`쿠사수에게 질문하기 (예: ${ASK_EXAMPLE[run.stage] ?? '이게 뭐예요?'})`}
               maxLength={300}
               aria-label="쿠사수에게 질문"
             />

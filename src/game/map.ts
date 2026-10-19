@@ -22,6 +22,8 @@ export interface RoomDef {
   door: { x: number; y: number; w: number } | null;
   /** Centre of the room name painted on the floor (tile units, may be fractional) */
   label: { x: number; y: number };
+  /** Where incident markers stand (tile units); default: 1.5 tiles above the label */
+  marker?: { x: number; y: number };
   /** Floor texture family */
   floor: string;
 }
@@ -32,7 +34,9 @@ export const ROOMS: RoomDef[] = [
   { id: 'cooling', name: '냉각실', x0: 29, y0: 1, x1: 38, y1: 11, door: { x: 33, y: 11, w: 2 }, label: { x: 33.5, y: 8.5 }, floor: 'cooling' },
   { id: 'corridor', name: '복도', x0: 1, y0: 12, x1: 38, y1: 14, door: null, label: { x: 9, y: 13 }, floor: 'corridor' },
   { id: 'power', name: '전원실', x0: 1, y0: 15, x1: 12, y1: 24, door: { x: 6, y: 15, w: 2 }, label: { x: 6.5, y: 22 }, floor: 'power' },
-  { id: 'noc', name: '관제실 (NOC)', x0: 14, y0: 15, x1: 38, y1: 24, door: { x: 17, y: 15, w: 2 }, label: { x: 25, y: 22.5 }, floor: 'noc' },
+  // NOC markers stand between the monitor wall and the desk row, where the player works; the floor
+  // label sits a little higher so it stays inside the default 900 px tall view.
+  { id: 'noc', name: '관제실 (NOC)', x0: 14, y0: 15, x1: 38, y1: 24, door: { x: 17, y: 15, w: 2 }, label: { x: 25, y: 22 }, marker: { x: 23, y: 20.2 }, floor: 'noc' },
 ];
 
 export const ROOM_BY_ID = Object.fromEntries(ROOMS.map((r) => [r.id, r])) as Record<AreaId, RoomDef>;

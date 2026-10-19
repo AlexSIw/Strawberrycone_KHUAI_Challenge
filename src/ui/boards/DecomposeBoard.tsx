@@ -342,7 +342,8 @@ interface Link {
   key: string;
   from: { x: number; y: number };
   to: { x: number; y: number };
-  kind: 'api' | 'db' | 'pubsub';
+  /** db = flagged as wrong (red); dbPlain = the same access drawn neutrally while it is still the puzzle */
+  kind: 'api' | 'db' | 'dbPlain' | 'pubsub';
   label: string;
 }
 
@@ -360,6 +361,13 @@ function makeLink(key: string, a: { x: number; y: number }, b: { x: number; y: n
 
 function ArchView({ services }: { services: Record<string, AppService> }) {
   const status = useGame((s) => s.run?.health.services) ?? {};
+  // Reading another service's DB is what s4-shared-db asks the player to notice. Until it is solved
+  // (or its answer revealed) the board draws that access neutrally instead of flagging it in red.
+  const flagForeignDb = useGame((s) => {
+    const r = s.run;
+    if (!r) return false;
+    return r.revealed.includes('s4-shared-db') || r.scenarios.some((x) => x.id === 's4-shared-db' && x.state === 'resolved');
+  });
   const list = Object.values(services);
   const at = new Map(list.map((s, i) => [s.name, posOf(s.name, i)]));
 
@@ -375,14 +383,18 @@ function ArchView({ services }: { services: Record<string, AppService> }) {
       if (owner === s.name) continue;
       const a = at.get(s.name);
       const b = at.get(owner);
-      if (a && b) links.push(makeLink(`db-${s.name}-${owner}`, a, b, 'db', '⚠ 남의 DB', 28));
+      if (a && b) {
+        links.push(
+          flagForeignDb ? makeLink(`db-${s.name}-${owner}`, a, b, 'db', '⚠ 남의 DB', 28) : makeLink(`db-${s.name}-${owner}`, a, b, 'dbPlain', `${db} 읽기`, 28),
+        );
+      }
     }
   }
   const enroll = at.get('enroll');
   const notify = at.get('notify');
   if (enroll && notify) links.push(makeLink('pubsub', enroll, notify, 'pubsub', '📻 "신청 완료" 방송', 0));
 
-  const foreignDb = list.some((s) => s.dbAccess.some((d) => d !== `${s.name}-db`));
+  const foreignDb = flagForeignDb && list.some((s) => s.dbAccess.some((d) => d !== `${s.name}-db`));
 
   return (
     <ModalFrame title="설계 보드 · 현재 구조 (MSA)" icon="📋" size="wide">
@@ -449,8 +461,8 @@ function ArchView({ services }: { services: Record<string, AppService> }) {
                 {s.dbAccess
                   .filter((d) => d !== own)
                   .map((d, k) => (
-                    <text key={d} x={x + 16} y={y + 118 + k * 20} className="dcb-svc-db bad">
-                      ⚠ {d} 직접 읽는 중
+                    <text key={d} x={x + 16} y={y + 118 + k * 20} className={`dcb-svc-db ${flagForeignDb ? 'bad' : ''}`}>
+                      {flagForeignDb ? `⚠ ${d} 직접 읽는 중` : `🗄️ ${d} 사용`}
                     </text>
                   ))}
               </g>

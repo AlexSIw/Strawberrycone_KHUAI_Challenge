@@ -8,6 +8,14 @@ import '@xterm/xterm/css/xterm.css';
 import './ui/theme.css';
 import { App } from './App';
 
+// Warm the terminal's Korean coding font (its Latin and Hangul subsets) so it is ready before the
+// first terminal opens and xterm measures its cells.
+try {
+  void document.fonts?.load("14px 'Nanum Gothic Coding'", 'ops 관리 접속 help W').catch(() => {});
+} catch {
+  /* no Font Loading API: the terminal re-measures when it can */
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

@@ -3,6 +3,7 @@ import { CONCEPTS } from '../content/concepts';
 import { STAGES } from '../content/stages';
 import type { StageId } from '../sim/types';
 import { gameStore, useGame } from '../store/game';
+import { courseLabel } from './courseNames';
 import './StageSelect.css';
 
 /** Same count as the in-game 개념 도감 (📖, C): every concept card, in book order. */
@@ -140,7 +141,7 @@ export function StageSelect() {
             <strong>{detail.name}</strong>
             <p className="sel-detail-analogy">“{detail.analogy}”</p>
             <p>{detail.definition}</p>
-            <span className="muted">📚 {detail.course}</span>
+            <span className="muted">📚 {courseLabel(detail.course)}</span>
           </div>
         )}
       </section>

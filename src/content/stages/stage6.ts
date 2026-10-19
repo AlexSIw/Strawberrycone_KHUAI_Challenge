@@ -87,16 +87,17 @@ const scenarios: Scenario[] = [
     id: 's6-crac',
     stage: 6,
     title: '1·2번 랙 온도 급상승',
-    alert: '서버실 1·2번 랙 온도 급상승!! 항온항습기에서 경고음이 나요!',
+    // Symptom only: which machine is behind the hot racks is for the player to find (dashboard temp panel).
+    alert: '서버실 1·2번 랙 온도가 빠르게 오르고 있어요!! 이대로면 노드가 쓰러져요!',
     severity: 'critical',
-    room: 'cooling',
+    room: 'server',
     trigger: { type: 'after', scenario: 's6-ip', delay: 6 },
     inject: (w) => {
       w.cooling!.cracOk = false;
     },
     check: (w) => cracNodesBack(w),
     hints: [
-      '대시보드 온도 그래프와 nodes 를 봐. 어떤 노드들이 아파? 그 노드에 있던 pod들은 어떻게 됐어?',
+      '대시보드 온도 그래프와 "nodes" 명령 결과를 봐. 어떤 노드들이 아파? 그 노드에 있던 pod들은 어떻게 됐어?',
       '쿠버네티스는 쓰러진 노드 대신 살아 있는 노드에 pod를 새로 띄워줄 수는 있어도, 더운 방을 식혀주진 못해. 그건 사람 몫이야.',
       '냉각실로 직접 가서 항온항습기를 고쳐봐. 온도가 내려가면 노드가 돌아와.',
     ],
@@ -112,7 +113,7 @@ const scenarios: Scenario[] = [
     id: 's6-traffic',
     stage: 6,
     title: '수강신청 2차 대란',
-    alert: '2차 수강신청 시작! 접속자가 평소의 3배예요. 응답이 느려지고 있어요!',
+    alert: '2차 수강신청 시작! 접속자가 평소(2,500 rps)의 3배가 넘어요. 응답이 느려지고 있어요!',
     severity: 'critical',
     room: 'noc',
     trigger: { type: 'after', scenario: 's6-crac', delay: 5 },
@@ -121,8 +122,8 @@ const scenarios: Scenario[] = [
     },
     check: (w) => readyPods(w.k8s!, 'enroll').length * POD_RPS >= w.traffic.rps,
     hints: [
-      '대시보드에서 접속자 수와 처리량을 비교해봐. 신청 pod 하나가 대략 1000 rps를 처리해.',
-      'Stage 4에선 서버를 손으로 깔았지? 이제는 "원하는 개수"만 바꾸면 돼.',
+      '대시보드에서 접속 숫자가 평소랑 비교해서 얼마나 늘었는지 봐. 신청 pod 수는 그대로야?',
+      '신청 pod 하나가 대략 1000 rps를 처리해. Stage 4에선 서버를 손으로 깔았지? 이제는 "원하는 개수"만 바꾸면 돼.',
       'pod 개수를 바꾸는 명령어를 help에서 찾아서, 필요한 만큼 늘려봐.',
     ],
     bannedPhrases: ['scale enroll 9', 'scale enroll 10', '--replicas', 'deploy/enroll', '9개', '10개'],
@@ -135,8 +136,9 @@ const scenarios: Scenario[] = [
   {
     id: 's6-rollout',
     stage: 6,
-    title: '새 버전 배포 중 에러 급증',
-    alert: '배포팀이 새 버전(enroll:v2)을 올리는 중인데… 에러율이 치솟아요!',
+    title: '신청 에러 급증',
+    // Symptom only: the v1 → v2 change is for the player to find in the dashboard's rollout column.
+    alert: '신청 버튼을 누르면 500 에러가 뜬다는 제보가 들어오기 시작했어요! 방금 전까지 멀쩡했는데…',
     severity: 'critical',
     room: 'noc',
     trigger: { type: 'after', scenario: 's6-traffic', delay: 6 },
@@ -149,8 +151,8 @@ const scenarios: Scenario[] = [
       return !d.rolling && !k.badVersions.includes(d.image) && podsOf(k, 'enroll').every((p) => !k.badVersions.includes(p.version));
     },
     hints: [
-      '에러가 언제부터 났지? 그 무렵 무엇이 바뀌었는지 배포 상태와 pod 버전을 봐.',
-      '새 버전이 문제라면, 고치는 동안 학생들은 기다려야 할까? 예전 버전으로 돌아갈 수는 없을까?',
+      '에러가 언제부터 났지? 그 무렵 클러스터에서 뭐가 바뀌었을까?',
+      '배포 상태와 pod 버전을 봐. 새 버전이 문제라면, 고치는 동안 학생들은 기다려야 할까? 예전 버전으로 돌아갈 수는 없을까?',
       'rollout 관련 명령어 중에 이전 버전으로 되돌리는 게 있어.',
     ],
     bannedPhrases: ['rollout undo', 'set image enroll'],
@@ -176,7 +178,7 @@ export const stage6: StageDef = {
   ],
   outro: [
     { who: 'mentor', text: 'pod는 죽어도 다시 뜨고, Service가 대표 번호가 되고, 숫자만 바꾸면 늘어나고, 문제가 생기면 되돌린다.' },
-    { who: 'mentor', text: '하지만 냉각기는 사람이 고쳐야 했지? 자동화가 전부는 아니야.' },
+    { who: 'mentor', text: '하지만 항온항습기는 사람이 고쳐야 했지? 자동화가 전부는 아니야.' },
     { who: 'boss', text: '좋아. 이제 진짜 본 수강신청이다. 모든 걸 걸고 버텨보자.' },
   ],
   initialWorld: () => k8sWorld({ enrollReplicas: 0 }),
@@ -185,15 +187,16 @@ export const stage6: StageDef = {
       id: 'desired',
       text: '관제실 설계 보드에서 신청 서비스(enroll)의 "원하는 상태" 작성',
       done: (w) => w.k8s!.deployments.enroll.replicas >= 2,
+      spot: 'board',
       concept: 'pod',
       lesson: '노드 4대가 모인 게 클러스터, 그 위에서 도는 가장 작은 실행 단위가 pod예요. 우리는 개수와 버전만 적었어요.',
     },
-    { id: 'observe', text: '관리 PC 터미널에서 pods 로 pod가 뜬 것 확인', done: (_w, c) => c.events.includes('k8s_get_pods'), after: ['desired'] },
+    { id: 'observe', text: '관리 PC 터미널에서 "pods" 명령으로 pod가 떴는지 확인', spot: 'desk', done: (_w, c) => c.events.includes('k8s_get_pods'), after: ['desired'] },
   ],
   scenarios,
   interactions: {
-    rack1: { kind: 'inspect', text: '노드 n1 (rack1). 냉각기가 식혀주는 랙이에요.' },
-    rack2: { kind: 'inspect', text: '노드 n2 (rack2). 냉각기가 식혀주는 랙이에요.' },
+    rack1: { kind: 'inspect', text: '노드 n1 (rack1). 항온항습기가 식혀주는 랙이에요.' },
+    rack2: { kind: 'inspect', text: '노드 n2 (rack2). 항온항습기가 식혀주는 랙이에요.' },
     rack3: { kind: 'inspect', text: '노드 n3 (rack3).' },
     rack4: { kind: 'inspect', text: '노드 n4 (rack4).' },
     switch: { kind: 'inspect', text: '노드 4대가 연결된 스위치. 링크 정상.' },

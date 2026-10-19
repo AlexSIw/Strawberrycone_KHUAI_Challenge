@@ -28,7 +28,7 @@ export function Quiz() {
   const quiz = stage === undefined ? undefined : getStage(stage).quiz;
   if (stage === undefined || !quiz) {
     return (
-      <ModalFrame title="화이트보드 퀴즈" icon="❓" size="narrow">
+      <ModalFrame title="설계 보드 · 퀴즈" icon="❓" size="narrow">
         <p className="muted">이 단계에는 퀴즈가 없어요.</p>
       </ModalFrame>
     );
@@ -66,7 +66,7 @@ export function Quiz() {
 
   return (
     <ModalFrame
-      title="화이트보드 퀴즈"
+      title="설계 보드 · 퀴즈"
       icon="❓"
       onClose={close}
       footer={

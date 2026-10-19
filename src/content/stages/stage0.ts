@@ -30,12 +30,18 @@ export const stage0: StageDef = {
     return w;
   },
   objectives: [
-    { id: 'visit', text: '방 5개 둘러보기 (서버실·네트워크실·전원실·냉각실·관제실)', done: (_w, c) => ROOMS.every((r) => c.visited.includes(r)) },
-    { id: 'dashboard', text: '관제실 모니터(대시보드) 켜보기', done: (_w, c) => c.events.includes('open:dashboard') },
-    { id: 'mentor', text: '쿠사수에게 말 걸기', done: (_w, c) => c.events.includes('open:mentor') },
+    {
+      id: 'visit',
+      text: '방 5개 둘러보기 (서버실·네트워크실·전원실·냉각실·관제실)',
+      done: (_w, c) => ROOMS.every((r) => c.visited.includes(r)),
+      progress: (_w, c) => `${ROOMS.filter((r) => c.visited.includes(r)).length}/${ROOMS.length}`,
+    },
+    { id: 'dashboard', text: '관제실 모니터(대시보드) 켜보기', spot: 'monitor', done: (_w, c) => c.events.includes('open:dashboard') },
+    { id: 'mentor', text: '쿠사수에게 말 걸기', spot: 'mentor', done: (_w, c) => c.events.includes('open:mentor') },
     {
       id: 'quiz',
-      text: '퀴즈 풀기: 관제실 화이트보드',
+      text: '관제실 설계 보드에서 퀴즈 풀기',
+      spot: 'board',
       done: (_w, c) => c.events.includes('quiz:correct'),
       after: ['visit'],
       concept: 'datacenter',

@@ -30,6 +30,7 @@
   box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
 }
 .pw-node-title { font-family: var(--pixel); font-size: 13px; color: var(--tan); }
+.pw-node-sub { font-size: 11px; color: var(--muted); }
 .pw-big { font-family: var(--pixel); font-size: 22px; }
 .pw-big.ok { color: var(--green); }
 .pw-big.bad { color: var(--red-2); animation: pw-alarm 0.8s steps(2, jump-none) infinite; }

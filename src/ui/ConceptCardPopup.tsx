@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { CONCEPTS } from '../content/concepts';
 import { gameStore, useGame } from '../store/game';
+import { courseLabel } from './courseNames';
 import './ConceptCardPopup.css';
 
 const CONCEPT_IDS = Object.keys(CONCEPTS);
@@ -75,7 +76,7 @@ export function ConceptCardPopup() {
             <dd className="ccard-lesson">{popup.lesson}</dd>
           </dl>
           <footer className="ccard-foot">
-            {c.course && <span className="ccard-course">📚 {c.course}</span>}
+            {c.course && <span className="ccard-course">📚 {courseLabel(c.course)}</span>}
           </footer>
         </article>
         <div className="ccard-actions">

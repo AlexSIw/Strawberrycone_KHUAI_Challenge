@@ -130,7 +130,7 @@ const scenarios: Scenario[] = [
   {
     id: 's4-shared-db',
     stage: 4,
-    title: '과목 DB 변경 후 신청 장애',
+    title: '신청 서비스 에러 급증',
     alert: '과목팀이 과목 DB 구조를 바꿨는데… 왜 신청 서비스가 터져요?!',
     severity: 'critical',
     room: 'noc',
@@ -142,8 +142,8 @@ const scenarios: Scenario[] = [
     },
     check: (w) => !w.app!.services.enroll.dbAccess.includes('course-db'),
     hints: [
-      '과목 DB를 바꿨는데 신청 서비스가 아프다? 신청 서비스가 과목 정보를 어디서 가져오는지 확인해봐.',
-      '남의 매장 창고에 몰래 들어가서 재료를 가져오고 있다면, 그 창고 배치가 바뀌면 어떻게 될까?',
+      '과목팀이 바꾼 건 과목 DB뿐인데, 왜 하필 신청 서비스가 아플까?',
+      '신청 서비스가 과목 정보를 어디서 가져오는지 확인해봐. 남의 매장 창고에 몰래 들어가서 재료를 가져오고 있다면, 그 창고 배치가 바뀌면 어떻게 될까?',
       '창고에 직접 들어가는 대신 과목조회 매장 카운터(API)에 주문하도록 설정을 바꿔봐.',
     ],
     bannedPhrases: ['svc config enroll course-source api', 'course-source api'],
@@ -157,13 +157,13 @@ const scenarios: Scenario[] = [
 
 export const stage4: StageDef = {
   id: 4,
-  title: '수강신청 대란 1',
+  title: '1차 수강신청 대란',
   subtitle: '모놀리스의 한계 → MSA',
   topics: ['모놀리스 vs MSA', '기능별 분리 (business capability)', '장애 격리 · 독립 확장', 'DB per service · API'],
   intro: [
     { who: 'boss', text: '오늘이 1차 수강신청이다. 9시 59분… 접속자 50배 예상.' },
     { who: 'lion', text: '서버 상태 좋아요! 이번엔 문제없겠죠?', mood: 'happy' },
-    { who: 'mentor', text: '…글쎄. 관리 PC에서 svc list 로 서비스 상태를 계속 지켜봐.' },
+    { who: 'mentor', text: '…글쎄. 관리 PC에서 svc list로 서비스 상태를 계속 지켜봐.' },
   ],
   outro: [
     { who: 'mentor', text: '"공짜 점심은 없다." 서비스를 나누면 장애 격리·독립 확장을 얻지만, 네트워크 호출과 운영할 게 늘어나.' },
@@ -172,7 +172,7 @@ export const stage4: StageDef = {
   ],
   initialWorld: stage4World,
   objectives: [
-    { id: 'watch', text: '관리 PC 터미널에서 svc list 로 서비스 상태 확인', done: (_w, c) => c.commands.some((x) => x.startsWith('svc')) },
+    { id: 'watch', text: '관리 PC 터미널에서 svc list로 서비스 상태 확인', spot: 'desk', done: (_w, c) => c.commands.some((x) => x.startsWith('svc')) },
   ],
   scenarios,
   interactions: {

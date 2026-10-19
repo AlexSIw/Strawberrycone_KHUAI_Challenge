@@ -19,7 +19,8 @@ const scenarios: Scenario[] = [
     title: 'DB 서버 불이 안 켜짐',
     alert: 'DB 서버 불이 안 들어와요! 다른 서버는 초록불인데…',
     severity: 'critical',
-    room: 'network',
+    // The symptom (a dark LED) is on the rack; the player traces the cable from there to the switch.
+    room: 'server',
     trigger: { type: 'objective', objective: 'cable', delay: 2 },
     inject: (w) => {
       const c = cableAt(w, 'db:eth0');
@@ -56,8 +57,8 @@ const scenarios: Scenario[] = [
       w.power!.mains = true;
     },
     hints: [
-      '전기가 끊겼을 때도 잠깐 버틸 수 있는 장치가 전원실에 있지 않았어?',
-      '전원실 그림에서 전기가 흐르는 길을 따라가 봐. 바깥 전기가 끊긴 지금, PDU A와 B 중에 전기가 남을 수 있는 쪽은 어디야?',
+      '전원실 그림에서 전기가 흐르는 길을 따라가 봐. 지금 어디서 끊겼고, 아직 불이 들어와 있는 건 뭐야?',
+      '바깥 전기가 끊겨도 잠깐 버틸 수 있는 장치가 전원실에 있지 않았어? PDU A와 B 중에 그 장치 뒤에 있는 쪽은 어디야?',
       '전원실에서 배터리 장치를 PDU에 이어봐. 그리고 서버마다 그 배터리 뒤에 있는 줄을 받고 있는지도 확인해.',
     ],
     bannedPhrases: ['UPS를 연결', 'UPS를 켜', 'UPS를 이어', 'UPS를 꽂', 'UPS 스위치를 켜', 'UPS를 ON', 'A에 꽂', 'A줄에 꽂', 'A 줄에 꽂'],
@@ -94,8 +95,8 @@ const scenarios: Scenario[] = [
       delete w.power!.pduDown;
     },
     hints: [
-      '정전은 아닌데 일부만 꺼졌어. 꺼진 장비랑 멀쩡한 스위치·라우터는 전기를 받는 방식이 뭐가 다를까?',
-      '전기를 한 줄로만 받으면 그 줄이 끊기는 순간 끝이야. 하나만 고장 나도 다 멈추는 곳을 찾아봐.',
+      '어떤 장비가 꺼졌고 어떤 장비는 아직 살아 있어? 둘을 나란히 놓고 비교해볼래?',
+      '꺼진 장비랑 멀쩡한 스위치·라우터는 전기를 받는 줄이 뭐가 다를까? 한 줄로만 받으면 그 줄이 끊기는 순간 끝이야.',
       '전원실 표에서 장비마다 "받는 줄"을 봐. 지금 살아 있는 줄로도 전기를 받게 해봐.',
     ],
     bannedPhrases: ['A와 B 둘 다', 'A/B 모두', 'A·B 모두', 'A, B 둘 다', '두 줄 다', '두 줄 모두', 'B에 꽂', 'B줄에 꽂', 'B 줄에 꽂', 'B도 꽂', 'B에도 꽂', 'A에도 꽂', 'A도 꽂'],
@@ -123,10 +124,10 @@ export const stage1: StageDef = {
   ],
   initialWorld: physicalWorld,
   objectives: [
-    { id: 'mount', text: '서버실 랙에 서버 3대 장착 (랙 앞에서 E)', done: (w) => SERVERS.every((id) => w.devices[id].installed) },
-    { id: 'power', text: '전원실 PDU에서 서버 전원 연결', done: (w) => SERVERS.every((id) => w.devices[id].feeds.length > 0), after: ['mount'] },
+    { id: 'mount', text: '서버실 랙에 서버 3대 장착 (랙 앞에서 E)', spot: 'rack1', done: (w) => SERVERS.every((id) => w.devices[id].installed) },
+    { id: 'power', text: '전원실 PDU에서 서버 전원 연결', spot: 'pdu', done: (w) => SERVERS.every((id) => w.devices[id].feeds.length > 0), after: ['mount'] },
     // After power, as the board says (① 랙 ② 전원 ③ 케이블): cabling early is fine, it just counts once power is in.
-    { id: 'cable', text: '네트워크실 스위치에 서버 케이블 연결', done: (w) => SERVERS.every((id) => !!cableAt(w, `${id}:eth0`)), after: ['power'] },
+    { id: 'cable', text: '네트워크실 스위치에 서버 케이블 연결', spot: 'switch', done: (w) => SERVERS.every((id) => !!cableAt(w, `${id}:eth0`)), after: ['power'] },
   ],
   scenarios,
   interactions: {
@@ -135,7 +136,7 @@ export const stage1: StageDef = {
     rack3: { kind: 'inspect', text: '빈 랙. 이번엔 1·2번 랙만 써요.' },
     rack4: { kind: 'inspect', text: '빈 랙.' },
     switch: { kind: 'cable', mode: 'build' },
-    patch: { kind: 'cable', mode: 'build' },
+    patch: { kind: 'inspect', text: '패치 패널: 케이블이 모이는 곳. 서버 케이블은 바로 위의 스위치에 꽂아요.' },
     router: { kind: 'inspect', text: '라우터는 이미 연결돼 있어요. 스위치 쪽을 보세요.' },
     pdu: { kind: 'power' },
     ups: { kind: 'power' },
@@ -149,7 +150,7 @@ export const stage1: StageDef = {
     const services = Object.fromEntries(SERVERS.map((id) => [id, serverStatus(w, id)]));
     const up = ['web', 'db'].filter((id) => services[id] === 'up').length;
     const notes = [];
-    if (w.power && !w.power.mains) notes.push('정전 발생 (mains OFF)');
+    if (w.power && !w.power.mains) notes.push('정전 발생 (한전 전기 끊김)');
     else if (w.power?.pduDown && GEAR.some((id) => w.devices[id].installed && !powered(w, id))) notes.push('정전은 아닌데 꺼진 장비가 있음');
     return emptyHealth(w, { availability: up / 2, services, notes, errorRate: 1 - up / 2 });
   },

@@ -47,6 +47,7 @@
 .res-points-value { font-family: var(--pixel); font-size: 40px; font-variant-numeric: tabular-nums; }
 .res-points-unit { font-size: 15px; color: var(--muted); }
 .res-best { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.res-best.new { border-color: #ffd166; color: #ffd166; background: rgba(255, 209, 102, 0.12); animation: res-star 0.5s 0.3s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
 
 .res-stats {
   display: grid;
@@ -116,5 +117,5 @@
   .res-star { font-size: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .res-star.on, .res-mini, .res-card { animation: none; }
+  .res-star.on, .res-mini, .res-card, .res-best.new { animation: none; }
 }

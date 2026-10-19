@@ -27,12 +27,12 @@ const base: Command[] = [
       lines: [
         bold('쓸 수 있는 명령어'),
         ...available(stage).map((c) => `  ${padCells(c.usage, 40)} ${dim(c.summary)}`),
-        dim('막히면 hint 를 입력하거나 쿠사수에게 물어보세요.'),
+        dim('막히면 hint를 입력하거나 쿠사수에게 물어보세요.'),
       ],
     }),
   },
   { name: 'clear', aliases: ['cls'], minStage: 0, usage: 'clear', summary: '화면 지우기', run: () => ({ lines: [], clear: true }) },
-  { name: 'hint', minStage: 0, usage: 'hint', summary: 'AI 사수에게 힌트 요청', run: () => ({ lines: [dim('쿠사수를 불렀어요…')], openHint: true }) },
+  { name: 'hint', minStage: 0, usage: 'hint', summary: '쿠사수에게 힌트 요청', run: () => ({ lines: [dim('쿠사수를 불렀어요…')], openHint: true }) },
 ];
 
 export const ALL_COMMANDS: Command[] = [...base, ...netCommands, ...webCommands, ...svcCommands, ...dockerCommands, ...k8sCommands];
@@ -72,9 +72,9 @@ export function runCommand(line: string, world: World, host: string, stage: Stag
     const usable = available(stage).filter((c) => c.name.split(' ')[0] === tokens[0]);
     // The word exists in this stage: show its forms instead of claiming it's unavailable.
     if (usable.length) return { lines: [red(`${tokens[0]}: 사용법이 달라요. 이렇게 써보세요:`), ...usable.map((c) => dim(`  ${c.usage}`))], world };
-    let msg = `${tokens[0]}: 그런 명령어는 아직 몰라요. help 를 쳐보세요.`;
+    let msg = `${tokens[0]}: 그런 명령어는 아직 몰라요. help를 쳐보세요.`;
     if (same.length && same.every((c) => c.minStage > stage)) msg = `${tokens[0]}: 이 명령어는 다음 단계에서 배워요. (help)`;
-    else if (same.length) msg = `${tokens[0]}: 이 단계에서는 쓰지 않는 명령어예요. help 로 지금 쓸 수 있는 명령어를 보세요.`;
+    else if (same.length) msg = `${tokens[0]}: 이 단계에서는 쓰지 않는 명령어예요. help로 지금 쓸 수 있는 명령어를 보세요.`;
     return { ...err(msg), world };
   }
   const w = clone(world);

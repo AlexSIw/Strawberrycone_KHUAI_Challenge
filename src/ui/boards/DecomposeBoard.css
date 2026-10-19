@@ -166,6 +166,7 @@
 
 .dcb-link line { stroke: var(--muted); stroke-width: 2.5; fill: none; }
 .dcb-link.db line { stroke: var(--red-2); stroke-dasharray: 8 6; }
+.dcb-link.dbPlain line { stroke: var(--muted); stroke-dasharray: 8 6; }
 .dcb-link.pubsub line { stroke: var(--blue); stroke-dasharray: 3 7; stroke-linecap: round; stroke-width: 3.5; }
 .dcb-link-label { font-size: 14px; fill: var(--muted); font-family: var(--pixel); }
 .dcb-link.db .dcb-link-label { fill: var(--red-2); }

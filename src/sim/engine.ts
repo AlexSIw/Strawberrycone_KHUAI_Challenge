@@ -216,7 +216,8 @@ export interface Score {
   revealed: number;
 }
 
-const HINT_COST = [0, 0, 1, 2];
+/** Score units (×5 points) charged per incident for the highest hint level seen. */
+export const HINT_COST = [0, 0, 1, 2];
 
 export function scoreRun(run: StageRun): Score {
   const solved = run.scenarios.filter((s) => s.state === 'resolved' && s.activatedAt !== null && s.resolvedAt !== null);

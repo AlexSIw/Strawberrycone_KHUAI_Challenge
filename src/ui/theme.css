@@ -30,6 +30,9 @@ body {
   font-size: 15px;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  /* Korean wraps between words (어절), never mid-word; a single over-long token may still break. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 button { font: inherit; color: inherit; }
 

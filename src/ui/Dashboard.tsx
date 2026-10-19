@@ -7,14 +7,17 @@ import { readyPods } from '../sim/k8s';
 import { cableAt, linkUp, powered } from '../sim/network';
 import type { Device, Health, World } from '../sim/types';
 import { useGame } from '../store/game';
+import { availLevel, latencyLevel, type Level } from './levels';
 import { ModalFrame } from './ModalFrame';
 import './Dashboard.css';
 
 type Panel = StageDef['panels'][number];
-type Level = 'ok' | 'warn' | 'bad';
 
-/** Panels always show in this order, whatever order the stage lists them in. */
-const PANEL_ORDER: Panel[] = ['services', 'temp', 'traffic', 'pods', 'links', 'power'];
+/**
+ * Panels always show in this order, whatever order the stage lists them in. Pods come before the
+ * full-width traffic charts: in the Kubernetes stages they are the main diagnostic.
+ */
+const PANEL_ORDER: Panel[] = ['services', 'temp', 'pods', 'traffic', 'links', 'power'];
 
 // Chart chrome (validated single-series blue on the dark panel surface).
 const SERIES = '#3987e5';
@@ -30,9 +33,9 @@ const LEVEL_TEXT: Record<Level, string> = { ok: '● 좋음', warn: '▲ 주의'
 function levelOf(kind: 'availability' | 'latency' | 'error' | 'temp', v: number): Level {
   switch (kind) {
     case 'availability':
-      return v >= 0.99 ? 'ok' : v >= 0.9 ? 'warn' : 'bad';
+      return availLevel(v);
     case 'latency':
-      return v < 200 ? 'ok' : v < 800 ? 'warn' : 'bad';
+      return latencyLevel(v);
     case 'error':
       return v < 0.01 ? 'ok' : v < 0.1 ? 'warn' : 'bad';
     case 'temp':
@@ -226,7 +229,7 @@ const SERVICE_NAMES: Record<string, string> = {
   app: '수강신청 웹앱',
   monolith: '수강신청 앱 (모놀리스)',
   login: '로그인',
-  course: '강의 조회',
+  course: '과목조회',
   enroll: '수강신청',
   notify: '알림',
 };
@@ -336,7 +339,7 @@ function PowerPanel({ w, h }: { w: World; h: Health }) {
     <Section title="전원 (Power)" hint="장비마다 전기를 어느 줄(PDU A/B)로 받는지 보여줘요. 꺼진 장비가 있으면 그 줄을 따라가 보세요.">
       <div className="dash-power-top">
         <div className={`dash-tile ${p.mains ? 'ok' : 'bad'}`}>
-          <span>한전 전기 (Mains)</span>
+          <span>한전 전기 (바깥 전기)</span>
           <b>{p.mains ? '⚡ 정상' : '✕ 정전'}</b>
         </div>
         <div className={`dash-tile ${p.ups ? 'ok' : 'warn'}`}>
@@ -407,7 +410,7 @@ function TempPanel({ w, rows, half }: { w: World; rows: ChartRow[]; half: boolea
       {c && (
         <>
           <div className={`dash-crac ${c.cracOk ? 'ok' : 'bad'}`}>
-            냉방기(CRAC): <b>{c.cracOk ? '● 정상 가동' : '✕ 멈춤'}</b>
+            항온항습기(CRAC): <b>{c.cracOk ? '● 정상 가동' : '✕ 멈춤'}</b>
             <span className="muted"> · 담당 랙: {c.cracRacks.join(', ')}</span>
           </div>
           <div className="dash-racks">

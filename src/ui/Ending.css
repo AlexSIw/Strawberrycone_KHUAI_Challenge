@@ -81,6 +81,7 @@
 .end-stat-value { font-family: var(--pixel); font-size: 24px; }
 .end-stat-value small { font-size: 14px; color: #8a5a3c; }
 .end-stat-value.gold { color: #c98a00; }
+.end-stat-note { font-size: 11px; line-height: 1.35; color: #8a5a3c; }
 
 .end-recap { text-align: left; }
 .end-recap h2 { margin: 0 0 8px; font-family: var(--pixel); font-weight: 400; font-size: 16px; text-align: center; color: #8a5a3c; }
@@ -149,14 +150,14 @@
   flex-wrap: wrap;
   width: min(820px, 100%);
   margin-top: auto;
-  padding: 10px 14px;
+  padding: 6px 12px;
   border-radius: 10px 10px 0 0;
   border: 2px solid var(--line);
   border-bottom: 0;
   background: rgba(21, 18, 26, 0.94);
   box-shadow: 0 -4px 0 rgba(0, 0, 0, 0.3);
 }
-.end-btn { font-size: 17px; padding: 10px 28px; }
+.end-btn { font-size: 15px; padding: 7px 22px; }
 .end-next { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
 
 @keyframes end-rise {

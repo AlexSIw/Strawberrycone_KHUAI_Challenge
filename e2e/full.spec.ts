@@ -85,6 +85,7 @@ async function setup(page: Page) {
       if (step.events) return s.event(...step.events);
     };
     const fixed = new Set<string>();
+    const reported = new Set<string>();
     (window as unknown as Record<string, unknown>).__drive = {
       play(stage: number) {
         try {
@@ -93,6 +94,8 @@ async function setup(page: Page) {
           /* ignore */
         }
         store.getState().play(stage as 0);
+        fixed.clear();
+        reported.clear();
         drain();
       },
       /** One game second: objectives → tick → incident fixes. Returns what happened. */
@@ -106,11 +109,13 @@ async function setup(page: Page) {
           if (o.id in store.getState().run!.objectivesDone) continue;
           for (const st of (autoplay[o.id] ?? []) as Parameters<typeof run>[0][]) run(st);
         }
-        const before = new Set(store.getState().run!.scenarios.filter((x) => x.state !== 'waiting').map((x) => x.id));
         store.getState().tick();
         drain();
         const now = store.getState().run;
-        const activated = now ? now.scenarios.filter((x) => x.state !== 'waiting' && !before.has(x.id)).map((x) => x.id) : [];
+        // Report every incident that fired since the last report, including ones the app's own
+        // 1-second timer fired between our calls.
+        const activated = now ? now.scenarios.filter((x) => x.state !== 'waiting' && !reported.has(x.id)).map((x) => x.id) : [];
+        activated.forEach((id) => reported.add(id));
         if (now) {
           for (const rt of now.scenarios) {
             if (rt.state !== 'active' || fixed.has(rt.id) || now.ctx.stageTime < (rt.activatedAt ?? 0) + 3) continue;

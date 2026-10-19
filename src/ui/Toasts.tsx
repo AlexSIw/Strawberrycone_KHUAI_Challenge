@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { gameStore, useGame, type Toast } from '../store/game';
 import './Toasts.css';
 
-const LIFETIME: Record<Toast['kind'], number> = { alert: 9000, resolved: 6000, objective: 6000, info: 6000 };
+// The objective panel keeps every active incident and objective listed, so toasts only need to catch the eye.
+const LIFETIME: Record<Toast['kind'], number> = { alert: 7000, resolved: 5000, objective: 4000, info: 6000 };
 const LEAVE_MS = 260;
 
 const LABEL: Record<Toast['kind'], string> = { alert: '장애 발생', resolved: '해결 완료', objective: '목표 달성', info: '알림' };

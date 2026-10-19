@@ -6,7 +6,7 @@
 
 .term-wrap {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) 290px;
   gap: 12px;
   height: min(62vh, 560px);
   min-height: 320px;
@@ -62,12 +62,27 @@
 .term-help ul {
   list-style: none;
   margin: 0;
-  padding: 0 2px 0 0;
+  /* room under the last command so it can scroll clear of the fade */
+  padding: 0 2px 28px 0;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
+  /* fade at the bottom edge: the list scrolls */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+}
+.term-new {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--red);
+  color: #fff;
+  font-family: var(--pixel);
+  font-size: 10px;
+  font-style: normal;
+  vertical-align: 1px;
 }
 .term-cmd {
   display: flex;

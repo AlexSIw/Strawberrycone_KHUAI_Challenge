@@ -2,6 +2,7 @@ import { useEffect, useState, type MouseEvent } from 'react';
 import { getStage } from '../content/stages';
 import { activeScenarios } from '../sim/engine';
 import { gameStore, useGame } from '../store/game';
+import { availLevel, latencyLevel, type Level } from './levels';
 import { ModalFrame } from './ModalFrame';
 import './Hud.css';
 
@@ -13,8 +14,7 @@ function clock(sec: number): string {
 
 type Tone = 'good' | 'warn' | 'bad';
 
-const availTone = (pct: number): Tone => (pct >= 99 ? 'good' : pct >= 80 ? 'warn' : 'bad');
-const latencyTone = (ms: number): Tone => (ms < 300 ? 'good' : ms < 1000 ? 'warn' : 'bad');
+const TONE: Record<Level, Tone> = { ok: 'good', warn: 'warn', bad: 'bad' };
 
 function Kpi({ label, value, unit, tone, title }: { label: string; value: string; unit: string; tone: Tone | 'plain'; title: string }) {
   return (
@@ -68,7 +68,16 @@ export function Hud() {
   const t = run.ctx.stageTime;
   const h = run.health;
   const avail = h.availability * 100;
-  const idle = h.rps <= 0;
+  const incidentNow = activeScenarios(run).length > 0;
+  // Still setting up: nothing has gone wrong yet and the service isn't fully up (stage 1 racks, stage 2 DHCP, …).
+  const preparing = run.scenarios.every((s) => s.activatedAt === null) && h.availability < 0.99;
+  // No availability number while there is nothing to measure — unless an incident is on (e.g. stage 1's blackout).
+  const idle = (h.rps <= 0 || preparing) && !incidentNow;
+  // No traffic, or nothing answers: a response time would only look like a (good) number.
+  const noResponse = h.rps <= 0 || h.availability < 0.05 || !Number.isFinite(h.latencyMs) || h.latencyMs <= 0;
+  const availTone = TONE[availLevel(h.availability)];
+  // Green only while students are actually being served; a fast error is not a healthy response.
+  const latencyTone: Tone | 'plain' = availTone === 'bad' && latencyLevel(h.latencyMs) === 'ok' ? 'plain' : TONE[latencyLevel(h.latencyMs)];
   const remaining = def.survive ? Math.max(0, def.survive - t) : null;
   const store = gameStore.getState();
   const incidentsLeft = remaining === 0 ? activeScenarios(run).length : 0;
@@ -91,9 +100,11 @@ export function Hud() {
           <span className="hud-stage-title">{def.title}</span>
         </div>
 
-        <div className="hud-time" title="이번 스테이지에서 흐른 시간">
-          <span aria-hidden>⏱</span> {clock(t)}
-        </div>
+        {!def.survive && (
+          <div className="hud-time" title="이번 스테이지에서 흐른 시간">
+            <span aria-hidden>⏱</span> {clock(t)}
+          </div>
+        )}
 
         {remaining !== null && def.survive && (
           <div
@@ -113,10 +124,16 @@ export function Hud() {
         <div className="hud-kpis">
           <Kpi
             label="가용성"
-            value={idle ? '대기' : avail >= 99.95 ? '100' : avail.toFixed(1)}
+            value={idle ? (preparing ? '준비 중' : '대기') : avail >= 99.95 ? '100' : avail.toFixed(1)}
             unit={idle ? '' : '%'}
-            tone={idle ? 'plain' : availTone(avail)}
-            title={idle ? '아직 학생 접속이 없어요. 서비스를 준비하는 중이에요.' : '가용성(Availability): 학생 요청 중 성공한 비율이에요. 99% 이상이면 정상!'}
+            tone={idle ? 'plain' : availTone}
+            title={
+              idle
+                ? preparing
+                  ? '서비스를 준비하는 중이에요. 목표를 끝내면 학생들이 접속할 수 있어요.'
+                  : '아직 학생 접속이 없어요. 서비스를 준비하는 중이에요.'
+                : '가용성(Availability): 학생 요청 중 성공한 비율이에요. 99% 이상이면 정상!'
+            }
           />
           <Kpi
             label="접속"
@@ -127,10 +144,16 @@ export function Hud() {
           />
           <Kpi
             label="응답"
-            value={Math.round(h.latencyMs).toLocaleString('ko-KR')}
-            unit="ms"
-            tone={latencyTone(h.latencyMs)}
-            title="응답 시간(Latency): 버튼을 누르고 결과가 오기까지 걸린 시간이에요. 짧을수록 좋아요."
+            value={noResponse ? '—' : Math.round(h.latencyMs).toLocaleString('ko-KR')}
+            unit={noResponse ? '' : 'ms'}
+            tone={noResponse ? (idle || h.rps <= 0 ? 'plain' : 'bad') : latencyTone}
+            title={
+              noResponse
+                ? h.rps <= 0
+                  ? '아직 학생 요청이 없어서 잴 응답이 없어요.'
+                  : '응답이 오지 않아요. 학생 요청이 성공하지 못하고 있어요.'
+                : '응답 시간(Latency): 버튼을 누르고 결과가 오기까지 걸린 시간이에요. 짧을수록 좋아요.'
+            }
           />
         </div>
 

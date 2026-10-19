@@ -39,8 +39,8 @@ const scenarios: Scenario[] = [
     },
     check: (w) => readyPods(w.k8s!, 'enroll').length * POD_RPS >= w.traffic.rps,
     hints: [
-      '접속자 대비 신청 pod가 충분해? pod 하나가 1000 rps야.',
-      'Stage 6에서 2차 대란을 어떻게 버텼지?',
+      '접속자(rps)가 아까보다 얼마나 늘었어? 그동안 신청 pod 수는 그대로야?',
+      'pod 하나가 1000 rps쯤 처리해. Stage 6에서 2차 대란을 어떻게 버텼지?',
       '원하는 개수를 접속자에 맞게 늘려봐. 노드에 자리가 없으면 pod가 Pending(NODE <none>)에 머무를 수도 있어.',
     ],
     bannedPhrases: ['scale enroll 12', '12개', '--replicas', 'deploy/enroll'],
@@ -57,15 +57,16 @@ const scenarios: Scenario[] = [
     // Symptom only: telling apart "too hot" from "can't reach it" is the player's job (hint 1).
     alert: '노드 n3가 갑자기 NotReady! 그 위에 있던 pod들이 사라졌어요…',
     severity: 'critical',
-    room: 'network',
+    // Where the symptom shows (rack3's node), not where the fix is.
+    room: 'server',
     trigger: { type: 'stageStart', delay: 20 },
     inject: (w) => {
       w.cables.c_n3.broken = true;
     },
     check: (w) => !w.cables.c_n3.broken && w.k8s!.nodes.n3.ready,
     hints: [
-      'n3만 NotReady야. 온도 문제야, 연결 문제야? nodes 로 온도부터 봐.',
-      '온도가 멀쩡하다면 n3로 가는 "길"을 의심해봐. Stage 1에서 배운 L1!',
+      '쓰러진 건 n3 하나뿐이야. n3랑 멀쩡한 n1·n2·n4는 뭐가 달라?',
+      '"nodes" 명령으로 n3 온도부터 확인해봐. 온도가 멀쩡하다면 n3로 가는 "길"을 의심해봐. Stage 1에서 배운 L1!',
       '네트워크실 스위치에서 n3 케이블 상태를 확인해봐.',
     ],
     bannedPhrases: ['케이블을 교체', '케이블 교체', '케이블로 교체', '케이블로 바꿔', '새 케이블'],
@@ -78,10 +79,11 @@ const scenarios: Scenario[] = [
   {
     id: 's7-cooling',
     stage: 7,
-    title: '냉각 경고',
-    alert: '항온항습기 필터 막힘 경고! 1·2번 랙 온도가 오르고 있어요!',
+    title: '1·2번 랙 온도 상승',
+    // Symptom only: the CRAC behind it is for the player to find (dashboard temp panel).
+    alert: '1·2번 랙 온도가 계속 오르고 있어요! 이대로면 노드가 쓰러져요.',
     severity: 'critical',
-    room: 'cooling',
+    room: 'server',
     trigger: { type: 'stageStart', delay: 40 },
     inject: (w) => {
       w.cooling!.cracOk = false;
@@ -89,7 +91,7 @@ const scenarios: Scenario[] = [
     // Only the racks the CRAC cools: n3 being down for its cable is s7-cable's business.
     check: (w) => cracNodesBack(w),
     hints: [
-      '온도 그래프를 봐. 어느 랙이 뜨거워지고 있어?',
+      '뜨거워지는 건 1·2번 랙뿐이야. 3·4번 랙이랑 뭐가 다를까? 대시보드 온도 패널을 자세히 봐.',
       '노드가 쓰러지기 전에 막을 수 있으면 제일 좋아. 냉각은 누가 고쳐야 했지?',
       '냉각실 항온항습기로 가서 수리해봐.',
     ],
@@ -121,7 +123,7 @@ const scenarios: Scenario[] = [
     hints: [
       '대시보드 메모(notes)를 위에서부터 읽어봐. 학생들이 왜 신청을 못 하고 있어?',
       '장애가 여러 개 쌓였어. pod를 다시 띄우려면 살아 있는 노드에 자리가 있어야 해. 쓰러진 노드와 신청 pod 개수, 둘 다 챙겨.',
-      'nodes 로 NotReady 노드와 그 이유(온도? 연결?)를, deploys 로 신청 pod가 원하는 개수만큼 준비됐는지 봐. 남은 장애를 하나씩 끝내면 성공률이 돌아와.',
+      '"nodes" 명령으로 NotReady 노드와 그 이유(온도? 연결?)를, "deploys" 명령으로 신청 pod가 원하는 개수만큼 준비됐는지 봐. 남은 장애를 하나씩 끝내면 성공률이 돌아와.',
     ],
     // The answers of the incidents it piles up on, in every wording those incidents ban.
     bannedPhrases: [
@@ -166,7 +168,7 @@ export const stage7: StageDef = {
   objectives: [
     {
       id: 'survive',
-      text: `수강신청 ${SURVIVE_SECONDS}초 버티기 + 모든 장애 해결`,
+      text: `수강신청 ${Math.floor(SURVIVE_SECONDS / 60)}분${SURVIVE_SECONDS % 60 ? ` ${SURVIVE_SECONDS % 60}초` : ''} 버티기 + 모든 장애 해결`,
       done: (w, c) => c.stageTime >= SURVIVE_SECONDS && MAIN_INCIDENTS.every((id) => c.resolved.includes(id)) && w.flags.outage !== 'active',
     },
     {
@@ -175,6 +177,7 @@ export const stage7: StageDef = {
       // Only a report filed after the rush counts (the board opens once 'survive' is done).
       done: (_w, c) => (c.eventTimes['board:postmortem'] ?? -1) >= SURVIVE_SECONDS,
       after: ['survive'],
+      spot: 'board',
       concept: 'postmortem',
       lesson: '장애 보고서까지 썼어요. 같은 장애가 다시 안 나게 막는 것까지가 운영이에요.',
     },

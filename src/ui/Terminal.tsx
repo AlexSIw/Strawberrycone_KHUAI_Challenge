@@ -415,6 +415,14 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
   return { setLine, handleData };
 }
 
+/**
+ * The bundled Korean coding font comes first so every machine gets the same cells (Hangul exactly two
+ * cells wide); D2Coding is only a fallback for players who have it installed.
+ */
+const TERM_FONT = "'Nanum Gothic Coding', D2Coding, Menlo, monospace";
+/** Commands every stage has: listed after the ones this stage is about. */
+const BASIC_COMMANDS = new Set(['help', 'clear', 'hint']);
+
 /** Host the welcome message was last printed for (to note when the player plugs into another server). */
 let lastSessionHost: string | null = null;
 
@@ -430,8 +438,7 @@ export function Terminal({ host }: { host: string }) {
     if (!el) return;
     let alive = true;
     const term = new XTerm({
-      // Korean-friendly coding fonts first (Hangul exactly two cells wide) when the player has one installed.
-      fontFamily: "D2Coding, 'Nanum Gothic Coding', Menlo, monospace",
+      fontFamily: TERM_FONT,
       fontSize: 14,
       lineHeight: 1.15,
       cursorBlink: true,
@@ -453,6 +460,21 @@ export function Terminal({ host }: { host: string }) {
     };
     refit();
 
+    // xterm measures its cell size once, on open. The web font loads lazily (per unicode-range subset),
+    // so on a first open it measured a fallback font and Hangul sat in over-wide cells with gaps.
+    // Once the font is in, switch the family away and back: each change makes xterm measure again.
+    void document.fonts
+      ?.load("14px 'Nanum Gothic Coding'", 'ops 관리 접속 help W')
+      .then(() => {
+        if (!alive) return;
+        term.options.fontFamily = 'monospace';
+        term.options.fontFamily = TERM_FONT;
+        refit();
+      })
+      .catch(() => {
+        /* font blocked: keep the fallback measurement */
+      });
+
     // Escape belongs to the window (closes it); Ctrl+V / Ctrl+C-with-selection go to the browser clipboard.
     term.attachCustomKeyEventHandler((e) => {
       if (e.key === 'Escape') return false;
@@ -470,8 +492,8 @@ export function Terminal({ host }: { host: string }) {
     const label = s.run?.world.devices[cur]?.label;
     if (s.terminal.log.length === 0) {
       const welcome = [
-        `\x1b[1;33m${cur}\x1b[0m${label ? ` (${label})` : ''} 에 접속했어요.`,
-        'help 를 입력하면 쓸 수 있는 명령어가 나와요.',
+        `\x1b[1;33m${cur}\x1b[0m${label ? `(${label})` : ''}에 접속했어요.`,
+        'help를 입력하면 쓸 수 있는 명령어가 나와요.',
         DIM('Tab 자동완성 · ↑↓ 이전 명령 · Ctrl+C 취소 · Ctrl+L 화면 지우기 · Esc 닫기'),
         '',
       ];
@@ -480,7 +502,7 @@ export function Terminal({ host }: { host: string }) {
     } else {
       term.write(s.terminal.log.map((l) => crlf(l) + '\r\n').join(''));
       if (lastSessionHost !== null && lastSessionHost !== cur) {
-        const note = DIM(`── ${cur}${label ? ` (${label})` : ''} 에 연결했어요 ──`);
+        const note = DIM(`── ${cur}${label ? `(${label})` : ''}에 연결했어요 ──`);
         s.appendTerminal([note]);
         term.write(note + '\r\n');
       }
@@ -515,7 +537,9 @@ export function Terminal({ host }: { host: string }) {
   }, []);
 
   const stage = run?.stage ?? 0;
-  const commands = available(stage);
+  // This stage's new commands first (what the objectives ask for), the always-there basics last.
+  const rank = (c: { name: string; minStage: number }) => (c.minStage === stage ? 0 : BASIC_COMMANDS.has(c.name) ? 2 : 1);
+  const commands = [...available(stage)].sort((a, b) => rank(a) - rank(b));
   const incidents = run ? activeScenarios(run) : [];
 
   const typeUsage = (usage: string) => {
@@ -538,7 +562,10 @@ export function Terminal({ host }: { host: string }) {
               {commands.map((c) => (
                 <li key={c.name}>
                   <button type="button" className="term-cmd" onClick={() => typeUsage(c.usage)} title={c.usage}>
-                    <code>{c.usage}</code>
+                    <code>
+                      {c.usage}
+                      {c.minStage === stage && stage > 0 && <em className="term-new">NEW</em>}
+                    </code>
                     <span>{c.summary}</span>
                   </button>
                 </li>
