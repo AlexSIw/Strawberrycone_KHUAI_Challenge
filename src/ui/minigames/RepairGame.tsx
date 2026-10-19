@@ -1,8 +1,9 @@
 // 냉각실 수리 미니게임: 전원 차단 → 막힌 필터 교체 → 재가동. 랙 온도는 실시간으로 보여준다.
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { repairCrac } from '../../sim/actions';
 import type { CoolingState, World } from '../../sim/types';
 import { gameStore } from '../../store/game';
+import { useStageState } from '../useStageState';
 import { DragGhost, GameFooter, MiniGameFrame, NoteLine, TaskBar, rackName, useDragDrop, useNote, useWorld } from './common';
 import './RepairGame.css';
 
@@ -16,6 +17,14 @@ const SAFE = 35;
 const COOL_RATE = 2;
 
 type FilterItem = 'old' | 'new';
+
+/** How far the repair got: power cut, clogged filter out, new filter in. */
+interface Progress {
+  leverDown: boolean;
+  oldOut: boolean;
+  newIn: boolean;
+}
+const NOT_STARTED: Progress = { leverDown: false, oldOut: false, newIn: false };
 
 function tempLevel(t: number): 'cool' | 'warm' | 'hot' | 'danger' {
   if (t < 30) return 'cool';
@@ -99,35 +108,31 @@ export function RepairGame({ target }: { target: 'crac' }) {
   const world = useWorld();
   const cooling = world?.cooling;
   const cracOk = cooling?.cracOk ?? true;
-  const [leverDown, setLeverDown] = useState(false);
-  const [oldOut, setOldOut] = useState(false);
-  const [newIn, setNewIn] = useState(false);
-  const [repairedHere, setRepairedHere] = useState(false);
-  const [seenOk, setSeenOk] = useState(cracOk);
+  // Kept for the stage, so a half-done repair is still half done after closing the window.
+  const [progress, setProgress] = useStageState<Progress>(`repair:${target}`, NOT_STARTED);
+  const [repairedHere, setRepairedHere] = useStageState(`repair:${target}:done`, false);
+  const { leverDown, oldOut, newIn } = progress;
+  const advance = (patch: Partial<Progress>) => setProgress((p) => ({ ...p, ...patch }));
   const [note, showNote] = useNote();
 
-  // The unit broke (again) while this window was open: start the task fresh.
-  if (seenOk !== cracOk) {
-    setSeenOk(cracOk);
-    if (!cracOk) {
-      setLeverDown(false);
-      setOldOut(false);
-      setNewIn(false);
-      setRepairedHere(false);
-    }
-  }
+  // Running again (repaired here or any other way): the next breakdown starts the task fresh.
+  // The steps aren't shown while the unit runs, so resetting after the render is invisible.
+  const stale = cracOk && (leverDown || oldOut || newIn);
+  useEffect(() => {
+    if (stale) setProgress(NOT_STARTED);
+  }, [stale, setProgress]);
 
   const removeOld = () => {
     if (!leverDown) return showNote('bad', '먼저 전원을 차단하세요! ⚡ 돌아가는 기계에 손 넣으면 위험해요.');
     if (oldOut) return;
-    setOldOut(true);
+    advance({ oldOut: true });
     showNote('ok', '막힌 필터를 뺐어요. 먼지가 한가득! 🤧 이러니 바람이 안 나왔지.');
   };
   const insertNew = () => {
     if (!leverDown) return showNote('bad', '먼저 전원을 차단하세요! ⚡');
     if (!oldOut) return showNote('bad', '먼저 막힌 필터를 빼야 새 필터가 들어가요.');
     if (newIn) return;
-    setNewIn(true);
+    advance({ newIn: true });
     showNote('ok', '새 필터 장착! 바람길이 뚫렸어요. 이제 다시 켜 볼까요?');
   };
 
@@ -157,14 +162,15 @@ export function RepairGame({ target }: { target: 'crac' }) {
   const pullLever = () => {
     if (cracOk) return showNote('info', '항온항습기는 정상이에요. 멀쩡한 기계는 끄지 않아요 🙂');
     if (leverDown) return showNote('info', '전원은 이미 차단됐어요. 수리가 끝나면 아래 "재가동" 버튼으로 켜요.');
-    setLeverDown(true);
+    advance({ leverDown: true });
+    setRepairedHere(false);
     showNote('ok', '덜컥! 전원 차단. 이제 안전하게 열 수 있어요.');
   };
 
   const restart = () => {
     if (!newIn) return;
     gameStore.getState().act((w) => repairCrac(w), 'repair:crac');
-    setLeverDown(false);
+    setProgress(NOT_STARTED);
     setRepairedHere(true);
     showNote('ok', '위이잉~ 항온항습기 재가동! 찬 바람이 나오기 시작했어요. ❄️');
   };

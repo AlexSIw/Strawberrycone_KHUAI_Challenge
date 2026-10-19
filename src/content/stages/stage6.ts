@@ -20,7 +20,8 @@ const scenarios: Scenario[] = [
     alert: '신청 pod 하나가 갑자기 죽었어요! 빨리 가서 살려야…',
     severity: 'warning',
     room: 'noc',
-    trigger: { type: 'objective', objective: 'desired', delay: 6 },
+    // After the desired state is written and the player has seen the pods come up.
+    trigger: { type: 'gate', objectives: ['desired', 'observe'] },
     inject: (w) => {
       const k = w.k8s!;
       const victim = podsOf(k, 'enroll')[0];
@@ -54,7 +55,7 @@ const scenarios: Scenario[] = [
     alert: '과목조회 pod들이 재배포(전부 새로 다시 띄움)된 직후부터 신청이 전부 실패해요!',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's6-crash', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s6-crash'] },
     inject: (w) => {
       const k = w.k8s!;
       const old = readyPods(k, 'course')[0];
@@ -89,7 +90,7 @@ const scenarios: Scenario[] = [
     alert: '서버실 1·2번 랙 온도가 빠르게 오르고 있어요!! 이대로면 노드가 쓰러져요!',
     severity: 'critical',
     room: 'server',
-    trigger: { type: 'after', scenario: 's6-ip', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s6-ip'] },
     inject: (w) => {
       w.cooling!.cracOk = false;
     },
@@ -113,7 +114,7 @@ const scenarios: Scenario[] = [
     alert: '2차 수강신청 시작! 1초에 들어오는 요청이 평소(2,500건, 2,500 rps)의 3배가 넘어요. 응답이 느려지고 있어요!',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's6-crac', delay: 5 },
+    trigger: { type: 'gate', scenarios: ['s6-crac'] },
     inject: (w) => {
       w.traffic.rps = 9000;
     },
@@ -137,7 +138,7 @@ const scenarios: Scenario[] = [
     alert: '신청 버튼을 누르면 500 에러(서버 안에서 처리하다 터졌다는 표시)가 뜬다는 제보가 들어오기 시작했어요! 방금 전까지 멀쩡했는데…',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's6-traffic', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s6-traffic'] },
     inject: (w) => {
       setImage(w.k8s!, 'enroll', 'enroll:v2');
     },

@@ -4,6 +4,7 @@ import { connectCable, replaceCable } from '../../sim/actions';
 import { cableAt, linkUp, powered } from '../../sim/network';
 import type { Cable, Device, World } from '../../sim/types';
 import { gameStore } from '../../store/game';
+import { useStageState } from '../useStageState';
 import { GameFooter, Led, MiniGameFrame, NoteLine, TaskBar, rackName, useDragDrop, useNote, useTimers, useWorld } from './common';
 import './CableGame.css';
 
@@ -98,9 +99,12 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   const boardRef = useRef<HTMLDivElement>(null);
   const pts = useJackPositions(boardRef);
   const [selected, setSelected] = useState<string | null>(null);
-  const [tests, setTests] = useState<Record<string, TestResult | 'running'>>({});
+  // Tester readings and "replaced a cable here" are kept for the stage (a stale reading hides itself).
+  const [tests, setTests] = useStageState<Record<string, TestResult>>(`cable:${mode}:tests`, {});
+  const [replacedHere, setReplacedHere] = useStageState(`cable:${mode}:replaced`, false);
+  /** Tests still measuring; their timers end with the window, so these are not kept */
+  const [running, setRunning] = useState<Record<string, true>>({});
   const [replacing, setReplacing] = useState<Record<string, true>>({});
-  const [replacedHere, setReplacedHere] = useState(false);
   const [note, showNote] = useNote();
   const later = useTimers();
   /** Cables whose replacement animation is still running; finished right away if the window closes first. */
@@ -108,11 +112,18 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
 
   useEffect(() => {
     const pending = pendingRef.current;
+    const epoch = gameStore.getState().stageEpoch;
     return () => {
       const ids = [...pending];
       pending.clear();
-      if (ids.length) gameStore.getState().act((w) => ids.forEach((id) => replaceCable(w, id)), 'cable:replace');
+      // Not when the stage started over meanwhile: that cable belongs to the old run.
+      if (!ids.length || gameStore.getState().stageEpoch !== epoch) return;
+      gameStore.getState().act((w) => ids.forEach((id) => replaceCable(w, id)), 'cable:replace');
+      // As if the animation had finished: the old reading is gone and the window says it was fixed here.
+      setTests((t) => Object.fromEntries(Object.entries(t).filter(([id]) => !ids.includes(id))));
+      setReplacedHere(true);
     };
+    // The setters keep their identity while the window is open (its mode, and so its keys, never change).
   }, []);
 
   const tryConnect = (from: string, to: string) => {
@@ -146,11 +157,16 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   const holding = drag?.item ?? selected;
 
   const runTest = (c: Cable) => {
-    setTests((t) => ({ ...t, [c.id]: 'running' }));
+    setRunning((r) => ({ ...r, [c.id]: true }));
     gameStore.getState().event('cable:test');
     later(() => {
       const w = live();
       const cur = w?.cables[c.id];
+      setRunning((r) => {
+        const next = { ...r };
+        delete next[c.id];
+        return next;
+      });
       if (w && cur) setTests((t) => ({ ...t, [c.id]: testOf(w, cur) }));
     }, 700);
   };
@@ -274,8 +290,9 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
               const c = cableAt(world, ep);
               const on = powered(world, d.id);
               const up = linkUp(world, d.id, portOf(ep));
+              const measuring = !!c && !!running[c.id];
               const res = c ? tests[c.id] : undefined;
-              const fresh = c && res && res !== 'running' && res.sig === sigOf(world, c) ? res : null;
+              const fresh = c && res && !measuring && res.sig === sigOf(world, c) ? res : null;
               const node = world.k8s?.nodes[d.id];
               const canDrag = mode === 'build' && d.installed && !c;
               return (
@@ -297,13 +314,13 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
                     </div>
                     {c && (
                       <div className="cb-tools">
-                        <button type="button" className="btn cb-tool" disabled={!!replacing[c.id] || res === 'running'} onClick={() => runTest(c)}>
+                        <button type="button" className="btn cb-tool" disabled={!!replacing[c.id] || measuring} onClick={() => runTest(c)}>
                           🔍 테스트
                         </button>
                         <button type="button" className="btn cb-tool" disabled={!!replacing[c.id]} onClick={() => runReplace(c, d.label)}>
                           {replacing[c.id] ? '교체 중…' : '🔁 새 케이블로 교체'}
                         </button>
-                        {res === 'running' && <span className="cb-result running">📟 측정 중…</span>}
+                        {measuring && <span className="cb-result running">📟 측정 중…</span>}
                         {fresh && (
                           <span className={`cb-result ${fresh.kind}`} role="status">
                             📟 {fresh.text}

@@ -1,13 +1,41 @@
 import type { Health, PlayContext, RoomId, StageId, World } from './types';
 
+/**
+ * Seconds of calm between "everything this incident waits for is done" and the incident firing:
+ * after the previous incident is solved, and after the objectives in front of it are finished.
+ * Stage time only runs while the game is unpaused (no dialogue, no concept card open).
+ */
+export const INCIDENT_GAP = 10;
+
 export type Trigger =
+  /** Fires `delay` seconds into the stage (stage time starts after the intro dialogue) */
   | { type: 'stageStart'; delay?: number }
-  /** Fires `delay` seconds after another scenario is resolved */
-  | { type: 'after'; scenario: string; delay?: number }
-  /** Fires `delay` seconds after an objective is completed */
-  | { type: 'objective'; objective: string; delay?: number }
+  /**
+   * Fires `delay` seconds (default INCIDENT_GAP) after every listed scenario is resolved AND every
+   * listed objective is done; the timer starts at the latest of those moments. This is how incidents
+   * chain, and how they wait for the player to finish the objectives in front of them.
+   * Optional scenarios can't be gates (they may never fire).
+   */
+  | { type: 'gate'; scenarios?: string[]; objectives?: string[]; delay?: number }
   /** Fires as soon as the condition holds (for mistakes the player may or may not make) */
   | { type: 'condition'; when: (w: World, ctx: PlayContext) => boolean };
+
+/**
+ * When a gate opens: the stage time its last scenario was resolved / objective was done, or null
+ * while any of them is still pending.
+ */
+export function gateOpenedAt(
+  tr: { scenarios?: string[]; objectives?: string[] },
+  resolvedAt: (id: string) => number | null,
+  objectivesDone: (id: string) => number | null,
+): number | null {
+  let latest = 0;
+  for (const t of [...(tr.scenarios ?? []).map(resolvedAt), ...(tr.objectives ?? []).map(objectivesDone)]) {
+    if (t === null) return null;
+    latest = Math.max(latest, t);
+  }
+  return latest;
+}
 
 /** A step that solves the scenario: either a terminal command run on a host, or a direct world action. */
 export type SolutionStep =
@@ -69,6 +97,10 @@ export function tickScenarios(
   const activated: string[] = [];
   const resolved: string[] = [];
   const byId = new Map(rt.map((r) => [r.id, r]));
+  const resolvedAt = (id: string) => {
+    const dep = byId.get(id);
+    return dep?.state === 'resolved' ? dep.resolvedAt : null;
+  };
 
   for (const s of scenarios) {
     const r = byId.get(s.id)!;
@@ -76,12 +108,9 @@ export function tickScenarios(
       if (r.at === null) {
         const tr = s.trigger;
         if (tr.type === 'stageStart') r.at = tr.delay ?? 0;
-        else if (tr.type === 'after') {
-          const dep = byId.get(tr.scenario);
-          if (dep?.state === 'resolved' && dep.resolvedAt !== null) r.at = dep.resolvedAt + (tr.delay ?? 0);
-        } else if (tr.type === 'objective') {
-          const doneAt = objectivesDone(tr.objective);
-          if (doneAt !== null) r.at = doneAt + (tr.delay ?? 0);
+        else if (tr.type === 'gate') {
+          const opened = gateOpenedAt(tr, resolvedAt, objectivesDone);
+          if (opened !== null) r.at = opened + (tr.delay ?? INCIDENT_GAP);
         } else if (tr.type === 'condition' && tr.when(w, ctx)) r.at = ctx.stageTime;
       }
       if (r.at !== null && ctx.stageTime >= r.at) {

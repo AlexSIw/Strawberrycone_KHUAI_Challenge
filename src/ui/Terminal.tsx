@@ -86,7 +86,7 @@ const currentStage = (): StageId => gameStore.getState().run?.stage ?? 0;
 const NAME_ARG_COMMANDS = ['ssh', 'ping'];
 
 interface LineEditor {
-  /** Replace the line being typed (used by the help list) */
+  /** Replace the line being typed (used by the help list, and to draw the prompt with the saved line on open) */
   setLine(text: string): void;
   handleData(data: string): void;
 }
@@ -94,6 +94,8 @@ interface LineEditor {
 /**
  * A tiny readline: keeps the current input line, history, and redraws the line
  * (even when it wraps) whenever the cursor isn't simply at the end.
+ * History and the half-typed line live in the store's active terminal session, so they come back
+ * when this place's terminal opens again.
  */
 function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
   const store = () => gameStore.getState();
@@ -102,10 +104,12 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
   let prompt = promptFor(store().terminal.host);
   /** Rows between the prompt's first row and the row the cursor sits on */
   let row = 0;
-  // Earlier commands this stage (also from previous visits), without repeats in a row.
-  const history: string[] = (store().run?.ctx.commands ?? []).filter((c, i, all) => c !== all[i - 1]);
-  let hIndex = history.length;
-  let draft = '';
+  /** Commands entered in this session earlier (also on previous visits), without repeats in a row */
+  const history = () => store().terminal.history ?? [];
+  let hIndex = history().length;
+  /** The line being typed before ↑ went into the history */
+  let stash = '';
+  const saveDraft = () => store().setTerminalDraft(chars.join(''));
 
   const promptW = () => cellWidth(prompt);
   const widthOf = (arr: string[]) => cellWidth(arr.join(''));
@@ -137,6 +141,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     chars = [...text];
     cur = chars.length;
     render();
+    saveDraft();
   };
 
   const insert = (text: string) => {
@@ -182,15 +187,13 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     const line = chars.join('');
     term.write('\r\n');
     store().appendTerminal([prompt + line]);
+    store().setTerminalDraft('');
+    stash = '';
     const trimmed = line.trim();
-    if (trimmed && history[history.length - 1] !== trimmed) history.push(trimmed);
-    hIndex = history.length;
-    draft = '';
+    // Runs on this session's host and adds the line to its history.
+    // (`hint` opens the radio in its place through openModal, so "open:mentor" is recorded.)
     const res = store().command(line);
-    // `hint` swaps the radio in without openModal(), so "open:mentor" (an objective) isn't recorded
-    // and the lion keeps the fix pose. Open it again the normal way.
-    const opened = store().modal;
-    if (opened && opened.type !== 'terminal') store().openModal(opened);
+    hIndex = history().length;
     // Typing in 한글 mode turns "help" into "ㅗ디ㅔ": tell beginners how to switch.
     const lines = HANGUL_RE.test(trimmed.split(/\s+/)[0] ?? '')
       ? [...res.lines, DIM('팁: 한글로 입력됐어요. 한/영 키를 눌러 영어로 바꾼 뒤 다시 입력해보세요.')]
@@ -214,7 +217,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     toEnd();
     term.write('^C\r\n');
     store().appendTerminal([prompt + chars.join('') + '^C']);
-    hIndex = history.length;
+    hIndex = history().length;
     newPrompt();
   };
 
@@ -279,16 +282,21 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
   };
 
   const historyUp = () => {
+    const h = history();
     if (hIndex === 0) return;
-    if (hIndex === history.length) draft = chars.join('');
+    if (hIndex >= h.length) {
+      stash = chars.join('');
+      hIndex = h.length;
+    }
     hIndex -= 1;
-    setLine(history[hIndex]);
+    setLine(h[hIndex]);
   };
 
   const historyDown = () => {
-    if (hIndex >= history.length) return;
+    const h = history();
+    if (hIndex >= h.length) return;
     hIndex += 1;
-    setLine(hIndex === history.length ? draft : history[hIndex]);
+    setLine(hIndex === h.length ? stash : h[hIndex]);
   };
 
   const escape = (seq: string) => {
@@ -410,6 +418,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
       }
     }
     flush();
+    saveDraft();
   };
 
   return { setLine, handleData };
@@ -422,9 +431,6 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
 const TERM_FONT = "'Nanum Gothic Coding', D2Coding, Menlo, monospace";
 /** Commands every stage has: listed after the ones this stage is about. */
 const BASIC_COMMANDS = new Set(['help', 'clear', 'hint']);
-
-/** Host the welcome message was last printed for (to note when the player plugs into another server). */
-let lastSessionHost: string | null = null;
 
 export function Terminal({ host }: { host: string }) {
   const storeHost = useGame((s) => s.terminal.host);
@@ -486,11 +492,12 @@ export function Terminal({ host }: { host: string }) {
       return true;
     });
 
-    // Restore scrollback, or say hello on the first visit.
+    // This place's session (ModalHost keys the window by place): restore its scrollback, or say hello on the
+    // first visit (not after a clear: a cleared screen comes back as just the prompt).
     const s = gameStore.getState();
     const cur = s.terminal.host;
     const label = s.run?.world.devices[cur]?.label;
-    if (s.terminal.log.length === 0) {
+    if (s.terminal.log.length === 0 && !s.terminal.history?.length) {
       const welcome = [
         `\x1b[1;33m${cur}\x1b[0m${label ? `(${label})` : ''}에 접속했어요.`,
         'help를 입력하면 쓸 수 있는 명령어가 나와요.',
@@ -501,17 +508,12 @@ export function Terminal({ host }: { host: string }) {
       term.write(welcome.map((l) => l + '\r\n').join(''));
     } else {
       term.write(s.terminal.log.map((l) => crlf(l) + '\r\n').join(''));
-      if (lastSessionHost !== null && lastSessionHost !== cur) {
-        const note = DIM(`── ${cur}${label ? `(${label})` : ''}에 연결했어요 ──`);
-        s.appendTerminal([note]);
-        term.write(note + '\r\n');
-      }
     }
-    lastSessionHost = cur;
-    term.write(promptFor(cur));
 
     const editor = createLineEditor(term, () => alive);
     editorRef.current = editor;
+    // Prompt for the host the session is on (still there after ssh), with the line left half-typed.
+    editor.setLine(s.terminal.draft ?? '');
     const sub = term.onData((d) => editor.handleData(d));
 
     const ro = new ResizeObserver(() => requestAnimationFrame(refit));
@@ -523,7 +525,6 @@ export function Terminal({ host }: { host: string }) {
 
     return () => {
       alive = false;
-      lastSessionHost = gameStore.getState().terminal.host;
       cancelAnimationFrame(raf);
       ro.disconnect();
       sub.dispose();

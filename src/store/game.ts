@@ -23,6 +23,7 @@ import type { StageId, World } from '../sim/types';
 // ---------- types ----------
 
 export type Modal =
+  /** `host` is the place the window was opened from (its session key): 'ops' for the 관리 PC desk, or a rack console's server */
   | { type: 'terminal'; host: string }
   | { type: 'consolePick'; hosts: string[] }
   | { type: 'dashboard' }
@@ -69,6 +70,24 @@ export interface SaveData {
 
 export type Screen = 'title' | 'select' | 'playing' | 'results' | 'ending';
 
+/** One terminal place's session (the 관리 PC desk, or one rack console), kept while the window is closed. */
+export interface TerminalSession {
+  /** Host the session is on now: starts at the place's own host, then follows ssh / exit */
+  host: string;
+  /** Scrollback */
+  log: string[];
+  /** Commands entered here, oldest first (↑/↓). Optional so a bare { host, log } is a fresh session. */
+  history?: string[];
+  /** The half-typed input line */
+  draft?: string;
+}
+
+/** Terminal sessions and window progress are kept until the stage starts again; these are their bounds. */
+const MAX_LOG = 400;
+const MAX_HISTORY = 200;
+
+const freshSession = (host: string): TerminalSession => ({ host, log: [], history: [], draft: '' });
+
 export interface GameState {
   screen: Screen;
   run: StageRun | null;
@@ -77,7 +96,16 @@ export interface GameState {
   dialogue: { lines: DialogueLine[]; index: number; then: 'play' | 'results' } | null;
   concepts: ConceptPopup[];
   toasts: Toast[];
-  terminal: { host: string; log: string[] };
+  /** Session of the terminal window that is open (or was opened last); commands run on its host */
+  terminal: TerminalSession;
+  /** Place `terminal` belongs to ('ops' = 관리 PC desk, or a rack console's server) */
+  terminalOrigin: string;
+  /** Sessions of the other places, parked until their window opens again */
+  terminals: Record<string, TerminalSession>;
+  /** Half-done work in the other windows (see useStageState), by key; boxed so `undefined` can be stored */
+  windowState: Record<string, { v: unknown }>;
+  /** Goes up on every play(): late writes from the run before (a window's timer, a hint answer) are dropped */
+  stageEpoch: number;
   hints: Record<string, HintMessage[]>;
   hintPending: boolean;
   lastScore: Score | null;
@@ -104,10 +132,14 @@ export interface GameState {
   enterRoom(room: string): void;
   event(...events: string[]): void;
   act(action: (w: World) => void, ...events: string[]): void;
+  /** Runs a line on the active terminal session's host (and keeps it in that session's history). */
   command(line: string): { lines: string[]; clear: boolean };
-  /** Terminal scrollback kept across open/close (the Terminal component writes here) */
+  /** Scrollback of the active terminal session (the Terminal component writes here) */
   appendTerminal(lines: string[]): void;
   clearTerminal(): void;
+  /** The active terminal session's half-typed line */
+  setTerminalDraft(text: string): void;
+  setWindowState(key: string, value: unknown): void;
   openModal(m: Modal): void;
   closeModal(): void;
   nextDialogue(): void;
@@ -236,7 +268,11 @@ export const gameStore = createStore<GameState>()((set, get) => {
     dialogue: null,
     concepts: [],
     toasts: [],
-    terminal: { host: 'ops', log: [] },
+    terminal: freshSession('ops'),
+    terminalOrigin: 'ops',
+    terminals: {},
+    windowState: {},
+    stageEpoch: 0,
     hints: {},
     hintPending: false,
     lastScore: null,
@@ -258,7 +294,12 @@ export const gameStore = createStore<GameState>()((set, get) => {
         toasts: [],
         hints: {},
         hintPending: false,
-        terminal: { host: 'ops', log: [] },
+        // Every place's terminal and every window's half-done work start over with the stage.
+        terminal: freshSession('ops'),
+        terminalOrigin: 'ops',
+        terminals: {},
+        windowState: {},
+        stageEpoch: get().stageEpoch + 1,
         lastScore: null,
         lastPrevBest: null,
         fixing: false,
@@ -340,7 +381,13 @@ export const gameStore = createStore<GameState>()((set, get) => {
       const s = get();
       if (!s.run) return { lines: [], clear: false };
       const res = applyCommand(s.run, line, s.terminal.host);
-      set({ run: res.run, terminal: { host: res.host, log: get().terminal.log } });
+      const trimmed = line.trim();
+      set((st) => {
+        const history = st.terminal.history ?? [];
+        // No repeats in a row, like a shell.
+        const next = trimmed && history[history.length - 1] !== trimmed ? [...history, trimmed].slice(-MAX_HISTORY) : history;
+        return { run: res.run, terminal: { ...st.terminal, host: res.host, history: next } };
+      });
       objectiveToasts(res.run, res.completed);
       if (res.openHint) {
         const active = activeScenarios(res.run)[0];
@@ -350,12 +397,23 @@ export const gameStore = createStore<GameState>()((set, get) => {
       return { lines: res.lines, clear: res.clear };
     },
 
-    appendTerminal: (lines) => set((s) => ({ terminal: { ...s.terminal, log: [...s.terminal.log, ...lines].slice(-400) } })),
+    appendTerminal: (lines) => set((s) => ({ terminal: { ...s.terminal, log: [...s.terminal.log, ...lines].slice(-MAX_LOG) } })),
     clearTerminal: () => set((s) => ({ terminal: { ...s.terminal, log: [] } })),
+    setTerminalDraft: (text) => {
+      if ((get().terminal.draft ?? '') !== text) set((s) => ({ terminal: { ...s.terminal, draft: text } }));
+    },
+    setWindowState: (key, value) => set((s) => ({ windowState: { ...s.windowState, [key]: { v: value } } })),
 
     openModal: (m) => {
       const patch: Partial<GameState> = { modal: m, fixing: FIXING_MODALS.includes(m.type) };
-      if (m.type === 'terminal') patch.terminal = { host: m.host, log: get().terminal.log };
+      const s = get();
+      if (m.type === 'terminal' && m.host !== s.terminalOrigin) {
+        // Park the session that was active and bring back (or start) this place's own one.
+        const { [m.host]: session, ...others } = s.terminals;
+        patch.terminals = { ...others, [s.terminalOrigin]: s.terminal };
+        patch.terminal = session ?? freshSession(m.host);
+        patch.terminalOrigin = m.host;
+      }
       set(patch);
       get().event(openEvent(m));
     },
@@ -396,6 +454,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
       set({ run, hintPending: true, hints: { ...s.hints, [scenarioId]: thread } });
       const reply = await requestHintText({ run, scenario: sc, level, question, history: thread, host: get().terminal.host });
       const cur = get();
+      // The stage was started again while the answer was on its way: it belongs to the old run.
+      if (cur.stageEpoch !== s.stageEpoch) return;
       const updated = [...(cur.hints[scenarioId] ?? thread), { from: 'mentor' as const, text: reply.text, level, source: reply.source }];
       set({ hintPending: false, hints: { ...cur.hints, [scenarioId]: updated } });
     },

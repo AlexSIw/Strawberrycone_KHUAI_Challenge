@@ -6,6 +6,7 @@ import type { RoomId } from '../sim/types';
 import { gameStore, useGame, type HintMessage } from '../store/game';
 import { ModalFrame } from './ModalFrame';
 import { Portrait } from './Portrait';
+import { useStageState } from './useStageState';
 import './HintChat.css';
 
 const LADDER_KEY = 'khu-dc-hint-ladder-seen';
@@ -163,7 +164,8 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
   const typingHere = pending && askingFor === sc.id;
   const level = run.hintLevel[sc.id] ?? 0;
   const revealed = run.revealed.includes(sc.id);
-  const [text, setText] = useState('');
+  // A question typed but not sent yet stays in the box (per incident) after closing the radio.
+  const [text, setText] = useStageState(`hint:ask:${sc.id}`, '');
   const [confirming, setConfirming] = useState(false);
   const [showLadder, setShowLadder] = useState(() => !ladderSeen());
   const listRef = useRef<HTMLDivElement>(null);
@@ -327,7 +329,15 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
 
 export function HintChat({ initialScenario }: { initialScenario?: string }) {
   const run = useGame((s) => s.run);
-  const [picked, setPicked] = useState<string | undefined>(initialScenario);
+  /** Tab that was showing when the radio closed last time */
+  const [lastTab, saveTab] = useStageState<string | null>('hint:tab', null);
+  // Opened for an incident: that one. Otherwise the tab from last time, if that incident is still going on
+  // (a long-solved one would only push the live incidents aside).
+  const [picked, setPicked] = useState<string | undefined>(() => {
+    if (initialScenario) return initialScenario;
+    const live = run ? activeScenarios(run) : [];
+    return lastTab && live.some((a) => a.rt.id === lastTab) ? lastTab : undefined;
+  });
 
   // Follow the store when another window re-opens the radio for a specific incident.
   useEffect(() => {
@@ -348,10 +358,14 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
   const selected = tabs.find((t) => t.sc.id === picked) ?? tabs[0];
   const selectedId = selected?.sc.id;
 
-  // Remember the tab that is showing, so it stays (as "해결됨") if that incident gets solved meanwhile.
+  // Remember the tab that is showing, so it stays (as "해결됨") if that incident gets solved meanwhile,
+  // and so it is the one shown when the radio opens again.
   useEffect(() => {
     if (selectedId && selectedId !== picked) setPicked(selectedId);
   }, [selectedId, picked]);
+  useEffect(() => {
+    if (selectedId) saveTab(selectedId);
+  }, [selectedId, saveTab]);
 
   return (
     <ModalFrame title="쿠사수 무전기 📻" size="narrow">

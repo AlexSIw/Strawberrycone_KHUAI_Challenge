@@ -61,9 +61,11 @@ export function startStage(id: StageId): StageRun {
   return run;
 }
 
-/** Objectives that are visible (their prerequisites are done). */
+/** Objectives that are visible (their prerequisite objectives are done and gating incidents resolved). */
 export function visibleObjectives(def: StageDef, run: StageRun) {
-  return def.objectives.filter((o) => (o.after ?? []).every((a) => a in run.objectivesDone));
+  return def.objectives.filter(
+    (o) => (o.after ?? []).every((a) => a in run.objectivesDone) && (o.afterIncidents ?? []).every((id) => run.ctx.resolved.includes(id)),
+  );
 }
 
 function evaluateObjectives(def: StageDef, run: StageRun): string[] {

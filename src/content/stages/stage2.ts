@@ -18,7 +18,8 @@ const scenarios: Scenario[] = [
     alert: 'web 서버가 db를 못 찾는대요! "db가 누구야?"라고 에러가 떠요.',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'objective', objective: 'dhcp', delay: 3 },
+    // After the setup (terminal → DHCP → ping) is finished.
+    trigger: { type: 'gate', objectives: ['terminal', 'dhcp', 'ping'] },
     inject: (w) => {
       // Someone tidied up the name book and dropped db's line.
       delete w.net!.dns.db;
@@ -44,7 +45,7 @@ const scenarios: Scenario[] = [
     severity: 'warning',
     // Where the symptom is seen (ping db from the NOC desk), not where the culprit sits.
     room: 'noc',
-    trigger: { type: 'after', scenario: 's2-dns', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s2-dns'] },
     inject: (w) => {
       // A teammate "fixed" the spare server by hand and copied the DB's address.
       const l3 = w.devices.spare.l3!;
@@ -79,7 +80,7 @@ const scenarios: Scenario[] = [
     severity: 'critical',
     // The comparison in the alert is made from the NOC; the router is for the player to work out.
     room: 'noc',
-    trigger: { type: 'after', scenario: 's2-conflict', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s2-conflict'] },
     inject: (w) => {
       const l3 = w.devices.web.l3!;
       l3.mode = 'static';

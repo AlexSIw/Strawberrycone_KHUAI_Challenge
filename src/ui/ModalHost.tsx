@@ -21,7 +21,8 @@ export function ModalHost() {
   if (!modal) return null;
   switch (modal.type) {
     case 'terminal':
-      return <Terminal host={modal.host} />;
+      // Each place has its own session: a new place means a new window, not the old one's screen.
+      return <Terminal key={modal.host} host={modal.host} />;
     case 'consolePick':
       return (
         <ModalFrame title="콘솔 연결할 서버 고르기" icon="🔌" size="narrow">

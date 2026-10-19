@@ -6,6 +6,7 @@ import type { StageId } from '../../sim/types';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
 import { Portrait } from '../Portrait';
+import { useStageState } from '../useStageState';
 import './Quiz.css';
 
 // Whiteboard quiz (stage 0). A nudge for wrong answers that doesn't give the answer away.
@@ -20,7 +21,8 @@ export function Quiz() {
   const stage = useGame((s) => s.run?.stage);
   // Reopening a quiz that is already solved shows the answer instead of asking again.
   const solvedBefore = useGame((s) => !!s.run?.ctx.events.includes('quiz:correct'));
-  const [wrong, setWrong] = useState<number[]>([]);
+  // Wrong guesses stay crossed out for the stage.
+  const [wrong, setWrong] = useStageState<number[]>('quiz:wrong', []);
   const [last, setLast] = useState<number | null>(null);
   const [correct, setCorrect] = useState(solvedBefore);
   const [recorded, setRecorded] = useState(solvedBefore);
@@ -54,7 +56,8 @@ export function Quiz() {
     }
   };
 
-  const showNudge = !correct && last !== null && last !== quiz.answer;
+  // After reopening (nothing picked yet this time) the nudge stays up if there were wrong guesses.
+  const showNudge = !correct && (last !== null ? last !== quiz.answer : wrong.length > 0);
   const again = correct && last === null;
 
   // Closing (button, Esc or backdrop) records a deferred answer, which may finish the stage.

@@ -29,7 +29,7 @@ const scenarios: Scenario[] = [
     alert: '서버 켰다면서요? 학생들 화면엔 "연결이 거부되었습니다"가 떠요!',
     severity: 'critical',
     room: 'server',
-    trigger: { type: 'objective', objective: 'start', delay: 2 },
+    trigger: { type: 'gate', objectives: ['start'] },
     inject: () => {},
     check: (w) => !!w.web?.running && w.web.port === 80,
     hints: [
@@ -50,7 +50,8 @@ const scenarios: Scenario[] = [
     alert: '베타 테스터가 300명으로 늘었어요. 페이지가 한참 걸리다 타임아웃(기다리다 끊김)이에요…',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's3-port', delay: 8 },
+    // The player first gets the 200 OK that the port fix made possible (the 'curl' objective).
+    trigger: { type: 'gate', scenarios: ['s3-port'], objectives: ['curl'] },
     inject: (w) => {
       w.traffic.rps = 300;
     },
@@ -73,7 +74,7 @@ const scenarios: Scenario[] = [
     alert: '수강신청 안내 공지가 올라갔어요. 그런데 학생 커뮤니티: "공지 링크 누르면 Not Found 떠요ㅠ"',
     severity: 'warning',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's3-thread', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s3-thread'] },
     inject: (w) => {
       // The enrolment notice goes up for every student — with a typo in the link.
       w.notice = { url: '/enrol' };
@@ -125,6 +126,8 @@ export const stage3: StageDef = {
       spot: 'desk',
       done: (_w, c) => c.events.includes('curl:200:/enroll'),
       after: ['start'],
+      // Students are refused until the port is fixed, so the 200 OK step only shows up after that.
+      afterIncidents: ['s3-port'],
       concept: 'tcp',
       lesson: 'curl -v로 자세히 보면, TCP(순서와 도착을 챙기는 배달 방식)는 요청 전에 SYN → SYN-ACK → ACK 세 번 인사(3-way handshake)를 먼저 나눠요. 그다음 "GET /enroll"(이 페이지 주세요) 주문서가 가고 200 OK(여기 있어요)가 돌아와요.',
     },

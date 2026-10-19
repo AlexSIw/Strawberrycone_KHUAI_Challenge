@@ -17,7 +17,7 @@ import {
   type StageRun,
 } from '../src/sim/engine';
 import { applyDhcp, duplicateIps, ping, powered } from '../src/sim/network';
-import type { SolutionStep } from '../src/sim/scenario';
+import { INCIDENT_GAP, type SolutionStep } from '../src/sim/scenario';
 import type { StageId, World } from '../src/sim/types';
 
 const SERVERS = ['web', 'db', 'spare'];
@@ -310,7 +310,10 @@ describe('C18 / C26 · s1-cable only fires once the servers are powered', () => 
     expect(run.objectivesDone).not.toHaveProperty('cable');
     run = applyAction(run, (w) => SERVERS.forEach((id) => setFeeds(w, id, ['A']))).run;
     expect(run.objectivesDone).toHaveProperty('cable');
-    run = ticks(run, 3);
+    // The incident follows INCIDENT_GAP seconds after the install is finished.
+    run = ticks(run, INCIDENT_GAP - 1);
+    expect(state(run, 's1-cable')).toBe('waiting');
+    run = ticks(run, 1);
     expect(state(run, 's1-cable')).toBe('active');
     // The alert's premise is true: the other servers are green, only db is dark.
     expect(run.health.services).toMatchObject({ web: 'up', spare: 'up', db: 'degraded' });
@@ -417,7 +420,8 @@ describe('C38 / S2 / S5 · stage 3 shows each problem only when its incident fir
     let run = startStage(3);
     expect(run.world.notice).toBeUndefined();
     run = cmd(run, 'server start', 'web').run;
-    run = ticks(run, 3);
+    run = ticks(run, INCIDENT_GAP);
+    expect(state(run, 's3-port')).toBe('active');
     run = cmd(run, 'server set port 80', 'web').run;
     run = ticks(run, 2);
     expect(state(run, 's3-port')).toBe('resolved');

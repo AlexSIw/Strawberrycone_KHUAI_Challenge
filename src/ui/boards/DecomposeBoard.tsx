@@ -4,6 +4,7 @@ import type { AppService } from '../../sim/types';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
 import { Portrait } from '../Portrait';
+import { useStageState } from '../useStageState';
 import './DecomposeBoard.css';
 
 // Stage 4 design board: cut the monolith into services by business capability (not by layer).
@@ -25,6 +26,8 @@ const CARDS: Card[] = [
   { id: 'logic', label: '비즈니스 로직', icon: '⚙️', kind: 'layer' },
   { id: 'db', label: '데이터베이스', icon: '🗄️', kind: 'layer' },
 ];
+
+const BY_ID: Record<string, Card> = Object.fromEntries(CARDS.map((c) => [c.id, c]));
 
 const BOX_COUNT = 5;
 const LAYER_MSG = '그건 기능이 아니라 층이야! 화면/로직/DB로 자르면 결국 다 같이 바뀌어.';
@@ -69,12 +72,14 @@ type Spot = number | null; // box index, or null = still in the card pool
 type Feedback = { tone: 'bad' | 'warn'; text: string; cards: string[] };
 
 function Puzzle() {
-  const [order] = useState(() => shuffle(CARDS));
-  const [place, setPlace] = useState<Record<string, Spot>>(() => Object.fromEntries(CARDS.map((c) => [c.id, null])));
+  // Card order, placements, the last check's feedback and "solved" are kept for the stage.
+  const [order] = useStageState<string[]>('decompose:order', () => shuffle(CARDS).map((c) => c.id));
+  const [place, setPlace] = useStageState<Record<string, Spot>>('decompose:place', () => Object.fromEntries(CARDS.map((c) => [c.id, null])));
+  const [feedback, setFeedback] = useStageState<Feedback | null>('decompose:feedback', null);
+  const [solved, setSolved] = useStageState('decompose:solved', false);
   const [selected, setSelected] = useState<string | null>(null);
   const [over, setOver] = useState<Spot | 'none'>('none');
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [solved, setSolved] = useState(false);
+  const cards = order.map((id) => BY_ID[id]);
 
   const move = (id: string, to: Spot) => {
     setPlace((p) => ({ ...p, [id]: to }));
@@ -82,8 +87,8 @@ function Puzzle() {
     setFeedback(null);
   };
 
-  const inBox = (i: number) => order.filter((c) => place[c.id] === i);
-  const pool = order.filter((c) => place[c.id] === null);
+  const inBox = (i: number) => cards.filter((c) => place[c.id] === i);
+  const pool = cards.filter((c) => place[c.id] === null);
 
   const check = () => {
     const boxes = Array.from({ length: BOX_COUNT }, (_, i) => inBox(i));

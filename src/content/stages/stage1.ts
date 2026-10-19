@@ -21,7 +21,8 @@ const scenarios: Scenario[] = [
     severity: 'critical',
     // The symptom (a dark LED) is on the rack; the player traces the cable from there to the switch.
     room: 'server',
-    trigger: { type: 'objective', objective: 'cable', delay: 2 },
+    // The whole install (rack → power → cable) comes first; the incident follows once it is finished.
+    trigger: { type: 'gate', objectives: ['mount', 'power', 'cable'] },
     inject: (w) => {
       const c = cableAt(w, 'db:eth0');
       if (c) c.broken = true;
@@ -46,7 +47,7 @@ const scenarios: Scenario[] = [
     alert: '앗, 정전! 건물 전체에 전기가 나갔어요!! 서버들 괜찮아요?',
     severity: 'critical',
     room: 'power',
-    trigger: { type: 'after', scenario: 's1-cable', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s1-cable'] },
     inject: (w) => {
       w.power!.mains = false;
     },
@@ -82,7 +83,7 @@ const scenarios: Scenario[] = [
     alert: '전원실에서 "딱!" 하고 뭔가 내려가는 소리가 났어요! 정전은 아니라는데… 장비들 괜찮아요?',
     severity: 'critical',
     room: 'power',
-    trigger: { type: 'after', scenario: 's1-blackout', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s1-blackout'] },
     inject: (w) => {
       // A PDU breaker trips: the line that the most single-fed devices depend on.
       w.power!.pduDown = singleFedOn(w, 'B') > singleFedOn(w, 'A') ? 'B' : 'A';

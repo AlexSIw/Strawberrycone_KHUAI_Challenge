@@ -4,6 +4,22 @@ import { expect, test, type Page } from '@playwright/test';
 
 type AudioState = { context: string; music: string | null; muted: boolean; loaded: string[]; failed: string[]; alarm: number; win: number; blip: number };
 
+type GameStore = (typeof import('../src/store/game'))['gameStore'];
+type Win = Window & { __store: GameStore };
+
+/**
+ * Puts the app's own store instance on window.__store. A dev server that hot-updated the store
+ * serves it to the app as "game.ts?t=…", so import the exact URL App.tsx uses, not a second copy.
+ */
+async function exposeStore(page: Page) {
+  await page.evaluate(async () => {
+    const app = await (await fetch('/src/App.tsx')).text();
+    const url = /["'](\/src\/store\/game\.ts[^"']*)["']/.exec(app)?.[1] ?? '/src/store/game.ts';
+    const S = (await import(/* @vite-ignore */ url)) as typeof import('../src/store/game');
+    (window as unknown as Win).__store = S.gameStore;
+  });
+}
+
 const audioState = (page: Page) => page.evaluate(() => (window as never as { __khuAudio: { debugState(): AudioState } }).__khuAudio.debugState());
 
 test('크레딧 · 소리 켜기/끄기 · 배경음/경보/효과음, 콘솔 에러 없음', async ({ page }) => {
@@ -56,20 +72,24 @@ test('크레딧 · 소리 켜기/끄기 · 배경음/경보/효과음, 콘솔 �
   await expect.poll(async () => (await audioState(page)).blip, { timeout: 5_000 }).toBeGreaterThan(3);
 
   // Stage 3: an incident switches to the incident loop and sounds the alarm; fixing it plays the jingle.
-  await page.evaluate(async () => {
-    const { gameStore } = (await import(/* @vite-ignore */ '/src/store/game.ts' as string)) as typeof import('../src/store/game');
+  await exposeStore(page);
+  await page.evaluate(() => {
+    const gameStore = (window as unknown as Win).__store;
     const s = gameStore.getState();
     s.play(3);
     for (let i = 0; i < 50 && gameStore.getState().dialogue; i++) gameStore.getState().nextDialogue();
     gameStore.setState({ terminal: { host: 'web', log: [] } });
     gameStore.getState().command('server start');
+    // s3-port fires 10 stage seconds after the app is started: run the clock forward instead of waiting.
+    const active = () => gameStore.getState().run?.scenarios.some((x) => x.state === 'active');
+    for (let i = 0; i < 20 && !active(); i++) gameStore.getState().tick();
   });
   await expect.poll(async () => (await audioState(page)).alarm, { timeout: 10_000 }).toBeGreaterThan(0);
   expect((await audioState(page)).music).toBe('incident');
   await expect(page.locator('.hud').getByRole('button', { name: '소리' })).toBeVisible();
 
-  await page.evaluate(async () => {
-    const { gameStore } = (await import(/* @vite-ignore */ '/src/store/game.ts' as string)) as typeof import('../src/store/game');
+  await page.evaluate(() => {
+    const gameStore = (window as unknown as Win).__store;
     gameStore.setState({ terminal: { host: 'web', log: [] } });
     gameStore.getState().command('server set port 80');
   });
@@ -77,8 +97,8 @@ test('크레딧 · 소리 켜기/끄기 · 배경음/경보/효과음, 콘솔 �
   expect((await audioState(page)).music).toBe('normal');
 
   // The fix (and leaving the stage) stopped the alarm cycle: no more beeps.
-  await page.evaluate(async () => {
-    const { gameStore } = (await import(/* @vite-ignore */ '/src/store/game.ts' as string)) as typeof import('../src/store/game');
+  await page.evaluate(() => {
+    const gameStore = (window as unknown as Win).__store;
     gameStore.getState().goSelect();
   });
   const beeps = (await audioState(page)).alarm;

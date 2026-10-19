@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { applyDesired } from '../../sim/actions';
 import { podsOf, readyPods, unscheduled } from '../../sim/k8s';
 import type { K8sState } from '../../sim/types';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
 import { Portrait } from '../Portrait';
+import { useStageState } from '../useStageState';
 import './DesiredBoard.css';
 
 // Stage 6 design board: write the "desired state" card for the enroll Deployment.
@@ -37,9 +38,10 @@ export function DesiredBoard() {
 
 function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
   const dep = k8s.deployments[APP];
-  const [draft, setDraft] = useState<number | null>(null);
-  const [image, setImage] = useState('');
-  const [msg, setMsg] = useState<Msg | null>(null);
+  // The card being filled in (count, version) and the last message are kept for the stage.
+  const [draft, setDraft] = useStageState<number | null>('desired:replicas', null);
+  const [image, setImage] = useStageState('desired:image', '');
+  const [msg, setMsg] = useStageState<Msg | null>('desired:msg', null);
 
   const max = applied ? MAX_LATER : MAX_FIRST;
   const replicas = draft ?? (applied ? Math.max(MIN, dep.replicas) : MIN);

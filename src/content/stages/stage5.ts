@@ -10,7 +10,7 @@ import {
   isEnroll,
   nextContainerId,
 } from '../../sim/commands/docker';
-import type { Scenario } from '../../sim/scenario';
+import { INCIDENT_GAP, type Scenario } from '../../sim/scenario';
 import type { Device, World } from '../../sim/types';
 import type { StageDef } from '../types';
 import { emptyHealth } from '../worlds';
@@ -87,7 +87,8 @@ const scenarios: Scenario[] = [
     alert: '2차 수강신청 대비로 서버를 한 대 늘렸는데, 새 서버(srv-new)에서 신청 앱이 안 떠요!',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'stageStart', delay: 4 },
+    // Not gated on objectives: the first one (reading the failed deploy log) needs this incident.
+    trigger: { type: 'stageStart', delay: INCIDENT_GAP },
     inject: (w) => {
       w.docker!.manualDeploy = { host: 'srv-new', service: 'enroll', status: 'failed' };
       w.traffic.rps = 6000;
@@ -141,7 +142,8 @@ const scenarios: Scenario[] = [
     alert: 'DB(신청 기록 창고)를 업데이트하는 자동 작업(스크립트)이 DB 컨테이너를 지우고 새로 만들었는데… 수강신청 내역이 전부 0건이에요!!! 학생들 난리 났어요!',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's5-drift', delay: 8 },
+    // Only once the new container is running and reachable (the stage's remaining objectives).
+    trigger: { type: 'gate', scenarios: ['s5-drift'], objectives: ['run', 'open'] },
     inject: (w) => {
       // The update script removed and recreated every DB container on srv-db (same name, ports, mounts,
       // state). A fresh container has an empty writable layer; only data on a volume survives.

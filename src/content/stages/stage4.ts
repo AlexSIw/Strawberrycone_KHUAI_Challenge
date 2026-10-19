@@ -1,6 +1,6 @@
 import { decompose } from '../../sim/actions';
 import { capacity } from '../../sim/app';
-import type { Scenario } from '../../sim/scenario';
+import { INCIDENT_GAP, type Scenario } from '../../sim/scenario';
 import type { AppService, World } from '../../sim/types';
 import type { StageDef } from '../types';
 import { emptyHealth, networkedWorld } from '../worlds';
@@ -59,13 +59,20 @@ const scenarios: Scenario[] = [
     alert: '10:01 수강신청 시작 1분 만에 서버 전체 다운!! 알림 메일 기능에서 에러가 났대요. 아무도 신청을 못 해요!',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'stageStart', delay: 5 },
+    // The rush hits once the player has had a look at the services.
+    trigger: { type: 'gate', objectives: ['watch'] },
     inject: (w) => {
       w.traffic.rps = RPS;
       const m = w.app!.services.monolith;
       if (m) m.restartTimer = 0;
     },
     check: (w) => w.app?.arch === 'msa' && !!w.app.services.enroll?.up,
+    onResolve: (w) => {
+      // The notify bug is still in the split code. Its crash belongs to s4-notify, so it happens when
+      // that alert fires (INCIDENT_GAP later), not unannounced in the calm before it.
+      const n = w.app!.services.notify;
+      if (n) n.restartTimer = INCIDENT_GAP;
+    },
     hints: [
       '재시작해도 또 죽지? 알림 메일 기능 하나 때문에 왜 로그인, 과목조회, 신청까지 다 멈출까?',
       '지금 앱은 주방 하나·창고 하나인 큰 식당이야. 한 코너에서 불이 나면 식당 전체가 문을 닫아. 푸드코트라면?',
@@ -84,7 +91,7 @@ const scenarios: Scenario[] = [
     alert: '알림 서비스가 또 죽었어요! …어? 그런데 수강신청은 계속 되고 있어요?',
     severity: 'warning',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's4-monolith', delay: 5 },
+    trigger: { type: 'gate', scenarios: ['s4-monolith'] },
     inject: (w) => {
       const n = w.app!.services.notify;
       if (n) n.up = false;
@@ -108,7 +115,7 @@ const scenarios: Scenario[] = [
     alert: '모두가 빈자리 새로고침 중! 과목조회가 느려지면서 신청까지 버벅여요.',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's4-notify', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s4-notify'] },
     inject: (w) => {
       w.flags.courseSurge = 2;
     },
@@ -131,7 +138,7 @@ const scenarios: Scenario[] = [
     alert: '과목팀이 과목 DB 구조를 바꿨는데… 왜 신청 서비스가 터져요?!',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'after', scenario: 's4-course', delay: 6 },
+    trigger: { type: 'gate', scenarios: ['s4-course'] },
     inject: (w) => {
       const e = w.app!.services.enroll;
       if (e && !e.dbAccess.includes('course-db')) e.dbAccess.push('course-db');

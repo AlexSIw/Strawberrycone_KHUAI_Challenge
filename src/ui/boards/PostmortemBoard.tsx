@@ -1,10 +1,10 @@
-import { useState } from 'react';
 import { CONCEPTS } from '../../content/concepts';
 import { getStage } from '../../content/stages';
 import type { StageRun } from '../../sim/engine';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
 import { Portrait } from '../Portrait';
+import { useStageState } from '../useStageState';
 import './PostmortemBoard.css';
 
 // Stage 7 design board: the postmortem (장애 보고서) written after the 수강신청 rush.
@@ -155,10 +155,11 @@ function Waiting({ run }: { run: StageRun }) {
 }
 
 function Report({ run }: { run: StageRun }) {
-  const [answers, setAnswers] = useState<Answers>(emptyAnswers);
-  const [checked, setChecked] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [complete, setComplete] = useState(false);
+  // Picked answers, whether they were checked, the message and the summary page are kept for the stage.
+  const [answers, setAnswers] = useStageState<Answers>('postmortem:answers', emptyAnswers);
+  const [checked, setChecked] = useStageState('postmortem:checked', false);
+  const [msg, setMsg] = useStageState<string | null>('postmortem:msg', null);
+  const [complete, setComplete] = useStageState('postmortem:complete', false);
 
   const pick = (id: IncidentId, f: Field, v: number) => {
     setAnswers((a) => ({ ...a, [id]: { ...a[id], [f]: v } }));

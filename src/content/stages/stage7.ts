@@ -33,7 +33,8 @@ const scenarios: Scenario[] = [
     alert: '10:00 본 수강신청 오픈!!! 1초에 요청 12,000건(12,000 rps)이 쏟아져요!',
     severity: 'critical',
     room: 'noc',
-    trigger: { type: 'stageStart', delay: 5 },
+    // A fixed rush timeline (10 s, 20 s, 40 s into the stage): the incidents overlap on purpose.
+    trigger: { type: 'stageStart', delay: 10 },
     inject: (w) => {
       w.traffic.rps = 12000;
     },

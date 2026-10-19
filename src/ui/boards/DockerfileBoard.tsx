@@ -4,6 +4,7 @@ import { APP_PORT, ENROLL_DOCKERFILE } from '../../sim/commands/docker';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
 import { Portrait } from '../Portrait';
+import { useStageState } from '../useStageState';
 import './DockerfileBoard.css';
 
 // Stage 5 design board: put the Dockerfile ("레시피 카드") lines in the right order.
@@ -88,11 +89,12 @@ export function DockerfileBoard() {
 }
 
 function Recipe({ onSolved }: { onSolved: () => void }) {
-  const [order, setOrder] = useState<Line['id'][]>(shuffledOrder);
+  // The order (also the first shuffle) and the last check's feedback are kept for the stage.
+  const [order, setOrder] = useStageState<Line['id'][]>('dockerfile:order', shuffledOrder);
+  const [problem, setProblem] = useStageState<{ msg: string; lines: Line['id'][] } | null>('dockerfile:problem', null);
   const [dragId, setDragId] = useState<Line['id'] | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [problem, setProblem] = useState<{ msg: string; lines: Line['id'][] } | null>(null);
 
   const moveTo = (id: Line['id'], to: number) => {
     setOrder((o) => {

@@ -16,6 +16,8 @@ export interface Objective {
   done: (w: World, ctx: PlayContext) => boolean;
   /** Only shown once these objectives are done */
   after?: string[];
+  /** Only shown once these incidents are resolved (for a step that can't succeed while they're broken) */
+  afterIncidents?: string[];
   /** Concept card awarded when this objective is completed */
   concept?: string;
   /** "What just happened" line on that card */

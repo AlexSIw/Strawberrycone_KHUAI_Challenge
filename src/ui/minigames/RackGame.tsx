@@ -4,6 +4,7 @@ import { mount } from '../../sim/actions';
 import { linkUp, powered } from '../../sim/network';
 import type { Device, World } from '../../sim/types';
 import { gameStore } from '../../store/game';
+import { useStageState } from '../useStageState';
 import {
   DragGhost,
   GameFooter,
@@ -25,8 +26,8 @@ const BASE_RACKS = ['rack1', 'rack2'];
 /** Slot (index from the top) a server lands in when we don't remember where the player put it. */
 const DEFAULT_ORDER = [2, 3, 4, 5, 1, 6, 0, 7];
 
-/** Which U each server went into. The world only knows "mounted", so the slot is remembered here. */
-const slotMemory = new Map<string, string>();
+/** Which U each server went into ("rack1:3"), by server. The world only knows "mounted", so the slot is remembered here. */
+type Slots = Record<string, string>;
 
 type Layout = Record<string, (string | null)[]>;
 
@@ -39,11 +40,11 @@ function racksOf(servers: Device[]): string[] {
   return [...all].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
-function layoutOf(servers: Device[]): Layout {
+function layoutOf(servers: Device[], slots: Slots): Layout {
   const out: Layout = Object.fromEntries(racksOf(servers).map((r) => [r, Array<string | null>(SLOTS).fill(null)]));
   const rest: Device[] = [];
   for (const d of servers.filter((x) => x.installed)) {
-    const [r, s] = (slotMemory.get(d.id) ?? '').split(':');
+    const [r, s] = (slots[d.id] ?? '').split(':');
     const idx = Number(s);
     if (r === d.rack && out[r]?.[idx] === null) out[r][idx] = d.id;
     else rest.push(d);
@@ -68,6 +69,8 @@ function ServerBox({ d, lifted }: { d: Device; lifted?: boolean }) {
 
 export function RackGame() {
   const world = useWorld();
+  // Kept for the stage: reopening the rack shows every server in the U the player chose.
+  const [slots, setSlots] = useStageState<Slots>('rack:slots', {});
   const [selected, setSelected] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [snapped, setSnapped] = useState<string | null>(null);
@@ -95,14 +98,14 @@ export function RackGame() {
     const [kind, rack, slotStr] = zone.split(':');
     if (kind !== 'slot' && kind !== 'rack') return;
     if (rack !== d.rack) return wrongRack(d, rack);
-    const col = layoutOf(rackServers(w))[rack];
+    const col = layoutOf(rackServers(w), slots)[rack];
     let slot = Number(slotStr);
     if (kind === 'rack') slot = DEFAULT_ORDER.find((i) => col[i] === null) ?? -1;
     if (slot < 0 || col[slot]) {
       showNote('bad', '이 칸은 이미 차 있어요. 빈 칸에 넣어 주세요.');
       return;
     }
-    slotMemory.set(id, `${rack}:${slot}`);
+    setSlots((m) => ({ ...m, [id]: `${rack}:${slot}` }));
     gameStore.getState().act((ww) => mount(ww, id), 'rack:mount');
     setSelected(null);
     setSnapped(id);
@@ -114,7 +117,7 @@ export function RackGame() {
 
   if (!world) return null;
   const servers = rackServers(world);
-  const layout = layoutOf(servers);
+  const layout = layoutOf(servers, slots);
   const onCart = servers.filter((d) => !d.installed);
   const done = onCart.length === 0;
   const holding = drag?.item ?? selected;

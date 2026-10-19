@@ -2,65 +2,10 @@
 // and when an incident fires, checks it is really broken and that its documented solution fixes it.
 import { describe, expect, it } from 'vitest';
 import { STAGES, getStage } from '../src/content/stages';
-import { applyDesired, connectCable, mount, setFeeds, writeDockerfile } from '../src/sim/actions';
-import { applyAction, applyCommand, isCleared, recordEvents, startStage, tickRun, visibleObjectives, type StageRun } from '../src/sim/engine';
-import type { SolutionStep } from '../src/sim/scenario';
+import { writeDockerfile } from '../src/sim/actions';
+import { isCleared, startStage, tickRun, visibleObjectives } from '../src/sim/engine';
 import type { StageId } from '../src/sim/types';
-
-type Step = { cmd: string; host: string } | { action: Parameters<typeof applyAction>[1]; events?: string[] } | { events: string[] };
-
-const RED = '\x1b[31m';
-
-/** How a player completes each objective. */
-const AUTOPLAY: Record<number, Record<string, Step[]>> = {
-  0: {
-    visit: [{ events: ['room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc'] }],
-    dashboard: [{ events: ['open:dashboard'] }],
-    mentor: [{ events: ['open:mentor'] }],
-    quiz: [{ events: ['quiz:correct'] }],
-  },
-  1: {
-    mount: [{ action: (w) => ['web', 'db', 'spare'].forEach((id) => mount(w, id)) }],
-    power: [{ action: (w) => ['web', 'db', 'spare'].forEach((id) => setFeeds(w, id, ['A'])) }],
-    cable: [{ action: (w) => ['web', 'db', 'spare'].forEach((id, i) => connectCable(w, `${id}:eth0`, `sw1:p${i + 1}`)) }],
-  },
-  2: {
-    terminal: [{ events: ['open:terminal'] }],
-    dhcp: [{ cmd: 'dhcp on', host: 'ops' }],
-    ping: [{ cmd: 'ping web', host: 'ops' }],
-  },
-  3: {
-    start: [{ cmd: 'server start', host: 'web' }],
-    curl: [{ cmd: 'curl http://web/enroll', host: 'ops' }],
-  },
-  4: { watch: [{ cmd: 'svc list', host: 'ops' }] },
-  5: {
-    log: [{ cmd: 'deploy log', host: 'srv-new' }],
-    recipe: [{ action: (w) => writeDockerfile(w, 'enroll'), events: ['board:dockerfile'] }],
-    image: [
-      { cmd: 'docker build -t enroll:1.0 .', host: 'ops' },
-      { cmd: 'docker push enroll:1.0', host: 'ops' },
-    ],
-    run: [{ cmd: 'docker run -p 80:8000 enroll:1.0', host: 'srv-new' }],
-  },
-  6: {
-    desired: [{ action: (w) => applyDesired(w, 'enroll', 3, 'enroll:v1'), events: ['board:desired'] }],
-    observe: [{ cmd: 'pods', host: 'ops' }],
-  },
-  7: { postmortem: [{ events: ['board:postmortem'] }] },
-};
-
-/** Objective steps may print expected errors (e.g. a refused curl); solution steps must not. */
-function apply(run: StageRun, step: Step | SolutionStep, errors: string[] | null): StageRun {
-  if ('cmd' in step) {
-    const res = applyCommand(run, step.cmd, step.host);
-    const bad = res.lines.filter((l) => l.startsWith(RED));
-    if (bad.length && errors) errors.push(`${step.host}$ ${step.cmd} → ${bad.join(' | ')}`);
-    return res.run;
-  }
-  if ('action' in step) return applyAction(run, step.action, 'events' in step ? step.events ?? [] : []).run;
-  return recordEvents(run, step.events).run;
-}
+import { apply, AUTOPLAY, type Step } from './autoplay';
 
 function playStage(id: StageId) {
   const def = getStage(id);
@@ -154,7 +99,8 @@ describe('optional port-mapping incident', () => {
   it('fires when the container runs without -p and the documented fix works', () => {
     let run = startStage(5);
     const errors: string[] = [];
-    for (let i = 0; i < 6; i++) run = tickRun(run).run;
+    // The failed hand deploy (and its log) only exists once s5-drift has fired.
+    for (let i = 0; i < 60 && run.scenarios.find((s) => s.id === 's5-drift')!.state !== 'active'; i++) run = tickRun(run).run;
     for (const s of [
       { cmd: 'deploy log', host: 'srv-new' },
       { action: (w: Parameters<typeof writeDockerfile>[0]) => writeDockerfile(w, 'enroll') },
