@@ -155,7 +155,7 @@ export function Results() {
             다시 하기
           </button>
           <button className="btn primary res-primary" onClick={() => finish('next')}>
-            {isFinal ? '엔딩 보기 🎓' : '다음 스테이지 ▶'}
+            {isFinal ? '엔딩 보기 🏆' : '다음 스테이지 ▶'}
           </button>
         </div>
       </div>

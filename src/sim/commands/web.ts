@@ -85,11 +85,12 @@ export const webCommands: Command[] = [
     aliases: ['ss -lt', 'netstat', 'ss'],
     minStage: 3,
     usage: 'ports',
-    summary: '이 장비에서 열려 있는(듣고 있는) 포트 보기',
+    summary: '이 장비에서 열려 있는(손님을 기다리는) 포트 보기',
     run(_a, { w, host }) {
       const rows = [bold('STATE   ADDRESS            PROGRAM')];
       rows.push(`LISTEN  0.0.0.0:22          sshd`);
       if (w.web && w.web.host === host && w.web.running) rows.push(`LISTEN  0.0.0.0:${String(w.web.port).padEnd(11)}enroll-app (수강신청)`);
+      rows.push(dim('(LISTEN = 그 번호로 오는 손님을 기다리는 중 · 0.0.0.0 = 어느 주소로 오든 받음 · sshd = 원격 접속 담당)'));
       return out(...rows);
     },
   },
@@ -98,7 +99,7 @@ export const webCommands: Command[] = [
     maxStage: 3,
     minStage: 3,
     usage: 'curl [-v] http://<이름>[:포트]/<경로>',
-    summary: '로봇 손님처럼 HTTP 요청 보내기',
+    summary: '로봇 손님처럼 웹 요청(HTTP) 보내기',
     run(args, { w, host }) {
       const verbose = args.includes('-v') || args.includes('--verbose');
       // Other flags (-i, -s, -L …) are ignored; skip the value of flags that take one.
@@ -109,19 +110,20 @@ export const webCommands: Command[] = [
       const port = portStr ? parseInt(portStr, 10) : 80;
       // localhost / 127.0.0.1 is the machine you are on.
       const ip = isLoopback(name) ? '127.0.0.1' : resolveName(w, name);
-      if (!ip) return err(`curl: (6) Could not resolve host: ${name}`);
+      if (!ip) return { lines: [red(`curl: (6) Could not resolve host: ${name}`), dim('(이름을 IP 주소로 바꾸지 못했어요)')] };
       const p = ping(w, host, name);
       const lines: string[] = [];
       if (verbose) lines.push(dim(`*   Trying ${ip}:${port}...`));
       if (!p.ok) {
-        lines.push(red(`curl: (28) Failed to connect to ${name} port ${port}: Timed out`));
+        lines.push(red(`curl: (28) Failed to connect to ${name} port ${port}: Timed out`), dim('(기다려도 대답이 없어서 포기했어요)'));
         return { lines };
       }
       const s = w.web;
       const serves = s && s.running && p.targetId === s.host && s.port === port;
       if (!serves) {
-        if (verbose) lines.push(dim('> SYN  →'), dim('< RST  ← (그 포트에서 듣고 있는 프로그램이 없어요)'));
+        if (verbose) lines.push(dim('> SYN  →'), dim('< RST  ← (그 포트에서 기다리는 프로그램이 없어요)'));
         lines.push(red(`curl: (7) Failed to connect to ${name} port ${port}: Connection refused`));
+        if (!verbose) lines.push(dim('(연결 거부: 문을 두드렸는데 아무도 안 열어줬어요)'));
         return { lines, events: ['curl:refused'] };
       }
       if (verbose) {
@@ -143,7 +145,7 @@ export const webCommands: Command[] = [
       const body: Record<string, string> = {
         '/': '{"service":"KHU 수강신청","status":"ok"}',
         '/enroll': '{"message":"수강신청 페이지","open":true}',
-        '/courses': '{"courses":["자료구조","이산구조","마이크로서비스프로그래밍"]}',
+        '/courses': '{"courses":["대학 글쓰기","컴퓨터 개론","교양 영어"]}',
       };
       lines.push(green(own(body, path) ?? '{"status":"ok"}'));
       return { lines, events: [`curl:200:${path}`] };

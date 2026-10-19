@@ -19,7 +19,7 @@ export const svcCommands: Command[] = [
         const inst = s.installing.length ? yellow(` (+${s.installing.length} 설치중)`) : '';
         rows.push(`${s.name.padEnd(12)}${state} ${String(s.replicas).padEnd(8)} ${capacity(s)}${inst}`);
       }
-      rows.push(dim(`현재 접속: ${w.traffic.rps} rps · 구조: ${app.arch === 'monolith' ? '모놀리스(한 덩어리)' : 'MSA(서비스 분리)'}`));
+      rows.push(dim(`현재 접속: ${w.traffic.rps} rps(1초에 들어오는 요청 수) · 구조: ${app.arch === 'monolith' ? '모놀리스(한 덩어리)' : 'MSA(기능별 서비스로 분리)'}`));
       return out(...rows);
     },
   },
@@ -83,10 +83,10 @@ export const svcCommands: Command[] = [
       if (value === 'api') {
         s.dbAccess = s.dbAccess.filter((d) => d !== 'course-db');
         if (!s.calls.includes('course')) s.calls.push('course');
-        return { lines: [green(`${name} 이제 과목 정보를 course 서비스 API로만 받아요.`)], events: ['svc_config'] };
+        return { lines: [green(`${name} 서비스는 이제 과목 정보를 course 서비스 API(정해진 주문 창구)로만 받아요.`)], events: ['svc_config'] };
       }
       if (!s.dbAccess.includes('course-db')) s.dbAccess.push('course-db');
-      return out(yellow(`${name} 가 course-db 를 직접 읽도록 바꿨어요… 괜찮을까요?`));
+      return out(yellow(`${name} 서비스가 course-db(과목팀 DB)를 직접 읽도록 바꿨어요… 괜찮을까요?`));
     },
   },
 ];

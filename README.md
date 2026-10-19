@@ -176,6 +176,3 @@ npm run e2e                      # Playwright 스모크: 시작 → 인트로 �
 npm --prefix worker run typecheck  # Worker 타입 검사
 ```
 
-## 수업 연결
-
-개념 카드와 장애마다 관련 강의(예: 풀서네 Lec02, 마서프 Lec11)가 적혀 있어요. 게임에서 본 장애를 수업 자료에서 다시 찾아보세요.

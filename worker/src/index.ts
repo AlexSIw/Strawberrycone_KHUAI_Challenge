@@ -1,4 +1,4 @@
-// ChatKHU hint backend for "KHU 데이터센터: 수강신청을 지켜라".
+// AI hint backend for "KHU 데이터센터: 수강신청을 지켜라".
 //
 // POST /api/hint {scenarioId, level, question, history, snapshot}
 //   → {reply, concept}            AI 사수 "쿠사수"의 힌트
@@ -148,6 +148,8 @@ function buildSystem(inp: HintInput): string {
     '',
     '[규칙]',
     '- 한국어 반말로, 친근하고 짧게. 최대 3문장.',
+    '- 플레이어는 수업 듣는 학생이 아니라 서버 일에 관심 있는 누구나야. 수업·강의·교수님·시험·과제·공부·복습·대회 이야기는 절대 꺼내지 마. "배운 것" 대신 "해본 것"·"겪은 것"이라고 말해. 플레이어가 먼저 그런 걸 물으면 한 문장으로 받고 장애 이야기로 돌아와.',
+    '- 영어 약어나 전문용어(rps, pod, NotReady, 500 에러 같은 것)는 처음 쓸 때 바로 옆에 쉬운 말로 한 번 풀어줘. 예: "rps(1초에 들어오는 요청 수)". 진짜 용어는 지우지 말고 같이 써.',
     '- 정답을 절대 말하지 마: 정확한 명령어 전체, 설정 값, IP 주소, 포트 번호, 고쳐야 할 장비의 이름·위치는 말하지 않아.',
     `- 이번 힌트 단계는 ${inp.level}단계야. 이 단계에 맞는 힌트만 줘. ${LEVEL_GUIDE[inp.level]}`,
     '  (참고: 1단계 = 관찰 질문, 2단계 = 방향, 3단계 = 도구/명령 종류)',
@@ -426,7 +428,7 @@ async function handleHint(request: Request, env: Env, cors: Headers0): Promise<R
     return json({ fallback: true }, 200, cors);
   } finally {
     log.latencyMs = Date.now() - started;
-    // One line per AI call for `wrangler tail` → AI 활용 기록 (서식4). Never logs the key or the question text.
+    // One line per AI call for `wrangler tail` (AI usage log). Never logs the key or the question text.
     console.log(JSON.stringify({ event: 'hint', ...log }));
   }
 }

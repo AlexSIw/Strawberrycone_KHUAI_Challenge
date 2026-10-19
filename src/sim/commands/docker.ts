@@ -143,11 +143,11 @@ const RUN_FLAGS_HELP = '쓸 수 있는 옵션: -p, -v, --name, -d, -e, --rm';
 
 function parsePublish(v: string | undefined): [number, number] | string {
   const m = v?.match(/^(?:(\d{1,3}(?:\.\d{1,3}){3}):)?(\d{1,5}):(\d{1,5})(?:\/tcp)?$/);
-  if (!m) return `-p 형식: 호스트포트:컨테이너포트 (예: -p 8080:3000 → 서버의 8080번 문을 컨테이너 안 3000번과 이어요)`;
+  if (!m) return `-p 형식: 바깥(호스트)포트:안쪽(컨테이너)포트 (예: -p 8080:3000 → 서버의 8080번 문을 컨테이너 안 3000번과 이어요)`;
   if (m[1] && m[1] !== '0.0.0.0') {
     return m[1].startsWith('127.')
-      ? `-p ${v}: 127.0.0.1 에 묶으면 그 서버 안에서만 들어올 수 있어요. 바깥(학생)에서 들어오게 하려면 IP 없이 호스트포트:컨테이너포트 로 써요.`
-      : `-p ${v}: 이 게임에서는 IP 없이 호스트포트:컨테이너포트 로 써요.`;
+      ? `-p ${v}: 127.0.0.1 에 묶으면 그 서버 안에서만 들어올 수 있어요. 바깥(학생)에서 들어오게 하려면 IP 없이 바깥포트:안쪽포트 로 써요.`
+      : `-p ${v}: 이 게임에서는 IP 없이 바깥포트:안쪽포트 로 써요.`;
   }
   const hp = parseInt(m[2], 10);
   const cp = parseInt(m[3], 10);
@@ -156,12 +156,12 @@ function parsePublish(v: string | undefined): [number, number] | string {
 }
 
 function parseVolume(v: string | undefined): [string, string] | string {
-  const usage = '-v 형식: 볼륨이름:/컨테이너경로 (예: -v mydata:/data)';
+  const usage = '-v 형식: 볼륨이름:/컨테이너 안 폴더 (예: -v mydata:/data)';
   const m = v?.match(/^([^:]+):([^:]+)(?::(?:rw|ro))?$/);
   if (!m) return usage;
   const [, src, dst] = m;
   if (!NAME_RE.test(src) && !/^\.?\/[\w./-]*$/.test(src)) return `${usage} — 볼륨 이름에는 영문·숫자·_ . - 만 써요.`;
-  if (!/^\/[\w./-]*$/.test(dst)) return `${usage} — 컨테이너 경로는 / 로 시작하는 절대 경로예요.`;
+  if (!/^\/[\w./-]*$/.test(dst)) return `${usage} — 컨테이너 안 폴더는 / 로 시작하는 전체 경로(절대 경로)로 써요.`;
   return [src, dst.length > 1 ? dst.replace(/\/+$/, '') : dst];
 }
 
@@ -196,11 +196,11 @@ function parseRun(raw: string[]): RunOpts | string {
       if (rest.some((x) => x.startsWith('-'))) {
         return `이미지 이름 뒤에 쓴 "${rest.join(' ')}" 는 컨테이너 안에서 실행할 명령으로 넘어가요. docker 옵션은 이미지 이름 앞에 써요.`;
       }
-      if (!IMAGE_RE.test(a)) return `docker: invalid reference format: ${a} (이미지 이름은 소문자로, 이름:태그 형식)`;
+      if (!IMAGE_RE.test(a)) return `docker: invalid reference format: ${a} (이미지 이름은 소문자로, 이름:태그(버전) 형식)`;
       return { ...o, image: a };
     }
   }
-  return `사용법: docker run [-p 호스트포트:컨테이너포트] [-v 볼륨:/경로] [--name 이름] <이미지>`;
+  return `사용법: docker run [-p 바깥포트:안쪽포트] [-v 볼륨:/폴더] [--name 이름] <이미지>`;
 }
 
 /** Container commands (rm/stop/start/…) only make sense on a server. */
@@ -230,8 +230,8 @@ export const dockerCommands: Command[] = [
       const args = splitFlags(raw, 't');
       const t = args.findIndex((a) => a === '-t' || a === '--tag');
       const tag = t >= 0 ? args[t + 1] : undefined;
-      if (!tag || tag.startsWith('-')) return err('사용법: docker build -t <이미지:태그> .   (-t 로 이미지 이름을 붙여요)');
-      if (!IMAGE_RE.test(tag)) return err(`docker: invalid reference format: ${tag} (이미지 이름은 소문자로, 이름:태그 형식)`);
+      if (!tag || tag.startsWith('-')) return err('사용법: docker build -t <이미지:태그> .   (-t 로 이미지 이름과 태그(버전 이름표, 예: 1.0)를 붙여요)');
+      if (!IMAGE_RE.test(tag)) return err(`docker: invalid reference format: ${tag} (이미지 이름은 소문자로, 이름:태그(버전) 형식)`);
       const name = repo(tag);
       const recipe = own(RECIPES, name);
       if (!recipe || own(w.flags, `dockerfile:${name}`) !== 'ok') {
@@ -309,7 +309,7 @@ export const dockerCommands: Command[] = [
     aliases: ['docker container run'],
     maxStage: 5,
     minStage: 5,
-    usage: 'docker run [-p 호스트포트:컨테이너포트] [-v 볼륨:/경로] [--name 이름] <이미지>',
+    usage: 'docker run [-p 바깥포트:안쪽포트] [-v 볼륨:/폴더] [--name 이름] <이미지>',
     summary: '이미지로 컨테이너(한 끼) 실행',
     run(args, { w, host }) {
       const bad = dockerHost(w, host);
@@ -526,7 +526,7 @@ export const dockerCommands: Command[] = [
     aliases: ['python3 --version', 'python -V'],
     minStage: 5,
     usage: 'python --version',
-    summary: '이 서버에 설치된 Python 버전',
+    summary: '이 서버에 설치된 Python(앱을 만든 프로그래밍 언어) 버전',
     run(_a, { w, host }) {
       const h = own(w.docker?.hosts, host);
       return out(`Python ${h?.python ?? '3.12.4'}`);
@@ -538,7 +538,7 @@ export const dockerCommands: Command[] = [
     aliases: ['cat deploy.log'],
     minStage: 5,
     usage: 'deploy log',
-    summary: '손으로 한 배포 기록 보기',
+    summary: '손으로 한 배포(앱 설치·실행) 기록 보기',
     run(_a, { w, host }) {
       const m = w.docker?.manualDeploy;
       if (!m || m.host !== host) return out(dim('이 서버에는 배포 기록이 없어요.'));

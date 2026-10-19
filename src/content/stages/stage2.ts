@@ -34,7 +34,7 @@ const scenarios: Scenario[] = [
     solution: 'DNS 장부에 db를 등록한다: dns add db 10.0.1.20',
     solutionSteps: [{ cmd: 'dns add db 10.0.1.20', host: 'ops' }],
     concept: 'dns',
-    lesson: '컴퓨터는 이름이 아니라 IP로 찾아가요. 이름 → IP 변환은 DNS(전화번호부)의 일!',
+    lesson: '컴퓨터는 이름이 아니라 숫자 주소(IP)로 찾아가요. 이름을 숫자 주소로 바꿔주는 건 DNS(전화번호부)의 일!',
   },
   {
     id: 's2-conflict',
@@ -61,7 +61,7 @@ const scenarios: Scenario[] = [
     hints: [
       'ping db를 여러 번 해봐. 응답이 들쭉날쭉하지? 왜 어떤 건 오고 어떤 건 안 올까?',
       '같은 도로명 주소를 두 집이 쓰면 택배가 어디로 갈까? 서버들의 주소를 하나씩 확인해봐.',
-      '주소를 손으로 박아둔 서버가 있는지 찾아봐. 네트워크로 안 들어가지는 서버는 랙 앞에 가서 콘솔로 직접 열 수 있어. 그 서버는 안내데스크에서 자동으로 받게 바꾸는 게 좋아.',
+      '주소를 손으로 박아둔 서버가 있는지 찾아봐. 네트워크로 안 들어가지는 서버는 랙 앞에 가서 콘솔(장비에 직접 붙은 화면·키보드)로 열 수 있어. 그 서버는 안내데스크에서 자동으로 받게 바꾸는 게 좋아.',
     ],
     // The culprit's name in English and Korean, and where it sits (rack 2).
     bannedPhrases: ['ip set dhcp', 'spare', '예비 서버', '예비서버', 'rack2', '랙2', '랙 2', '2번 랙'],
@@ -104,16 +104,16 @@ const scenarios: Scenario[] = [
 export const stage2: StageDef = {
   id: 2,
   title: '서로 대화하게 만들기',
-  subtitle: 'L2/L3 · IP, DHCP, DNS, 게이트웨이',
+  subtitle: '주소(IP)와 이름(DNS)으로 서버끼리 연결하기',
   topics: ['MAC · 스위치', 'IP 주소 · 서브넷', 'DHCP · DNS', '게이트웨이 · 라우터', 'ping'],
   intro: [
     { who: 'lion', text: '케이블은 다 꽂았는데… 서버들이 서로 연락을 못 해요.', mood: 'worried' },
     { who: 'mentor', text: '도로는 깔렸는데 집 주소가 없는 상태야. 주소(IP)가 있어야 편지를 보내지.' },
-    { who: 'mentor', text: '관제실 관리 PC(책상)에서 터미널을 열어봐. help를 치면 쓸 수 있는 명령어가 나와.' },
-    { who: 'system', text: '목표: 주소를 나눠주는 DHCP를 켜고, 서버끼리 ping이 되게 하자.' },
+    { who: 'mentor', text: '관제실 관리 PC(책상)에서 터미널(글자로 명령을 치는 창)을 열어봐. help를 치면 쓸 수 있는 명령어가 나와.' },
+    { who: 'system', text: '목표: 주소를 자동으로 나눠주는 DHCP를 켜고, 서버끼리 ping(상대에게 "들려?" 하고 신호 보내기)이 되게 하자.' },
   ],
   outro: [
-    { who: 'mentor', text: 'MAC은 문패, IP는 도로명 주소, DNS는 전화번호부, 게이트웨이는 건물 밖으로 나가는 문. 기억나지?' },
+    { who: 'mentor', text: 'MAC은 문패, IP는 도로명 주소, DNS는 전화번호부, 게이트웨이는 건물 밖으로 나가는 문. 이 넷만 있으면 어디든 찾아가.' },
     { who: 'boss', text: '좋아, 이제 진짜 수강신청 서비스를 열어보자!' },
   ],
   initialWorld: cabledWorld,
@@ -145,7 +145,7 @@ export const stage2: StageDef = {
     monitor: { kind: 'dashboard' },
     mentor: { kind: 'mentor' },
     desk: { kind: 'terminal' },
-    board: { kind: 'inspect', text: '네트워크: 10.0.1.0/24 · 라우터(게이트웨이) 10.0.1.1 · DHCP 범위 .10~.30' },
+    board: { kind: 'inspect', text: '네트워크: 10.0.1.0/24 (10.0.1.로 시작하는 주소) · 라우터(게이트웨이) 10.0.1.1 · DHCP가 나눠주는 주소 10.0.1.10~10.0.1.30' },
   },
   health: (w) => {
     const services = Object.fromEntries(SERVERS.map((id) => [id, serverStatus(w, id)]));

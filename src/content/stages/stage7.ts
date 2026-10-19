@@ -30,7 +30,7 @@ const scenarios: Scenario[] = [
     id: 's7-traffic',
     stage: 7,
     title: '본 수강신청 트래픽',
-    alert: '10:00 본 수강신청 오픈!!! 접속자 12,000 rps!',
+    alert: '10:00 본 수강신청 오픈!!! 1초에 요청 12,000건(12,000 rps)이 쏟아져요!',
     severity: 'critical',
     room: 'noc',
     trigger: { type: 'stageStart', delay: 5 },
@@ -39,9 +39,9 @@ const scenarios: Scenario[] = [
     },
     check: (w) => readyPods(w.k8s!, 'enroll').length * POD_RPS >= w.traffic.rps,
     hints: [
-      '접속자(rps)가 아까보다 얼마나 늘었어? 그동안 신청 pod 수는 그대로야?',
+      '1초에 들어오는 요청 수(rps)가 아까보다 얼마나 늘었어? 그동안 신청 pod 수는 그대로야?',
       'pod 하나가 1000 rps쯤 처리해. Stage 6에서 2차 대란을 어떻게 버텼지?',
-      '원하는 개수를 접속자에 맞게 늘려봐. 노드에 자리가 없으면 pod가 Pending(NODE <none>)에 머무를 수도 있어.',
+      '원하는 개수를 접속자에 맞게 늘려봐. 노드에 자리가 없으면 pod가 Pending(자리 날 때까지 대기, NODE <none>)에 머무를 수도 있어.',
     ],
     bannedPhrases: ['scale enroll 12', '12개', '--replicas', 'deploy/enroll'],
     solution: 'scale enroll 12 (노드에 자리가 없어 pod가 Pending에 머물면, 먼저 쓰러진 노드를 살린다)',
@@ -54,7 +54,7 @@ const scenarios: Scenario[] = [
     stage: 7,
     title: '노드 n3 NotReady',
     // Symptom only: telling apart "too hot" from "can't reach it" is the player's job (hint 1).
-    alert: '노드 n3가 갑자기 NotReady! 그 위에 있던 pod들이 사라졌어요…',
+    alert: '노드 n3가 갑자기 NotReady(일할 수 없는 상태)! 그 위에 있던 pod들이 사라졌어요…',
     severity: 'critical',
     // Where the symptom shows (rack3's node), not where the fix is.
     room: 'server',
@@ -65,14 +65,14 @@ const scenarios: Scenario[] = [
     check: (w) => !w.cables.c_n3.broken && w.k8s!.nodes.n3.ready,
     hints: [
       '쓰러진 건 n3 하나뿐이야. n3랑 멀쩡한 n1·n2·n4는 뭐가 달라?',
-      '"nodes" 명령으로 n3 온도부터 확인해봐. 온도가 멀쩡하다면 n3로 가는 "길"을 의심해봐. Stage 1에서 배운 L1!',
+      '"nodes" 명령으로 n3 온도부터 확인해봐. 온도가 멀쩡하다면 n3로 가는 "길"(장비끼리 실제로 이어진 물리 연결, L1)을 의심해봐. Stage 1 기억나?',
       '네트워크실 스위치에서 n3 케이블 상태를 확인해봐.',
     ],
     bannedPhrases: ['케이블을 교체', '케이블 교체', '케이블로 교체', '케이블로 바꿔', '새 케이블'],
     solution: '네트워크실 스위치에서 n3 케이블을 교체한다.',
     solutionSteps: [{ label: 'n3 케이블 교체', action: (w) => replaceCable(w, 'c_n3') }],
     concept: 'osi',
-    lesson: '쿠버네티스 시대에도 케이블 한 줄이 노드를 쓰러뜨려요. 문제는 L1부터!',
+    lesson: '쿠버네티스 시대에도 케이블 한 줄이 노드를 쓰러뜨려요. 점검은 맨 아래층, 물리 연결(L1)부터!',
   },
   {
     id: 's7-cooling',
@@ -135,7 +135,7 @@ const scenarios: Scenario[] = [
       { label: 'CRAC 수리', action: repairCrac },
     ],
     concept: 'reschedule',
-    lesson: '쿠버네티스도 살아 있는 노드와 넉넉한 pod가 있어야 버텨요. 장애를 쌓아두면 학생 피해가 커져요. 피해가 큰 것부터 빨리 끊는 게 triage!',
+    lesson: '쿠버네티스도 살아 있는 노드와 넉넉한 pod가 있어야 버텨요. 장애를 쌓아두면 학생 피해가 커져요. 피해가 큰 것부터 골라 먼저 막는 것, 그게 triage(우선순위 판단)예요!',
   },
 ];
 
@@ -143,7 +143,7 @@ export const stage7: StageDef = {
   id: 7,
   title: '수강신청 본게임',
   subtitle: '복합 장애 + 엔딩',
-  topics: ['우선순위 판단 (triage)', '전체 복습', '장애 보고서 (postmortem)'],
+  topics: ['우선순위 판단 (triage)', '지금까지 쓴 기술 총동원', '장애 보고서 (postmortem)'],
   intro: [
     { who: 'boss', text: '드디어 본 수강신청이다. 10시 정각에 열린다.' },
     { who: 'mentor', text: '2분 30초 동안 버티면 돼. 여러 문제가 한꺼번에 올 수 있어. 대시보드를 보고 뭐부터 고칠지 정해.' },
@@ -153,8 +153,8 @@ export const stage7: StageDef = {
   outro: [
     { who: 'boss', text: '수강신청 종료! 끝까지 버텼다. 수고했다!' },
     { who: 'mentor', text: '처음엔 케이블 하나 꽂는 것도 몰랐는데, 이제 쿠버네티스 클러스터를 운영하네. 진짜 엔지니어가 됐어.' },
-    { who: 'lion', text: '다음 학기도 맡겨주세요!', mood: 'happy' },
-    { who: 'mentor', text: '…그런데 다음 학기엔 보안팀이 너를 찾고 있다던데?' },
+    { who: 'lion', text: '다음 수강신청도 맡겨주세요!', mood: 'happy' },
+    { who: 'mentor', text: '…그런데 다음엔 보안팀이 너를 찾고 있다던데?' },
   ],
   initialWorld: () => {
     const w = k8sWorld({ enrollReplicas: 4 });
@@ -188,7 +188,7 @@ export const stage7: StageDef = {
     patch: { kind: 'cable', mode: 'repair' },
     router: { kind: 'inspect', text: '정상.' },
     pdu: { kind: 'inspect', text: '전원 정상.' },
-    ups: { kind: 'inspect', text: 'UPS 정상.' },
+    ups: { kind: 'inspect', text: 'UPS(비상 배터리) 정상.' },
     crac: { kind: 'repair', target: 'crac' },
     monitor: { kind: 'dashboard' },
     mentor: { kind: 'mentor' },

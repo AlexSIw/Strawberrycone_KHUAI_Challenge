@@ -33,6 +33,7 @@
 .end-cert {
   position: relative;
   z-index: 1;
+  margin-bottom: 30px;
   width: min(820px, 100%);
   padding: 10px;
   background: #f6ead6;

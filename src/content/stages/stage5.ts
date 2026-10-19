@@ -95,8 +95,8 @@ const scenarios: Scenario[] = [
     check: (w) => !!w.docker?.containers.some((c) => c.running && c.host === 'srv-new' && isEnroll(c)),
     hints: [
       '기존 서버에선 잘 되는 앱이 새 서버에선 안 돼. 두 서버는 뭐가 다를까?',
-      '새 서버의 배포 기록을 봐. 서버마다 설치된 프로그램 버전이 달라. 매번 맞춰 깔기보단, 앱과 실행 환경을 통째로 포장하면 어떨까? (밀키트처럼)',
-      '설계 보드에서 레시피(Dockerfile)를 완성하고 → 이미지로 만들고 → 냉동고(레지스트리)에 올린 뒤 → 새 서버에서 꺼내 실행해봐.',
+      '새 서버의 배포(앱 설치) 기록을 봐. 서버마다 설치된 프로그램 버전이 달라. 매번 맞춰 깔기보단, 앱과 실행 환경을 통째로 포장하면 어떨까? (밀키트처럼)',
+      '설계 보드에서 레시피(Dockerfile)를 완성하고 → 밀키트 원본(이미지)으로 만들고 → 냉동고(레지스트리)에 올린 뒤 → 새 서버에서 꺼내 실행해봐.',
     ],
     bannedPhrases: ['docker build -t enroll', 'docker push enroll', 'docker run'],
     solution: 'Dockerfile 작성 → docker build -t enroll:1.0 . → docker push enroll:1.0 → ssh srv-new → docker run -p 80:8000 enroll:1.0',
@@ -107,13 +107,13 @@ const scenarios: Scenario[] = [
       { cmd: 'docker run -p 80:8000 enroll:1.0', host: 'srv-new' },
     ],
     concept: 'container',
-    lesson: '서버마다 환경이 달라서(configuration drift) 실패했어요. 이미지로 묶으면 어디서든 똑같이 실행돼요!',
+    lesson: '서버마다 설치 상태가 조금씩 달라져서 실패했어요. 앱과 환경을 이미지로 묶어 컨테이너로 실행하면 어디서든 똑같이 돌아가요!',
   },
   {
     id: 's5-port',
     stage: 5,
     title: '컨테이너는 떴는데 접속 불가',
-    alert: '새로 띄운 신청 앱 컨테이너는 Up 상태인데… 학생 요청이 하나도 안 들어가요.',
+    alert: '새로 띄운 신청 앱 컨테이너는 실행 중(Up)인데… 학생 요청이 하나도 안 들어가요.',
     severity: 'warning',
     room: 'noc',
     optional: true,
@@ -121,24 +121,24 @@ const scenarios: Scenario[] = [
     inject: () => {},
     check: enrollContainerReachable,
     hints: [
-      '컨테이너 목록의 PORTS 칸을 봐. 다른 서버의 PORTS 칸, 그리고 앱 로그(docker logs)가 말하는 번호와 비교해봐.',
-      '컨테이너는 잠긴 방이야. 학생들이 오는 길가 문(웹 기본 포트)과, 앱이 방 안에서 기다리는 창구 번호를 이어줘야 손님이 들어와.',
+      '컨테이너 목록(docker ps)의 PORTS 칸을 봐. 포트는 서버로 들어오는 문 번호야. 다른 서버의 PORTS 칸, 그리고 앱 로그(앱이 남긴 기록, docker logs)가 말하는 번호와 비교해봐.',
+      '컨테이너는 잠긴 방이야. 학생들이 오는 길가 문(웹 기본 포트: 주소에 번호를 안 붙이면 가는 문)과, 앱이 방 안에서 기다리는 창구 번호를 이어줘야 손님이 들어와.',
       '컨테이너를 지우고, 바깥 문과 안쪽 창구를 잇는 실행 옵션을 붙여서 다시 실행해봐.',
     ],
     bannedPhrases: ['-p 80:8000', '80->8000', '80 -> 8000', '80→8000', '80 → 8000', '80번과 8000번', '80번을 8000번', '80번에서 8000번', '80번 문과 8000번'],
-    solution: '포트 매핑이 없거나 안쪽 번호가 앱 창구(8000)와 달랐다. docker rm -f enroll → docker run -p 80:8000 enroll:1.0',
+    solution: '포트 매핑(바깥 문과 안쪽 창구 잇기)이 없거나 안쪽 번호가 앱 창구(8000)와 달랐다. docker rm -f enroll → docker run -p 80:8000 enroll:1.0',
     solutionSteps: [
       { cmd: 'docker rm -f enroll', host: 'srv-new' },
       { cmd: 'docker run -p 80:8000 enroll:1.0', host: 'srv-new' },
     ],
     concept: 'portMapping',
-    lesson: 'EXPOSE는 "안쪽 창구 번호" 메모일 뿐! -p 80:8000 으로 바깥 문과 이어야 들어와요.',
+    lesson: 'Dockerfile의 EXPOSE는 "안쪽 창구 번호" 메모일 뿐! -p 80:8000 으로 바깥 문과 이어야 들어와요.',
   },
   {
     id: 's5-volume',
     stage: 5,
     title: '데이터 증발',
-    alert: 'DB 업데이트 스크립트가 DB 컨테이너를 지우고 새로 만들었는데… 수강신청 내역이 전부 0건이에요!!! 학생들 난리 났어요!',
+    alert: 'DB(신청 기록 창고)를 업데이트하는 자동 작업(스크립트)이 DB 컨테이너를 지우고 새로 만들었는데… 수강신청 내역이 전부 0건이에요!!! 학생들 난리 났어요!',
     severity: 'critical',
     room: 'noc',
     trigger: { type: 'after', scenario: 's5-drift', delay: 8 },
@@ -159,7 +159,7 @@ const scenarios: Scenario[] = [
     },
     hints: [
       'DB 컨테이너를 지우고 새로 만들었더니 데이터가 사라졌어. 데이터는 원래 어디에 적혀 있었을까?',
-      'DB 서버(srv-db)에 접속해서 DB 로그를 봐. 컨테이너 안(쓰기 레이어)에 적은 데이터는 그 컨테이너를 지우면 같이 사라져. 컨테이너를 새로 만들어도 남는 공간이 필요해.',
+      'DB 서버(srv-db)에 접속해서 DB 로그(DB가 남긴 기록)를 봐. 컨테이너 안에 적은 데이터는 그 컨테이너를 지우면 같이 사라져. 컨테이너를 새로 만들어도 남는 공간이 필요해.',
       '식당 전용 사물함 같은 저장소(볼륨)를 DB가 데이터를 쓰는 폴더(로그의 data dir)에 붙여서 DB 컨테이너를 새로 실행해봐. 신청 앱이 찾아오는 포트도 그대로 열어줘야 해. 백업은 빈 사물함으로 복원돼.',
     ],
     bannedPhrases: [
@@ -178,19 +178,19 @@ const scenarios: Scenario[] = [
       { cmd: 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8', host: 'srv-db' },
     ],
     concept: 'volume',
-    lesson: '컨테이너 안(쓰기 레이어)은 컨테이너를 지우면 같이 사라지는 임시 메모장! (재시작은 괜찮아요) 중요한 데이터는 볼륨(사물함)에 저장해야 컨테이너를 새로 만들어도 남아요.',
+    lesson: '컨테이너 안은 컨테이너를 지우면 같이 사라지는 임시 메모장! (재시작은 괜찮아요) 중요한 데이터는 볼륨(사물함)에 저장해야 컨테이너를 새로 만들어도 남아요.',
   },
 ];
 
 export const stage5: StageDef = {
   id: 5,
   title: '"내 컴퓨터에선 되는데…"',
-  subtitle: 'Container · Docker',
+  subtitle: '앱을 통째로 포장하는 컨테이너(Docker)',
   topics: ['VM vs 컨테이너', '이미지 · Dockerfile · 레지스트리', '포트 매핑 (-p)', '볼륨'],
   intro: [
     { who: 'boss', text: '2차 수강신청 대비! 신청 서버를 한 대 더 늘리기로 했어. 동료가 손으로 설치하는 중이야.' },
     { who: 'lion', text: '이번엔 설치 매뉴얼대로 했으니 괜찮겠죠?', mood: 'happy' },
-    { who: 'mentor', text: '…배포 끝나면 꼭 확인해봐. 새 서버(srv-new)의 배포 기록부터.' },
+    { who: 'mentor', text: '…설치(배포) 끝나면 꼭 확인해봐. 새 서버(srv-new)의 배포 기록부터.' },
   ],
   outro: [
     { who: 'lion', text: '서버마다 설치 상태가 달라서 안 됐던 거예요. 밀키트처럼 통째로 포장하니까 어디서든 똑같이 돌아가네요!', mood: 'happy' },
@@ -201,7 +201,7 @@ export const stage5: StageDef = {
   objectives: [
     { id: 'log', text: '새 서버(srv-new)의 배포 기록 확인하기 (ssh srv-new → deploy log)', spot: 'desk', done: (_w, c) => c.events.includes('deploy_log_failed') },
     { id: 'recipe', text: '관제실 설계 보드에서 Dockerfile(레시피 카드) 완성', spot: 'board', done: (w) => w.flags['dockerfile:enroll'] === 'ok', after: ['log'] },
-    { id: 'image', text: '관리 PC에서 이미지 빌드 → 레지스트리에 push', spot: 'desk', done: (w) => !!w.docker?.registry.some((i) => i.startsWith('enroll:')), after: ['recipe'] },
+    { id: 'image', text: '관리 PC에서 이미지 만들기(build) → 레지스트리(이미지 보관소)에 올리기(push)', spot: 'desk', done: (w) => !!w.docker?.registry.some((i) => i.startsWith('enroll:')), after: ['recipe'] },
     { id: 'run', text: 'srv-new에서 컨테이너 실행', spot: 'desk', done: (w) => !!w.docker?.containers.some((c) => c.host === 'srv-new' && c.running && isEnroll(c)), after: ['image'] },
     {
       id: 'open',
@@ -223,7 +223,7 @@ export const stage5: StageDef = {
     router: { kind: 'inspect', text: '정상.' },
     patch: { kind: 'inspect', text: '정상.' },
     pdu: { kind: 'inspect', text: '전원 정상.' },
-    ups: { kind: 'inspect', text: 'UPS 정상.' },
+    ups: { kind: 'inspect', text: 'UPS(비상 배터리) 정상.' },
     crac: { kind: 'inspect', text: '냉각 정상.' },
     monitor: { kind: 'dashboard' },
     mentor: { kind: 'mentor' },

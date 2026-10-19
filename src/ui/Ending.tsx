@@ -91,7 +91,7 @@ export function Ending() {
           </div>
 
           <section className="end-recap">
-            <h2>이 과정에서 배운 것</h2>
+            <h2>지금까지 익힌 것</h2>
             <ol>
               {STAGES.map((st) => (
                 <li key={st.id}>
@@ -122,7 +122,7 @@ export function Ending() {
       {/* Sticky so the next step is visible without scrolling past the certificate */}
       <div className="end-actions">
         <p className="end-next">
-          {perfect ? '모든 스테이지 별 3개! 완벽한 수료예요 🎓' : '축하해요! 별 3개를 못 받은 스테이지는 스테이지 선택에서 다시 도전할 수 있어요.'}
+          {perfect ? '모든 스테이지 별 3개! 완벽한 수료예요 🏆' : '축하해요! 별 3개를 못 받은 스테이지는 스테이지 선택에서 다시 도전할 수 있어요.'}
         </p>
         <button className="btn primary end-btn" onClick={() => gameStore.getState().goTitle()}>
           처음 화면으로

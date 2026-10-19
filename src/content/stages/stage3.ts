@@ -34,11 +34,11 @@ const scenarios: Scenario[] = [
     check: (w) => !!w.web?.running && w.web.port === 80,
     hints: [
       '학생 화면엔 "느려요"가 아니라 "거부됐어요"래. 서버는 켜져 있는데 왜 거부했을까? 서버 쪽 상태부터 직접 볼래?',
-      '학생들은 어느 "호실 번호"로 찾아오고 있을까? 웹은 보통 80번 문으로 들어와. 서버는 지금 몇 번 문 앞에서 기다리고 있는지 확인해봐.',
+      '학생들은 어느 "호실 번호"(포트)로 찾아오고 있을까? 웹은 보통 80번 문으로 들어와. 서버는 지금 몇 번 문 앞에서 기다리고 있는지 확인해봐.',
       'web 서버에서 열려 있는 포트를 보는 명령어와, 서버 설정을 바꾸는 명령어가 help에 있어.',
     ],
     bannedPhrases: ['server set port 80', '8080'],
-    solution: '서버가 8080번 포트에서 듣고 있다. ssh web → server set port 80',
+    solution: '서버가 8080번 포트에서 기다리고(listen) 있다. ssh web → server set port 80',
     solutionSteps: [{ cmd: 'server set port 80', host: 'web' }],
     concept: 'port',
     lesson: 'IP가 건물 주소라면 포트는 호실 번호. 학생(80)과 서버(8080)가 다른 문 앞에 있었어요.',
@@ -47,7 +47,7 @@ const scenarios: Scenario[] = [
     id: 's3-thread',
     stage: 3,
     title: '페이지가 너무 느림',
-    alert: '베타 테스터가 300명으로 늘었어요. 페이지가 한참 걸리다 타임아웃이에요…',
+    alert: '베타 테스터가 300명으로 늘었어요. 페이지가 한참 걸리다 타임아웃(기다리다 끊김)이에요…',
     severity: 'critical',
     room: 'noc',
     trigger: { type: 'after', scenario: 's3-port', delay: 8 },
@@ -61,10 +61,10 @@ const scenarios: Scenario[] = [
       '요청마다 도와줄 사람(스레드)을 따로 붙이는 설정이 있어.',
     ],
     bannedPhrases: ['server set threads multi', 'threads multi'],
-    solution: '서버가 동기(single thread) 방식이라 한 번에 한 명만 처리한다. ssh web → server set threads multi',
+    solution: '서버가 한 번에 한 명씩만 처리하는 방식(single thread, 직원 한 명)이다. ssh web → server set threads multi',
     solutionSteps: [{ cmd: 'server set threads multi', host: 'web' }],
     concept: 'socket',
-    lesson: '직원 한 명(동기 서버)은 손님이 몰리면 줄이 끝없이 길어져요. 연결마다 스레드를 붙이면 해결!',
+    lesson: '직원이 한 명뿐인 서버(single thread)는 손님이 몰리면 줄이 끝없이 길어져요. 연결마다 도우미(스레드)를 붙이면 해결!',
   },
   {
     id: 's3-404',
@@ -80,9 +80,9 @@ const scenarios: Scenario[] = [
     },
     check: (w) => !!w.notice && !!w.web?.routes.includes(w.notice.url),
     hints: [
-      '모든 학생이 404야, 일부만이야? 되는 학생과 안 되는 학생은 어떻게 들어왔을까?',
-      '404는 "그런 메뉴는 없어요"라는 뜻이야. 공지 링크로 온 학생만 문제라면, 서버가 가진 경로 목록과 공지의 경로를 비교해봐.',
-      '공지를 보는 명령어와, 로봇 손님(curl)으로 경로를 직접 시험해보는 방법이 있어.',
+      '모든 학생이 404(Not Found)야, 일부만이야? 되는 학생과 안 되는 학생은 어떻게 들어왔을까?',
+      '404는 "그런 메뉴는 없어요"라는 뜻이야. 공지 링크로 온 학생만 문제라면, 서버가 가진 경로(주소에서 / 뒤에 붙는 부분) 목록과 공지의 경로를 비교해봐.',
+      '공지를 보는 명령어와, 로봇 손님(curl)으로 경로를 하나씩 직접 찔러보는 방법이 있어.',
     ],
     // The typo path is the whole diagnosis. A leading/trailing space marks a word edge for the mentor's guard, so
     // ' enrol ' catches '/enrol로', '`/enrol`', '/enrol.', a bare 'enrol이라고' … but never the real '/enroll'.
@@ -96,19 +96,19 @@ const scenarios: Scenario[] = [
     solution: '공지에 오타 경로(/enrol)가 적혀 있다. notice set /enroll',
     solutionSteps: [{ cmd: 'notice set /enroll', host: 'ops' }],
     concept: 'http',
-    lesson: '200은 "여기 있어요", 404는 "그런 메뉴 없어요". 상태 코드만 봐도 어디가 문제인지 보여요.',
+    lesson: '200은 "여기 있어요", 404는 "그런 메뉴 없어요". 응답에 붙는 세 자리 번호(상태 코드)만 봐도 어디가 문제인지 보여요.',
   },
 ];
 
 export const stage3: StageDef = {
   id: 3,
   title: '서비스 오픈',
-  subtitle: 'L4 · 소켓 · HTTP',
+  subtitle: '웹 서비스를 열고 요청·응답 보기',
   topics: ['포트', 'TCP vs UDP · 3-way handshake', '소켓 · 멀티스레드', 'HTTP · 상태 코드 · curl'],
   intro: [
     { who: 'boss', text: '드디어 수강신청 앱이 왔다! 기능이 전부 한 프로그램에 들어 있는 "모놀리식" 앱이야.' },
     { who: 'mentor', text: 'web 서버에 접속해서 앱을 켜고, 로봇 손님(curl)으로 직접 주문해봐. 주문서(요청)와 번호표(응답)를 보게 될 거야.' },
-    { who: 'lion', text: '베타 테스터 학생들도 기다리고 있대요. 가보자!', mood: 'happy' },
+    { who: 'lion', text: '먼저 써보기로 한 학생들(베타 테스터)도 기다리고 있대요. 가보자!', mood: 'happy' },
   ],
   outro: [
     { who: 'mentor', text: '포트는 호실 번호, TCP는 번호 매긴 등기우편, 소켓은 프로그램의 전화기. HTTP는 주문서와 번호표!' },
@@ -118,15 +118,15 @@ export const stage3: StageDef = {
   // networkedWorld: a handful of beta testers, no notice posted yet — each later problem arrives with its incident.
   initialWorld: networkedWorld,
   objectives: [
-    { id: 'start', text: 'web 서버에 접속해 수강신청 앱 실행하기 (ssh web → server start)', spot: 'desk', done: (w) => !!w.web?.running },
+    { id: 'start', text: 'web 서버에 원격 접속해 수강신청 앱 실행하기 (ssh web → server start)', spot: 'desk', done: (w) => !!w.web?.running },
     {
       id: 'curl',
-      text: 'curl로 /enroll 페이지 직접 요청해보기 (200 OK 받기)',
+      text: 'curl로 /enroll 페이지 직접 요청해보기 (정상 응답 "200 OK" 받기)',
       spot: 'desk',
       done: (_w, c) => c.events.includes('curl:200:/enroll'),
       after: ['start'],
       concept: 'tcp',
-      lesson: 'curl -v로 보면 요청 전에 SYN → SYN-ACK → ACK 인사(3-way handshake)를 먼저 나눠요. 그다음 GET /enroll 주문서가 가고 200 OK가 돌아와요.',
+      lesson: 'curl -v로 자세히 보면, TCP(순서와 도착을 챙기는 배달 방식)는 요청 전에 SYN → SYN-ACK → ACK 세 번 인사(3-way handshake)를 먼저 나눠요. 그다음 "GET /enroll"(이 페이지 주세요) 주문서가 가고 200 OK(여기 있어요)가 돌아와요.',
     },
   ],
   scenarios,
@@ -144,7 +144,7 @@ export const stage3: StageDef = {
     monitor: { kind: 'dashboard' },
     mentor: { kind: 'mentor' },
     desk: { kind: 'terminal' },
-    board: { kind: 'inspect', text: 'TCP 3-way handshake: SYN("얘기할래?") → SYN-ACK("응, 너도?") → ACK("응!")' },
+    board: { kind: 'inspect', text: 'TCP 연결 인사(3-way handshake): SYN("얘기할래?") → SYN-ACK("응, 너도?") → ACK("응!")' },
   },
   health: (w) => {
     const r = webHealth(w);

@@ -52,11 +52,13 @@ export const netCommands: Command[] = [
       const up = d.ports.some((p) => linkUp(w, host, p));
       // The router sits on both sides (inside network and internet), so it has no gateway of its own.
       const gw = d.kind === 'router' ? dim('(라우터 자신 · 인터넷과 직접 연결)') : (a.gw ?? red('(없음)'));
+      const mode = d.l3?.mode;
+      const modeNote = mode === 'dhcp' ? dim('  (자동으로 받은 주소)') : mode === 'static' ? dim('  (손으로 정한 고정 주소)') : '';
       return out(
-        `${bold('eth0')}: link ${up ? green('UP') : red('DOWN')}`,
-        `    inet    ${a.ip ? `${a.ip}/${a.mask}` : red('(주소 없음)')}`,
-        `    gateway ${gw}`,
-        `    mode    ${d.l3?.mode ?? '-'}`,
+        `${bold('eth0')}: link ${up ? green('UP') : red('DOWN')}${dim('  (케이블 연결 상태)')}`,
+        `    inet    ${a.ip ? `${a.ip}/${a.mask}` : red('(주소 없음)')}${dim('  (이 장비의 IP 주소)')}`,
+        `    gateway ${gw}${d.kind === 'router' ? '' : dim('  (밖으로 나가는 문)')}`,
+        `    mode    ${mode ?? '-'}${modeNote}`,
       );
     },
   },
@@ -65,7 +67,7 @@ export const netCommands: Command[] = [
     maxStage: 3,
     minStage: 2,
     usage: 'ip set dhcp | ip set static <ip> | ip set gw <ip>',
-    summary: 'IP를 DHCP로 받거나, 고정 IP·게이트웨이를 직접 설정',
+    summary: 'IP를 DHCP로 자동으로 받거나, 고정 IP·게이트웨이(밖으로 나가는 문)를 직접 설정',
     run(args, { w, host }) {
       const bad = requireL3(host, w);
       if (bad) return bad;
@@ -141,7 +143,7 @@ export const netCommands: Command[] = [
         case 'link':
         case 'gateway':
           for (let i = 0; i < 3; i++) lines.push(red(`Request timeout for icmp_seq ${i}`));
-          lines.push(`--- ${target} ping statistics ---`, red('3 packets transmitted, 0 received, 100% packet loss'));
+          lines.push(`--- ${target} ping statistics ---`, red('3 packets transmitted, 0 received, 100% packet loss'), dim('(보낸 신호 3개가 하나도 안 돌아왔어요)'));
           return { lines, events };
       }
       const received = r.failure === 'conflict' ? [0, 2] : [0, 1, 2];
@@ -230,7 +232,7 @@ export const netCommands: Command[] = [
     name: 'ssh',
     minStage: 2,
     usage: 'ssh <이름 또는 IP>',
-    summary: '다른 장비에 원격 접속',
+    summary: '다른 장비에 원격 접속 (멀리서 들어가 조작하기)',
     run(args, { w, host, stage }) {
       const target = args[0];
       if (!target) return err('사용법: ssh <이름 또는 IP>');

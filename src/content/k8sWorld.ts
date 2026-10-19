@@ -104,9 +104,9 @@ export function k8sHealth(w: World): Health {
   }
   const bad = enroll.filter((p) => k.badVersions.includes(p.version)).length;
   const badShare = enroll.length ? bad / enroll.length : 0;
-  if (bad) notes.push(`신청 pod ${bad}개가 500 에러를 냄`);
+  if (bad) notes.push(`신청 pod ${bad}개가 500 에러(서버 안에서 처리 중 오류)를 냄`);
   const down = Object.entries(k.nodes).filter(([, n]) => !n.ready).map(([id]) => id);
-  if (down.length) notes.push(`NotReady 노드: ${down.join(', ')}`);
+  if (down.length) notes.push(`NotReady(일할 수 없는) 노드: ${down.join(', ')}`);
   const ok = served * (courseOk ? 1 : 0) * (1 - badShare * 0.6);
   // Near capacity is busier (180 ms) but still healthy; only real overload or a broken call path is slow.
   const latency = served < 1 || !courseOk ? 1600 : cap > 0 && w.traffic.rps / cap > 0.8 ? 180 : 45;

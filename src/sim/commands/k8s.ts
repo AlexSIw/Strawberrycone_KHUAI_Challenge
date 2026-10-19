@@ -61,7 +61,7 @@ export const k8sCommands: Command[] = [
         const nodes = Object.values(k.nodes);
         const notReady = nodes.filter((n) => !n.ready).length;
         const full = Object.entries(k.nodes).filter(([id, n]) => n.ready && k.pods.filter((p) => p.node === id).length >= k.maxPodsPerNode).length;
-        rows.push(dim(`NODE <none> = 아직 들어갈 노드가 없는 pod (0/${nodes.length} nodes are available: NotReady ${notReady}대, 자리 꽉 참 ${full}대)`));
+        rows.push(dim(`NODE <none> = 아직 들어갈 노드가 없어 기다리는 pod (0/${nodes.length} nodes are available: NotReady(일할 수 없음) ${notReady}대, 자리 꽉 참 ${full}대)`));
       }
       return { lines: rows, events: ['k8s_get_pods'] };
     },
@@ -144,7 +144,7 @@ export const k8sCommands: Command[] = [
     name: 'rollout status',
     minStage: 6,
     usage: 'rollout status <앱>',
-    summary: '배포 진행 상황',
+    summary: '배포(새 버전 올리기) 진행 상황',
     run(args, { w }) {
       const name = appName(positional(args)[0]);
       const dep = deploymentOf(w, name);
@@ -182,18 +182,18 @@ export const k8sCommands: Command[] = [
     name: 'set image',
     minStage: 6,
     usage: 'set image <앱> <앱:태그>',
-    summary: '다른 버전 배포 (rolling update)',
+    summary: '다른 버전 배포 (하나씩 차례로 교체하는 rolling update)',
     run(args, { w }) {
       const [app, raw] = positional(args);
       const name = appName(app);
       if (!w.k8s || !deploymentOf(w, name) || !raw) return err('사용법: set image <앱> <앱:태그>  (예: set image login login:v1)');
       // kubectl form: "set image deployment/enroll enroll=enroll:v1" (container=image)
       const image = raw.includes('=') ? raw.slice(raw.lastIndexOf('=') + 1) : raw;
-      if (image.endsWith(':latest')) return err(':latest 태그는 쓰지 마세요. 나중에 되돌릴 버전을 알 수 없어져요.');
+      if (image.endsWith(':latest')) return err(':latest(늘 "최신"이라는 이름) 태그는 쓰지 마세요. 나중에 어느 버전으로 되돌릴지 알 수 없어져요.');
       if (!image.startsWith(`${name}:`)) return err(`이미지 이름은 ${name}:<태그> 모양이어야 해요. (${name} 앱의 이미지)`);
       const known = w.k8s.images;
       if (known && !known.includes(image)) {
-        return err(`${image}: 레지스트리에 그런 이미지가 없어요 (ErrImagePull). 진짜 쿠버네티스라면 새 pod가 ImagePullBackOff 에 걸려 못 떠요. 전에 배포했던 버전은 rollout history ${name} 로 볼 수 있어요.`);
+        return err(`${image}: 레지스트리(이미지 보관소)에 그런 이미지가 없어요 (ErrImagePull). 진짜 쿠버네티스라면 새 pod가 이미지를 못 받아서(ImagePullBackOff) 못 떠요. 전에 배포했던 버전은 rollout history ${name} 로 볼 수 있어요.`);
       }
       const heading = deploymentOf(w, name)!.rolling?.target === image;
       if (!setImage(w.k8s, name, image)) {
@@ -206,7 +206,7 @@ export const k8sCommands: Command[] = [
     name: 'logs',
     minStage: 6,
     usage: 'logs <pod 이름>',
-    summary: 'pod 로그 보기',
+    summary: 'pod 로그(앱이 남긴 기록) 보기',
     run(args, { w }) {
       const bad = cluster(w);
       if (bad) return bad;
@@ -239,7 +239,7 @@ export const k8sCommands: Command[] = [
           failed = true;
           if (svc && port !== APP_PORT) lines.push(red(`ERROR course 호출 실패: connect ${host}:${port} refused (그 포트에서 기다리는 앱이 없어요)`));
           else if (svc && svc.selector !== 'course') lines.push(red(`ERROR course 호출 실패: GET http://${host}:${port}/courses → 404 Not Found (이 Service는 '${svc.selector}' 앱 pod들로 연결돼요)`));
-          else if (svc || isIp(host)) lines.push(red(`ERROR course 호출 실패: connect ${host}:${port} timed out`));
+          else if (svc || isIp(host)) lines.push(red(`ERROR course 호출 실패: connect ${host}:${port} timed out (아무도 대답하지 않아 기다리다 포기했어요)`));
           else lines.push(red(`ERROR course 호출 실패: getaddrinfo ENOTFOUND ${host || '(빈 주소)'} (그런 이름을 찾을 수 없어요)`));
           lines.push(dim(`COURSE_URL=${url}`));
         } else if (!svc) {
@@ -247,7 +247,7 @@ export const k8sCommands: Command[] = [
         }
         if (k.badVersions.includes(p.version)) {
           failed = true;
-          lines.push(red(`ERROR TypeError in /enroll (${p.version}) — 500 Internal Server Error`));
+          lines.push(red(`ERROR TypeError in /enroll (${p.version}) — 500 Internal Server Error (앱이 요청을 처리하다 오류로 멈췄어요)`));
         }
         if (!failed) lines.push(green('GET /enroll 200'), green('POST /enroll 201'));
       } else lines.push(green('GET / 200'));
