@@ -9,11 +9,11 @@
 
 ## 스크린샷
 
-> _(스크린샷 자리: `npm run e2e` 를 돌리면 `test-results/` 에 걷기 · 대시보드 · 개념 도감 화면이 저장돼요. 골라서 `docs/` 에 넣고 여기에 연결하세요.)_
-
-| 데이터센터 | 대시보드 | 터미널 |
-|---|---|---|
-| _screenshot_ | _screenshot_ | _screenshot_ |
+| 데이터센터 (Stage 7 복합 장애) | 관제 대시보드 (Stage 6) |
+|---|---|
+| ![데이터센터 맵](docs/map.png) | ![대시보드](docs/dashboard.png) |
+| **터미널 (Stage 2)** | **케이블 미니게임 (Stage 1)** |
+| ![터미널](docs/terminal.png) | ![케이블 연결](docs/cable.png) |
 
 ## 빠른 시작
 
