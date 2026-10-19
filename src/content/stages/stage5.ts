@@ -206,6 +206,14 @@ export const stage5: StageDef = {
     { id: 'recipe', text: '관제실 설계 보드에서 Dockerfile(레시피 카드) 완성', done: (w) => w.flags['dockerfile:enroll'] === 'ok', after: ['log'] },
     { id: 'image', text: '관리 PC에서 이미지 빌드 → 레지스트리에 push', done: (w) => !!w.docker?.registry.some((i) => i.startsWith('enroll:')), after: ['recipe'] },
     { id: 'run', text: 'srv-new 에서 컨테이너 실행', done: (w) => !!w.docker?.containers.some((c) => c.host === 'srv-new' && c.running && isEnroll(c)), after: ['image'] },
+    {
+      id: 'open',
+      text: '학생 요청이 새 서버(srv-new)의 컨테이너까지 들어오게 하기',
+      done: (w) => !!w.docker?.containers.some((c) => c.host === 'srv-new' && c.running && isEnroll(c) && enrollPublished(c)),
+      after: ['run'],
+      concept: 'portMapping',
+      lesson: '-p 80:8000 은 서버의 바깥 문(80)과 컨테이너 안쪽 창구(8000)를 잇는 통로예요. 이게 있어야 학생 요청이 컨테이너까지 들어와요.',
+    },
   ],
   scenarios,
   interactions: {
