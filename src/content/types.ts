@@ -65,6 +65,8 @@ export interface StageDef {
   quiz?: Quiz;
   /** Stage 7 only: seconds the player must hold the service up */
   survive?: number;
+  /** Concept cards awarded for clearing the stage (concepts no incident teaches) */
+  cards?: string[];
   /** Rooms shown on the map (others are dim) */
   rooms?: RoomId[];
 }

@@ -71,21 +71,22 @@ export function k8sHealth(w: World): Health {
   const services: Record<string, 'up' | 'degraded' | 'down'> = {};
   for (const [name, d] of Object.entries(k.deployments)) {
     const ready = readyPods(k, name).length;
-    services[name] = ready === 0 && d.replicas > 0 ? 'down' : ready < d.replicas ? 'degraded' : 'up';
+    // enroll with nothing running while students are waiting is "down", even if nobody asked for pods yet.
+    const needed = d.replicas > 0 || (name === 'enroll' && w.traffic.rps > 0);
+    services[name] = ready === 0 && needed ? 'down' : ready < d.replicas ? 'degraded' : 'up';
   }
   const enroll = readyPods(k, 'enroll');
   const cap = enroll.length * POD_RPS;
   const served = Math.min(1, cap / Math.max(1, w.traffic.rps));
   if (served < 1) notes.push(`신청 pod 부족: ${Math.round(served * 100)}%만 처리`);
-  const url = k.deployments.enroll.env.COURSE_URL;
-  const courseOk = endpointReaches(k, url, 'course');
+  const courseOk = endpointReaches(k, k.deployments.enroll.env.COURSE_URL, 'course');
   if (!courseOk) {
-    notes.push(`enroll → course 연결 실패 (COURSE_URL=${url})`);
+    notes.push('신청(enroll)이 과목조회(course)를 부르지 못함');
     services.enroll = 'down';
   }
   const bad = enroll.filter((p) => k.badVersions.includes(p.version)).length;
   const badShare = enroll.length ? bad / enroll.length : 0;
-  if (bad) notes.push(`버그 있는 버전 pod ${bad}개가 500 에러를 냄`);
+  if (bad) notes.push(`신청 pod ${bad}개가 500 에러를 냄`);
   const down = Object.entries(k.nodes).filter(([, n]) => !n.ready).map(([id]) => id);
   if (down.length) notes.push(`NotReady 노드: ${down.join(', ')}`);
   const ok = served * (courseOk ? 1 : 0) * (1 - badShare * 0.6);

@@ -52,6 +52,7 @@ export interface HintMessage {
 export interface ConceptPopup {
   concept: string;
   lesson: string;
+  /** Empty for cards awarded on stage clear */
   scenarioId: string;
 }
 
@@ -77,6 +78,9 @@ export interface GameState {
   lastScore: Score | null;
   /** Is the lion working on a device (plays the fix animation)? */
   fixing: boolean;
+  /** Extra pause requested by UI (e.g. the HUD's exit confirm) */
+  paused: boolean;
+  setPaused(p: boolean): void;
 
   // navigation
   goTitle(): void;
@@ -165,6 +169,13 @@ function openEvent(m: Modal): string {
   return `open:${m.type}`;
 }
 
+/** "What just happened" line for cards awarded on stage clear. */
+const STAGE_CARD_LESSON: Record<string, string> = {
+  datacenter: '데이터센터의 다섯 방을 다 둘러봤어요. 서버, 네트워크, 전원, 냉각, 관제가 함께 돌아가야 서비스가 살아 있어요.',
+  dhcp: 'DHCP 서버를 켜자 서버들이 알아서 주소를 받았어요. 주소를 손으로 박지 않아도 돼요!',
+  postmortem: '장애 보고서까지 썼어요. 다음엔 같은 장애가 안 나게 막는 것까지가 운영이에요.',
+};
+
 const FIXING_MODALS: Modal['type'][] = ['terminal', 'rack', 'cable', 'power', 'repair', 'board'];
 
 // ---------- store ----------
@@ -191,11 +202,21 @@ export const gameStore = createStore<GameState>()((set, get) => {
     const def = getStage(run.stage);
     const score = scoreRun(run);
     const save = { ...get().save, best: { ...get().save.best }, cards: [...get().save.cards] };
+    const newCards = (def.cards ?? []).filter((c) => !save.cards.includes(c));
+    save.cards.push(...newCards);
     const prev = save.best[run.stage];
     if (!prev || score.points > prev.points) save.best[run.stage] = { stars: score.stars, points: score.points };
     save.unlocked = Math.max(save.unlocked, Math.min(STAGES.length - 1, run.stage + 1));
     writeSave(save);
-    set({ save, lastScore: score, modal: null, fixing: false, dialogue: { lines: def.outro, index: 0, then: 'results' } });
+    const popups: ConceptPopup[] = newCards.map((c) => ({ concept: c, lesson: STAGE_CARD_LESSON[c] ?? '', scenarioId: '' }));
+    set((s) => ({
+      save,
+      lastScore: score,
+      modal: null,
+      fixing: false,
+      concepts: [...s.concepts, ...popups],
+      dialogue: { lines: def.outro, index: 0, then: 'results' },
+    }));
   };
 
   return {
@@ -211,6 +232,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     hintPending: false,
     lastScore: null,
     fixing: false,
+    paused: false,
+    setPaused: (paused) => set({ paused }),
 
     goTitle: () => set({ screen: 'title', run: null, modal: null, dialogue: null }),
     goSelect: () => set({ screen: 'select', run: null, modal: null, dialogue: null }),
@@ -228,6 +251,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
         terminal: { host: 'ops', log: [] },
         lastScore: null,
         fixing: false,
+        paused: false,
         dialogue: { lines: def.intro, index: 0, then: 'play' },
       });
     },
@@ -245,7 +269,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
 
     isPaused: () => {
       const s = get();
-      return s.screen !== 'playing' || !!s.dialogue || s.concepts.length > 0;
+      return s.screen !== 'playing' || s.paused || !!s.dialogue || s.concepts.length > 0;
     },
 
     tick: () => {
@@ -310,7 +334,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
       objectiveToasts(res.run, res.completed);
       if (res.openHint) {
         const active = activeScenarios(res.run)[0];
-        set({ modal: { type: 'hint', scenarioId: active?.rt.id } });
+        get().openModal({ type: 'hint', scenarioId: active?.rt.id });
       }
       afterChange(res.run);
       return { lines: res.lines, clear: res.clear };

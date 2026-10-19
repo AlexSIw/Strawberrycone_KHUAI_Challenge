@@ -162,10 +162,6 @@ function Report({ run }: { run: StageRun }) {
   };
 
   const submit = () => {
-    // No incident awards the postmortem card, so the report does. finishStage (fired by this event) persists save.cards.
-    gameStore.setState((s) =>
-      s.save.cards.includes(CARD) ? s : { save: { ...s.save, cards: [...s.save.cards, CARD] } },
-    );
     gameStore.getState().event('board:postmortem');
   };
 

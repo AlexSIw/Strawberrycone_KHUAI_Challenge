@@ -45,7 +45,7 @@ export function appHealth(w: World) {
   if (s.enroll.dbAccess.includes('course-db') && app.courseDbSchema > 1) {
     ok *= 0.1;
     services.enroll = 'down';
-    notes.push('enroll이 course-db를 직접 읽다가 스키마 변경으로 에러');
+    notes.push('과목 DB 변경 직후부터 신청(enroll) 에러 급증');
   }
   if (!s.notify.up) notes.push('알림 서비스 다운 (신청은 계속 됨)');
   return { ok, latency: courseServed < 1 ? 1800 : 70, services, notes };
@@ -130,7 +130,7 @@ const scenarios: Scenario[] = [
   {
     id: 's4-shared-db',
     stage: 4,
-    title: '분산 모놀리스',
+    title: '과목 DB 변경 후 신청 장애',
     alert: '과목팀이 과목 DB 구조를 바꿨는데… 왜 신청 서비스가 터져요?!',
     severity: 'critical',
     room: 'noc',

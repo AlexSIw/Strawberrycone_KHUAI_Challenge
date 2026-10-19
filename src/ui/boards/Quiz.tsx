@@ -14,13 +14,6 @@ const NUDGE: Partial<Record<StageId, string>> = {
 };
 const DEFAULT_NUDGE = '문제를 한 번 더 천천히 읽어봐. 오늘 둘러본 방들이 힌트야.';
 
-/** Concept card the quiz hands out (no incident awards it). finishStage persists save.cards with the stage result. */
-const QUIZ_CARD: Partial<Record<StageId, string>> = { 0: 'datacenter' };
-
-function grantCard(id: string) {
-  gameStore.setState((s) => (s.save.cards.includes(id) ? s : { save: { ...s.save, cards: [...s.save.cards, id] } }));
-}
-
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
 export function Quiz() {
@@ -40,8 +33,8 @@ export function Quiz() {
       </ModalFrame>
     );
   }
-
-  const card = QUIZ_CARD[stage];
+  // The stage-clear card (stage 0: 데이터센터) is mentioned on the quiz; the store awards it when the stage clears.
+  const card = getStage(stage).cards?.[0];
   const cardName = card ? CONCEPTS[card]?.name : undefined;
 
   const choose = (i: number) => {
@@ -49,7 +42,6 @@ export function Quiz() {
     setLast(i);
     if (i === quiz.answer) {
       setCorrect(true);
-      if (card) grantCard(card);
       // Record it now (objective toast right away) unless it is the stage's last objective:
       // the stage would end and close this window before the explanation could be read.
       const s = gameStore.getState();

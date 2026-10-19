@@ -12,7 +12,7 @@ const scenarios: Scenario[] = [
   {
     id: 's1-cable',
     stage: 1,
-    title: '링크 다운',
+    title: 'DB 서버 불이 안 켜짐',
     alert: 'DB 서버 불이 안 들어와요! 다른 서버는 초록불인데…',
     severity: 'critical',
     room: 'network',

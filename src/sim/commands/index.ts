@@ -8,6 +8,15 @@ import type { Command, CmdResult } from './types';
 import { bold, dim, err } from './types';
 import { webCommands } from './web';
 
+/** Terminal width of a string: wide (Hangul/CJK) characters take two cells. */
+export function cellWidth(s: string): number {
+  let n = 0;
+  for (const ch of s) n += /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(ch) ? 2 : 1;
+  return n;
+}
+
+export const padCells = (s: string, width: number) => s + ' '.repeat(Math.max(1, width - cellWidth(s)));
+
 const base: Command[] = [
   {
     name: 'help',
@@ -17,7 +26,7 @@ const base: Command[] = [
     run: (_a, { stage }) => ({
       lines: [
         bold('쓸 수 있는 명령어'),
-        ...available(stage).map((c) => `  ${c.usage.padEnd(40)} ${dim(c.summary)}`),
+        ...available(stage).map((c) => `  ${padCells(c.usage, 40)} ${dim(c.summary)}`),
         dim('막히면 hint 를 입력하거나 쿠사수에게 물어보세요.'),
       ],
     }),

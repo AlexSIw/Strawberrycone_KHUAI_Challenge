@@ -35,6 +35,7 @@ export const stage0: StageDef = {
     { id: 'quiz', text: '퀴즈 풀기: 관제실 화이트보드', done: (_w, c) => c.events.includes('quiz:correct'), after: ['visit'] },
   ],
   scenarios: [],
+  cards: ['datacenter'],
   interactions: {
     rack1: { kind: 'inspect', text: '서버 랙. 서버들이 층층이 꽂혀 있어요. 이게 "컴퓨터 아파트"의 한 동!' },
     rack2: { kind: 'inspect', text: '서버마다 초록 LED가 깜빡여요. 네트워크 케이블이 잘 연결됐다는 뜻이에요.' },
@@ -48,7 +49,7 @@ export const stage0: StageDef = {
     crac: { kind: 'inspect', text: '항온항습기(CRAC): 서버실을 시원하게. 서버는 더위에 약해요!' },
     monitor: { kind: 'dashboard' },
     mentor: { kind: 'mentor' },
-    desk: { kind: 'inspect', text: '관리 PC. 다음 단계부터 여기서 터미널을 쓸 수 있어요.' },
+    desk: { kind: 'inspect', text: '관리 PC. Stage 2부터 여기서 터미널을 쓸 수 있어요.' },
     board: { kind: 'quiz' },
   },
   health: (w) => emptyHealth(w, { services: { web: 'up', db: 'up' } }),

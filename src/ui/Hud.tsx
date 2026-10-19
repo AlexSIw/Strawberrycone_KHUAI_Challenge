@@ -41,6 +41,12 @@ export function Hud() {
     if (busy) setConfirmExit(false);
   }, [busy]);
 
+  // The game clock stops while the exit question is open.
+  useEffect(() => {
+    gameStore.getState().setPaused(confirmExit);
+    return () => gameStore.getState().setPaused(false);
+  }, [confirmExit]);
+
   // While the exit question is open, keys must not reach the hotkeys (Tab/H/C) or move the lion.
   // keyup still passes so a held arrow key is released in the game.
   useEffect(() => {

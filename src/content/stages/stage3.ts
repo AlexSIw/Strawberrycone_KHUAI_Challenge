@@ -11,12 +11,12 @@ function webHealth(w: World) {
   const s = w.web!;
   const notes = [...path.notes];
   if (!s.running) return { ok: 0, latency: 0, notes: [...notes, '웹 서버가 꺼져 있음'] };
-  if (s.port !== 80) return { ok: 0, latency: 0, notes: [...notes, `학생은 80번으로 오는데 서버는 ${s.port}번에서 대기 중`] };
+  if (s.port !== 80) return { ok: 0, latency: 0, notes: [...notes, '학생 요청이 전부 "연결 거부(Connection refused)"'] };
   const cap = s.threads === 'single' ? SINGLE_THREAD_RPS : MULTI_THREAD_RPS;
   const served = Math.min(1, cap / Math.max(1, w.traffic.rps));
   if (served < 1) notes.push('요청이 줄 서서 기다리는 중 (타임아웃)');
   const notFound = w.notice && !s.routes.includes(w.notice.url) ? w.traffic.noticeShare : 0;
-  if (notFound) notes.push(`공지 링크(${w.notice!.url})로 온 학생은 404`);
+  if (notFound) notes.push('일부 학생 화면에 404 Not Found');
   const latency = s.threads === 'single' ? Math.round(80 * (w.traffic.rps / SINGLE_THREAD_RPS)) : 35;
   return { ok: path.ok * served * (1 - notFound), latency, notes };
 }
@@ -25,7 +25,7 @@ const scenarios: Scenario[] = [
   {
     id: 's3-port',
     stage: 3,
-    title: '포트 불일치',
+    title: '연결이 거부됨',
     alert: '서버 켰다면서요? 학생들 화면엔 "연결이 거부되었습니다"가 떠요!',
     severity: 'critical',
     room: 'server',
@@ -47,7 +47,7 @@ const scenarios: Scenario[] = [
   {
     id: 's3-thread',
     stage: 3,
-    title: '한 명씩만 처리',
+    title: '페이지가 너무 느림',
     alert: '베타 테스터가 300명으로 늘었어요. 페이지가 한참 걸리다 타임아웃이에요…',
     severity: 'critical',
     room: 'noc',

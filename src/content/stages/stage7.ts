@@ -34,7 +34,7 @@ const scenarios: Scenario[] = [
   {
     id: 's7-cable',
     stage: 7,
-    title: '랙 3 링크 다운',
+    title: '노드 n3 NotReady',
     alert: '노드 n3가 갑자기 NotReady! 누가 네트워크실에서 케이블을 건드렸대요…',
     severity: 'critical',
     room: 'network',
@@ -112,6 +112,7 @@ export const stage7: StageDef = {
     { id: 'postmortem', text: '관제실 설계 보드에서 장애 보고서 작성', done: (_w, c) => c.events.includes('board:postmortem'), after: ['survive'] },
   ],
   scenarios,
+  cards: ['postmortem'],
   interactions: {
     rack1: { kind: 'inspect', text: '노드 n1 (rack1).' },
     rack2: { kind: 'inspect', text: '노드 n2 (rack2).' },

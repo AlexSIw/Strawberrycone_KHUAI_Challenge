@@ -26,12 +26,14 @@ function useHotkeys() {
     const onKey = (e: KeyboardEvent) => {
       const s = gameStore.getState();
       if (s.screen !== 'playing' || s.dialogue) return;
-      const typing = (e.target as HTMLElement | null)?.closest('input, textarea, .xterm');
-      if (typing) return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest('input, textarea, select, .xterm')) return;
       if (e.key === 'Tab') {
+        // Only steal Tab to toggle the dashboard; inside other windows it moves focus as usual.
+        if (s.modal && s.modal.type !== 'dashboard') return;
         e.preventDefault();
-        if (s.modal?.type === 'dashboard') s.closeModal();
-        else if (!s.modal) s.openModal({ type: 'dashboard' });
+        if (s.modal) s.closeModal();
+        else s.openModal({ type: 'dashboard' });
       } else if ((e.key === 'h' || e.key === 'H') && !s.modal) {
         s.openModal({ type: 'hint' });
       } else if ((e.key === 'c' || e.key === 'C') && !s.modal) {

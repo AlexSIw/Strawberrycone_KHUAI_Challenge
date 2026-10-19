@@ -7,7 +7,7 @@ const scenarios: Scenario[] = [
   {
     id: 's2-dns',
     stage: 2,
-    title: '이름을 못 찾음 (DNS)',
+    title: '웹 서버가 DB를 못 찾음',
     alert: '웹 서버가 DB를 못 찾는대요! "db가 누구야?"라고 에러가 떠요.',
     severity: 'critical',
     room: 'noc',
@@ -31,7 +31,7 @@ const scenarios: Scenario[] = [
   {
     id: 's2-conflict',
     stage: 2,
-    title: 'IP 충돌',
+    title: 'DB 연결이 됐다 안 됐다',
     alert: 'DB 연결이 됐다 안 됐다 해요… 수강신청 페이지가 반쯤 깨져요.',
     severity: 'warning',
     room: 'server',
@@ -59,7 +59,7 @@ const scenarios: Scenario[] = [
   {
     id: 's2-gateway',
     stage: 2,
-    title: '외부 접속 불가 (게이트웨이)',
+    title: '학생들만 접속 불가',
     alert: '학생들이 집에서 접속이 안 된대요! 그런데 관리 PC에서는 web이 잘 보여요.',
     severity: 'critical',
     room: 'network',
@@ -107,6 +107,7 @@ export const stage2: StageDef = {
     { id: 'ping', text: 'ping 으로 web 서버 응답 확인하기', done: (_w, c) => c.events.some((e) => e.startsWith('ping:web:ok') || e.startsWith('ping:10.0.1.10:ok')), after: ['dhcp'] },
   ],
   scenarios,
+  cards: ['dhcp'],
   interactions: {
     rack1: { kind: 'consolePick', hosts: ['web', 'db'] },
     rack2: { kind: 'console', host: 'spare' },

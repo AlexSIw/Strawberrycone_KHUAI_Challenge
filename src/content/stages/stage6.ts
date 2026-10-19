@@ -39,7 +39,7 @@ const scenarios: Scenario[] = [
   {
     id: 's6-ip',
     stage: 6,
-    title: 'IP를 박아둔 설정',
+    title: '과목조회 재배포 후 신청 실패',
     alert: '과목조회 pod들이 재배포된 직후부터 신청이 전부 실패해요!',
     severity: 'critical',
     room: 'noc',
@@ -72,7 +72,7 @@ const scenarios: Scenario[] = [
   {
     id: 's6-crac',
     stage: 6,
-    title: '냉각기 고장',
+    title: '1·2번 랙 온도 급상승',
     alert: '서버실 1·2번 랙 온도 급상승!! 항온항습기에서 경고음이 나요!',
     severity: 'critical',
     room: 'cooling',
@@ -120,7 +120,7 @@ const scenarios: Scenario[] = [
   {
     id: 's6-rollout',
     stage: 6,
-    title: '나쁜 배포',
+    title: '새 버전 배포 중 에러 급증',
     alert: '배포팀이 새 버전(enroll:v2)을 올리는 중인데… 에러율이 치솟아요!',
     severity: 'critical',
     room: 'noc',
