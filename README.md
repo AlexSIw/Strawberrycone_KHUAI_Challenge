@@ -54,6 +54,7 @@ Worker의 `npm run dev` 는 `dist/` 가 없으면 빈 폴더를 먼저 만들어
 | C | 개념 도감 |
 | Esc | 열린 창 닫기 |
 | Enter / 클릭 | 대화 넘기기 |
+| M | 소리 켜기/끄기 (HUD와 타이틀 화면의 🔊 버튼과 같아요. 설정은 저장돼요) |
 
 터미널에서는 `help` 로 그 단계에서 쓸 수 있는 명령어를 볼 수 있고, `hint` 로 쿠사수를 부를 수 있어요.
 힌트는 1단계(관찰 질문) → 2단계(방향) → 3단계(도구/명령 종류) 순서로 나와요. 힌트와 "정답 보기"는 점수(★)가 조금씩 깎여요.
@@ -89,12 +90,14 @@ src/
     manual/         AI 사수가 읽는 운영 매뉴얼 stage0.md … stage7.md
   store/game.ts   Zustand 스토어 (화면, 모달, 대화, 힌트, 저장)
   ui/             React UI (HUD, 대시보드, 터미널, 미니게임, 보드, 힌트 채팅)
+  audio/          소리: engine.ts (Web Audio) · director.ts (게임 상태 → 음악/경보/효과음) · logic.ts (테스트하는 순수 규칙)
   game/           Phaser 3 맵과 사자 캐릭터
   ai/client.ts    /api/hint 호출 + 실패 시 기본 힌트
 worker/           Cloudflare Worker: dist 정적 서빙 + POST /api/hint (ChatKHU 프록시)
 tests/            vitest: 스테이지 전체 자동 플레이 테스트
 e2e/              Playwright 스모크 테스트
 art/              사자 원본 그림 · scripts/prepare-sprites.mjs 로 변환
+public/assets/audio/  배경음악 · 효과음 · 대화 소리 (출처와 라이선스: docs/ASSETS.md)
 ```
 
 ## 장애 시나리오 추가하기

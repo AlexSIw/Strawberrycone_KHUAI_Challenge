@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { startAudioDirector } from './audio/director';
 import { PhaserGame } from './game/PhaserGame';
 import { gameStore, useGame } from './store/game';
 import { ConceptCardPopup } from './ui/ConceptCardPopup';
@@ -45,11 +46,17 @@ function useHotkeys() {
   }, []);
 }
 
+/** Music, alarm and jingles follow the game state; M mutes. */
+function useAudio() {
+  useEffect(() => startAudioDirector(), []);
+}
+
 export function App() {
   const screen = useGame((s) => s.screen);
   const stage = useGame((s) => s.run?.stage);
   useTicker();
   useHotkeys();
+  useAudio();
 
   if (screen === 'title') return <TitleScreen />;
   if (screen === 'select') return <StageSelect />;

@@ -1,0 +1,14 @@
+/* Credits window (title screen). Prefix: credits */
+.credits { margin: 0; font-size: 14px; line-height: 1.6; }
+.credits dt {
+  font-family: var(--pixel);
+  font-size: 13px;
+  color: var(--tan);
+  margin: 12px 0 2px;
+}
+.credits dt:first-child { margin-top: 0; }
+.credits dd { margin: 0; }
+.credits ul { margin: 0; padding-left: 18px; }
+.credits li { word-break: normal; overflow-wrap: anywhere; }
+.credits a { color: var(--blue); }
+.credits a:hover { color: var(--text); }

@@ -4,6 +4,7 @@ import { activeScenarios } from '../sim/engine';
 import { gameStore, useGame } from '../store/game';
 import { availLevel, latencyLevel, type Level } from './levels';
 import { ModalFrame } from './ModalFrame';
+import { SoundToggle } from './SoundToggle';
 import './Hud.css';
 
 /** Seconds → "mm:ss". */
@@ -173,6 +174,9 @@ export function Hud() {
             <span className="hud-btn-label">도감</span>
             <kbd>C</kbd>
           </button>
+          <SoundToggle className="hud-btn hud-sound">
+            <kbd>M</kbd>
+          </SoundToggle>
           <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="스테이지 선택 화면으로 나가기">
             <span aria-hidden>🚪</span>
             <span className="hud-btn-label">나가기</span>

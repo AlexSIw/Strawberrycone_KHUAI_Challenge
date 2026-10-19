@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { audio } from '../audio/engine';
+import { blipLetter, VOICE_PITCH } from '../audio/logic';
 import type { DialogueLine } from '../content/types';
 import { gameStore, useGame } from '../store/game';
 import { Portrait, speakerName } from './Portrait';
@@ -14,10 +16,13 @@ function skipAll() {
 }
 
 function Line({ line, index, total }: { line: DialogueLine; index: number; total: number }) {
-  const chars = Array.from(line.text);
+  const chars = useMemo(() => Array.from(line.text), [line.text]);
   const [shown, setShown] = useState(0);
   const complete = shown >= chars.length;
   const mountedAt = useRef(performance.now());
+  const pitch = VOICE_PITCH[line.who];
+  const lastShown = useRef(0);
+  const skipped = useRef(false);
 
   useEffect(() => {
     if (complete) return;
@@ -25,11 +30,35 @@ function Line({ line, index, total }: { line: DialogueLine; index: number; total
     return () => window.clearInterval(id);
   }, [complete]);
 
+  // Blabber: one animalese blip per revealed letter, in step with the typewriter. A skip shows the
+  // rest at once, so it stops the voice instead of blipping the whole line.
+  useEffect(() => {
+    const prev = lastShown.current;
+    lastShown.current = shown;
+    if (pitch === null || shown <= prev) return;
+    if (skipped.current) {
+      audio.stopBlip();
+      return;
+    }
+    // Usually one new character per tick. If a late timer revealed several in one render, voice the
+    // newest letter among them (they appeared together, and only one blip sounds at a time anyway).
+    for (let i = shown - 1; i >= prev; i--) {
+      const letter = blipLetter(chars[i] ?? '');
+      if (letter) {
+        audio.blip(letter, pitch);
+        break;
+      }
+    }
+  }, [shown, pitch, chars]);
+  useEffect(() => () => audio.stopBlip(), []);
+
   const advance = useCallback(() => {
     // Ignore the very first moment so a double press doesn't skip a line unseen.
     if (performance.now() - mountedAt.current < 120) return;
-    if (!complete) setShown(chars.length);
-    else gameStore.getState().nextDialogue();
+    if (!complete) {
+      skipped.current = true;
+      setShown(chars.length);
+    } else gameStore.getState().nextDialogue();
   }, [complete, chars.length]);
 
   useEffect(() => {
