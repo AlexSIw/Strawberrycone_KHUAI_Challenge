@@ -201,7 +201,7 @@ export const stage5: StageDef = {
   ],
   initialWorld: stage5World,
   objectives: [
-    { id: 'log', text: '새 서버(srv-new)의 배포 기록 확인하기 (ssh srv-new → deploy log)', spot: 'desk', done: (_w, c) => c.events.includes('deploy_log_failed') },
+    { id: 'log', text: '새 서버(srv-new)의 배포 기록 확인하기 (ssh srv-new → deploy log)', spot: 'desk', done: (_w, c) => c.events.includes('deploy_log_failed'), afterFired: ['s5-drift'] },
     { id: 'recipe', text: '관제실 설계 보드에서 Dockerfile(레시피 카드) 완성', spot: 'board', done: (w) => w.flags['dockerfile:enroll'] === 'ok', after: ['log'] },
     { id: 'image', text: '관리 PC에서 이미지 만들기(build) → 레지스트리(이미지 보관소)에 올리기(push)', spot: 'desk', done: (w) => !!w.docker?.registry.some((i) => i.startsWith('enroll:')), after: ['recipe'] },
     { id: 'run', text: 'srv-new에서 컨테이너 실행', spot: 'desk', done: (w) => !!w.docker?.containers.some((c) => c.host === 'srv-new' && c.running && isEnroll(c)), after: ['image'] },

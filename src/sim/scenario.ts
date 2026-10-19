@@ -114,6 +114,12 @@ export function tickScenarios(
         } else if (tr.type === 'condition' && tr.when(w, ctx)) r.at = ctx.stageTime;
       }
       if (r.at !== null && ctx.stageTime >= r.at) {
+        // Timed incidents keep the 10 s breather after a fix, unless another incident is still running
+        // (overlap is intended then, e.g. the stage 7 finale).
+        if (s.trigger.type === 'stageStart' && !rt.some((x) => x.state === 'active')) {
+          const lastFix = Math.max(-Infinity, ...rt.map((x) => x.resolvedAt ?? -Infinity));
+          if (ctx.stageTime < lastFix + INCIDENT_GAP) continue;
+        }
         s.inject(w);
         r.state = 'active';
         r.activatedAt = ctx.stageTime;

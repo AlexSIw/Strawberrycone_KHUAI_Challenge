@@ -64,7 +64,10 @@ export function startStage(id: StageId): StageRun {
 /** Objectives that are visible (their prerequisite objectives are done and gating incidents resolved). */
 export function visibleObjectives(def: StageDef, run: StageRun) {
   return def.objectives.filter(
-    (o) => (o.after ?? []).every((a) => a in run.objectivesDone) && (o.afterIncidents ?? []).every((id) => run.ctx.resolved.includes(id)),
+    (o) =>
+      (o.after ?? []).every((a) => a in run.objectivesDone) &&
+      (o.afterIncidents ?? []).every((id) => run.ctx.resolved.includes(id)) &&
+      (o.afterFired ?? []).every((id) => run.scenarios.some((s) => s.id === id && s.state !== 'waiting')),
   );
 }
 

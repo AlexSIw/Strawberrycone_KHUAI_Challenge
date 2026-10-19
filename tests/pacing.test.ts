@@ -79,9 +79,33 @@ function play(stage: StageId, o: PlayOpts = {}): Played {
 const rtOf = (run: StageRun, id: string) => run.scenarios.find((s) => s.id === id)!;
 const gates = (tr: Trigger) => (tr.type === 'gate' ? tr : null);
 
+/**
+ * A timed (stageStart) incident fires at its delay, but keeps the 10 s breather after a fix unless another
+ * incident is still running at that moment. Scenarios are checked in list order within a tick, so one listed
+ * before `selfId` that resolved in the same tick already counts as solved, one listed after still counts as active.
+ */
+function timedFireTime(run: StageRun, delay: number, selfId: string): number {
+  const order = run.scenarios.map((x) => x.id);
+  const me = order.indexOf(selfId);
+  const others = run.scenarios.filter((x) => x.id !== selfId && x.activatedAt !== null);
+  for (let t = delay; t < 100_000; t++) {
+    const active = others.some((x) => {
+      if (x.activatedAt! > t || (x.activatedAt === t && order.indexOf(x.id) > me)) return false;
+      if (x.resolvedAt === null || x.resolvedAt > t) return true;
+      return x.resolvedAt === t && order.indexOf(x.id) > me;
+    });
+    const fixes = others
+      .filter((x) => x.resolvedAt !== null && (x.resolvedAt < t || (x.resolvedAt === t && order.indexOf(x.id) < me)))
+      .map((x) => x.resolvedAt!);
+    const lastFix = fixes.length ? Math.max(...fixes) : -Infinity;
+    if (active || t >= lastFix + INCIDENT_GAP) return t;
+  }
+  return Infinity;
+}
+
 /** When the incident should have fired, from what the run recorded. */
-function expectedFireTime(run: StageRun, tr: Trigger): number | null {
-  if (tr.type === 'stageStart') return tr.delay ?? 0;
+function expectedFireTime(run: StageRun, tr: Trigger, selfId: string): number | null {
+  if (tr.type === 'stageStart') return timedFireTime(run, tr.delay ?? 0, selfId);
   if (tr.type !== 'gate') return null;
   const opened = gateOpenedAt(
     tr,
@@ -179,7 +203,7 @@ describe('incidents fire exactly when their gate says, and never mid-objective',
           expect(rt.state, s.id).toBe('resolved');
           if (s.trigger.type === 'condition') continue;
           // Exactly INCIDENT_GAP after the later of "previous incident solved" and "objectives done".
-          expect(rt.activatedAt, `${s.id} fired at the wrong time`).toBe(expectedFireTime(run, s.trigger));
+          expect(rt.activatedAt, `${s.id} fired at the wrong time`).toBe(expectedFireTime(run, s.trigger, s.id));
           // A gated incident never interrupts an objective the player is still working on.
           if (s.trigger.type === 'gate') expect(pendingAtFire[s.id], `${s.id} fired mid-objective`).toEqual([]);
         }
@@ -217,7 +241,7 @@ describe('incidents fire exactly when their gate says, and never mid-objective',
           if (s.optional && rt.state === 'waiting') continue;
           expect(rt.state, `${why}: ${s.id}`).toBe('resolved');
           if (s.trigger.type === 'condition') continue;
-          expect(rt.activatedAt, `${why}: ${s.id} fired at the wrong time`).toBe(expectedFireTime(run, s.trigger));
+          expect(rt.activatedAt, `${why}: ${s.id} fired at the wrong time`).toBe(expectedFireTime(run, s.trigger, s.id));
           const g = gates(s.trigger);
           if (!g) continue;
           expect(pendingAtFire[s.id], `${why}: ${s.id} fired mid-objective`).toEqual([]);
@@ -316,10 +340,10 @@ describe('no incident fires before its gate objectives are done', () => {
       const fired = rtOf(r, id).activatedAt;
       if (fired === null) {
         // Only possible while something else in the gate is still undone (e.g. 'mount' done, 'power' not).
-        expect(expectedFireTime(r, trigger)).toBeNull();
+        expect(expectedFireTime(r, trigger, id)).toBeNull();
         return;
       }
-      expect(fired).toBe(expectedFireTime(r, trigger));
+      expect(fired).toBe(expectedFireTime(r, trigger, id));
       expect(fired).toBeGreaterThanOrEqual(doneAt + INCIDENT_GAP);
       if (ONLY_HOLD.includes(`${id}/${obj}`)) expect(fired).toBe(doneAt + INCIDENT_GAP);
     });
@@ -376,5 +400,16 @@ describe('stage 4: the notify crash comes with its alert', () => {
     run = tickRun(run).run;
     expect(rtOf(run, 's4-notify').state).toBe('active');
     expect(run.world.app!.services.notify.up).toBe(false);
+  });
+});
+
+describe('timed incidents keep the breather', () => {
+  it('stage 5: the deploy-log objective appears only once the deploy has failed', () => {
+    let run = startStage(5);
+    const def = getStage(5);
+    expect(visibleObjectives(def, run).map((o) => o.id)).not.toContain('log');
+    for (let i = 0; i < 15 && rtOf(run, 's5-drift').state === 'waiting'; i++) run = tickRun(run).run;
+    expect(rtOf(run, 's5-drift').state).toBe('active');
+    expect(visibleObjectives(def, run).map((o) => o.id)).toContain('log');
   });
 });

@@ -18,6 +18,8 @@ export interface Objective {
   after?: string[];
   /** Only shown once these incidents are resolved (for a step that can't succeed while they're broken) */
   afterIncidents?: string[];
+  /** Only shown once these incidents have fired (active or already resolved) */
+  afterFired?: string[];
   /** Concept card awarded when this objective is completed */
   concept?: string;
   /** "What just happened" line on that card */
