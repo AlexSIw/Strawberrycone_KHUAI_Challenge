@@ -75,8 +75,14 @@ export function runCommand(line: string, world: World, host: string, stage: Stag
     return { ...err(msg), world };
   }
   const w = clone(world);
-  const res = m.cmd.run(m.args, { w, host, stage });
-  return { ...res, world: w };
+  try {
+    const res = m.cmd.run(m.args, { w, host, stage });
+    return { ...res, world: w };
+  } catch (e) {
+    // A bad name must never crash the terminal; keep the world unchanged.
+    console.error(e);
+    return { ...err(`${tokens[0]}: 이 명령을 처리하지 못했어요. 이름을 확인해보세요. (help)`), world };
+  }
 }
 
 export function promptFor(host: string): string {

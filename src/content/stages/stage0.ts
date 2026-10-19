@@ -32,10 +32,16 @@ export const stage0: StageDef = {
     { id: 'visit', text: '방 5개 둘러보기 (서버실·네트워크실·전원실·냉각실·관제실)', done: (_w, c) => ROOMS.every((r) => c.visited.includes(r)) },
     { id: 'dashboard', text: '관제실 모니터(대시보드) 켜보기', done: (_w, c) => c.events.includes('open:dashboard') },
     { id: 'mentor', text: '쿠사수에게 말 걸기', done: (_w, c) => c.events.includes('open:mentor') },
-    { id: 'quiz', text: '퀴즈 풀기: 관제실 화이트보드', done: (_w, c) => c.events.includes('quiz:correct'), after: ['visit'] },
+    {
+      id: 'quiz',
+      text: '퀴즈 풀기: 관제실 화이트보드',
+      done: (_w, c) => c.events.includes('quiz:correct'),
+      after: ['visit'],
+      concept: 'datacenter',
+      lesson: '학생의 요청은 인터넷을 지나 데이터센터의 서버로 가요. 서버·네트워크·전원·냉각·관제가 함께 돌아가야 서비스가 살아 있어요.',
+    },
   ],
   scenarios: [],
-  cards: ['datacenter'],
   interactions: {
     rack1: { kind: 'inspect', text: '서버 랙. 서버들이 층층이 꽂혀 있어요. 이게 "컴퓨터 아파트"의 한 동!' },
     rack2: { kind: 'inspect', text: '서버마다 초록 LED가 깜빡여요. 네트워크 케이블이 잘 연결됐다는 뜻이에요.' },

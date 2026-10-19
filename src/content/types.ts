@@ -16,6 +16,10 @@ export interface Objective {
   done: (w: World, ctx: PlayContext) => boolean;
   /** Only shown once these objectives are done */
   after?: string[];
+  /** Concept card awarded when this objective is completed */
+  concept?: string;
+  /** "What just happened" line on that card */
+  lesson?: string;
 }
 
 /** What pressing E on an interactable opens in this stage. */
@@ -65,8 +69,6 @@ export interface StageDef {
   quiz?: Quiz;
   /** Stage 7 only: seconds the player must hold the service up */
   survive?: number;
-  /** Concept cards awarded for clearing the stage (concepts no incident teaches) */
-  cards?: string[];
   /** Rooms shown on the map (others are dim) */
   rooms?: RoomId[];
 }

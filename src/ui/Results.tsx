@@ -30,18 +30,11 @@ function advice(stars: number, hintPenalty: number, revealed: number, mttr: numb
   return '좋아요! 다시 하면 별 3개도 노려볼 수 있어요.';
 }
 
-/**
- * Cards no incident awards but that belong to a stage (same mapping as the concept book).
- * Listed here once the save holds them, so Results stays right whichever way the store grants them.
- */
-const STAGE_EXTRA_CARDS: Partial<Record<number, string[]>> = { 0: ['datacenter'], 2: ['dhcp'], 7: ['postmortem'] };
-
 /** Stage clear screen with score breakdown and the cards earned. */
 export function Results() {
   const score = useGame((s) => s.lastScore);
   const run = useGame((s) => s.run);
   const best = useGame((s) => (s.run ? s.save.best[s.run.stage] : undefined));
-  const savedCards = useGame((s) => s.save.cards);
   const points = useCountUp(score?.points ?? 0);
 
   const isFinal = run?.stage === STAGES.length - 1;
@@ -69,7 +62,7 @@ export function Results() {
       ...run.scenarios
         .filter((r) => r.state === 'resolved')
         .map((r) => def.scenarios.find((s) => s.id === r.id)?.concept),
-      ...(STAGE_EXTRA_CARDS[run.stage] ?? []).filter((c) => savedCards.includes(c)),
+      ...def.objectives.filter((o) => o.concept && o.id in run.objectivesDone).map((o) => o.concept),
     ]),
   ]
     .filter((c): c is string => !!c && c in CONCEPTS)

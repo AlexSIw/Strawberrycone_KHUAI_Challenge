@@ -33,8 +33,8 @@ export function Quiz() {
       </ModalFrame>
     );
   }
-  // The stage-clear card (stage 0: 데이터센터) is mentioned on the quiz; the store awards it when the stage clears.
-  const card = getStage(stage).cards?.[0];
+  // The quiz objective awards a concept card (stage 0: 데이터센터) when it completes.
+  const card = getStage(stage).objectives.find((o) => o.id === 'quiz')?.concept;
   const cardName = card ? CONCEPTS[card]?.name : undefined;
 
   const choose = (i: number) => {

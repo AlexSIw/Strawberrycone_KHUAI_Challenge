@@ -52,7 +52,7 @@ export interface HintMessage {
 export interface ConceptPopup {
   concept: string;
   lesson: string;
-  /** Empty for cards awarded on stage clear */
+  /** Scenario id, or "objective:<id>" for cards from objectives */
   scenarioId: string;
 }
 
@@ -169,13 +169,6 @@ function openEvent(m: Modal): string {
   return `open:${m.type}`;
 }
 
-/** "What just happened" line for cards awarded on stage clear. */
-const STAGE_CARD_LESSON: Record<string, string> = {
-  datacenter: '데이터센터의 다섯 방을 다 둘러봤어요. 서버, 네트워크, 전원, 냉각, 관제가 함께 돌아가야 서비스가 살아 있어요.',
-  dhcp: 'DHCP 서버를 켜자 서버들이 알아서 주소를 받았어요. 주소를 손으로 박지 않아도 돼요!',
-  postmortem: '장애 보고서까지 썼어요. 다음엔 같은 장애가 안 나게 막는 것까지가 운영이에요.',
-};
-
 const FIXING_MODALS: Modal['type'][] = ['terminal', 'rack', 'cable', 'power', 'repair', 'board'];
 
 // ---------- store ----------
@@ -186,12 +179,23 @@ export const gameStore = createStore<GameState>()((set, get) => {
     set((s) => ({ toasts: [...s.toasts.slice(-4), t] }));
   };
 
+  const awardCards = (popups: ConceptPopup[]) => {
+    if (!popups.length) return;
+    const save = { ...get().save, cards: [...new Set([...get().save.cards, ...popups.map((p) => p.concept)])] };
+    writeSave(save);
+    set((st) => ({ concepts: [...st.concepts, ...popups], save }));
+  };
+
   const objectiveToasts = (run: StageRun, ids: string[]) => {
     const def = getStage(run.stage);
+    const popups: ConceptPopup[] = [];
     for (const id of ids) {
       const o = def.objectives.find((x) => x.id === id);
-      if (o) toast('objective', `✅ ${o.text}`);
+      if (!o) continue;
+      toast('objective', `✅ ${o.text}`);
+      if (o.concept) popups.push({ concept: o.concept, lesson: o.lesson ?? CONCEPTS[o.concept]?.definition ?? '', scenarioId: `objective:${id}` });
     }
+    awardCards(popups);
   };
 
   const afterChange = (run: StageRun) => {
@@ -202,21 +206,11 @@ export const gameStore = createStore<GameState>()((set, get) => {
     const def = getStage(run.stage);
     const score = scoreRun(run);
     const save = { ...get().save, best: { ...get().save.best }, cards: [...get().save.cards] };
-    const newCards = (def.cards ?? []).filter((c) => !save.cards.includes(c));
-    save.cards.push(...newCards);
     const prev = save.best[run.stage];
     if (!prev || score.points > prev.points) save.best[run.stage] = { stars: score.stars, points: score.points };
     save.unlocked = Math.max(save.unlocked, Math.min(STAGES.length - 1, run.stage + 1));
     writeSave(save);
-    const popups: ConceptPopup[] = newCards.map((c) => ({ concept: c, lesson: STAGE_CARD_LESSON[c] ?? '', scenarioId: '' }));
-    set((s) => ({
-      save,
-      lastScore: score,
-      modal: null,
-      fixing: false,
-      concepts: [...s.concepts, ...popups],
-      dialogue: { lines: def.outro, index: 0, then: 'results' },
-    }));
+    set({ save, lastScore: score, modal: null, fixing: false, dialogue: { lines: def.outro, index: 0, then: 'results' } });
   };
 
   return {
@@ -282,16 +276,13 @@ export const gameStore = createStore<GameState>()((set, get) => {
         const sc = def.scenarios.find((x) => x.id === id)!;
         toast('alert', `🚨 ${sc.alert}`);
       }
-      if (resolved.length) {
-        const popups: ConceptPopup[] = resolved.map((id) => {
+      awardCards(
+        resolved.map((id) => {
           const sc = def.scenarios.find((x) => x.id === id)!;
           toast('resolved', `🎉 해결: ${sc.title}`);
           return { concept: sc.concept, lesson: sc.lesson, scenarioId: id };
-        });
-        const save = { ...get().save, cards: [...new Set([...get().save.cards, ...popups.map((p) => p.concept)])] };
-        writeSave(save);
-        set((st) => ({ concepts: [...st.concepts, ...popups], save }));
-      }
+        }),
+      );
       objectiveToasts(run, completed);
       afterChange(run);
     },

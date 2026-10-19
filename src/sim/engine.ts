@@ -120,8 +120,11 @@ export function tickRun(prev: StageRun, dt = 1): TickResult {
     ...run.history.slice(-(HISTORY - 1)),
     { t: run.world.t, availability: h.availability, latencyMs: h.latencyMs, errorRate: h.errorRate, rps: h.rps, maxTemp: h.maxTemp, powerKw: h.powerKw },
   ];
-  // Only count availability while there is traffic to serve.
-  if (h.rps > 0) {
+  // Availability is scored between incidents, from the first incident on: setup time isn't the
+  // player's fault, and downtime during an incident is already priced by MTTR.
+  const anyFired = run.scenarios.some((s) => s.activatedAt !== null);
+  const anyActive = run.scenarios.some((s) => s.state === 'active');
+  if (h.rps > 0 && anyFired && !anyActive) {
     run.availabilitySum += h.availability;
     run.ticks += 1;
   }

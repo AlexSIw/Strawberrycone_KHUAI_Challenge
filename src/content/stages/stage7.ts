@@ -109,10 +109,16 @@ export const stage7: StageDef = {
       text: `수강신청 ${SURVIVE_SECONDS}초 버티기 + 모든 장애 해결`,
       done: (_w, c) => c.stageTime >= SURVIVE_SECONDS && ['s7-traffic', 's7-cable', 's7-cooling'].every((id) => c.resolved.includes(id)),
     },
-    { id: 'postmortem', text: '관제실 설계 보드에서 장애 보고서 작성', done: (_w, c) => c.events.includes('board:postmortem'), after: ['survive'] },
+    {
+      id: 'postmortem',
+      text: '관제실 설계 보드에서 장애 보고서 작성',
+      done: (_w, c) => c.events.includes('board:postmortem'),
+      after: ['survive'],
+      concept: 'postmortem',
+      lesson: '장애 보고서까지 썼어요. 같은 장애가 다시 안 나게 막는 것까지가 운영이에요.',
+    },
   ],
   scenarios,
-  cards: ['postmortem'],
   interactions: {
     rack1: { kind: 'inspect', text: '노드 n1 (rack1).' },
     rack2: { kind: 'inspect', text: '노드 n2 (rack2).' },

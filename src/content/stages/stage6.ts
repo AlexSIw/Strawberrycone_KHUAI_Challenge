@@ -165,7 +165,13 @@ export const stage6: StageDef = {
   ],
   initialWorld: () => k8sWorld({ enrollReplicas: 0 }),
   objectives: [
-    { id: 'desired', text: '관제실 설계 보드에서 신청 서비스(enroll)의 "원하는 상태" 작성', done: (w) => w.k8s!.deployments.enroll.replicas >= 2 },
+    {
+      id: 'desired',
+      text: '관제실 설계 보드에서 신청 서비스(enroll)의 "원하는 상태" 작성',
+      done: (w) => w.k8s!.deployments.enroll.replicas >= 2,
+      concept: 'pod',
+      lesson: '노드 4대가 모인 게 클러스터, 그 위에서 도는 가장 작은 실행 단위가 pod예요. 우리는 개수와 버전만 적었어요.',
+    },
     { id: 'observe', text: '관리 PC 터미널에서 pods 로 pod가 뜬 것 확인', done: (_w, c) => c.events.includes('k8s_get_pods'), after: ['desired'] },
   ],
   scenarios,

@@ -1,4 +1,5 @@
 import { CONCEPTS } from '../content/concepts';
+import { FIRST_STAGE } from '../content/cards';
 import { STAGES } from '../content/stages';
 import { useGame } from '../store/game';
 import { ModalFrame } from './ModalFrame';
@@ -6,15 +7,6 @@ import './ConceptsBook.css';
 
 // 개념 도감: every concept card; collected ones are readable, the rest stay locked.
 
-/** Concepts that no incident awards; where they belong in the story. */
-const EXTRA_STAGE: Record<string, number> = { datacenter: 0, dhcp: 2, postmortem: 7 };
-
-/** Stage where each concept is first met (for the locked-card hint). */
-const FIRST_STAGE: Record<string, number> = (() => {
-  const m: Record<string, number> = { ...EXTRA_STAGE };
-  for (const st of [...STAGES].reverse()) for (const sc of st.scenarios) m[sc.concept] = st.id;
-  return m;
-})();
 
 export function ConceptsBook() {
   const cards = useGame((s) => s.save.cards);

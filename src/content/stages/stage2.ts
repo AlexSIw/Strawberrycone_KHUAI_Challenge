@@ -103,11 +103,17 @@ export const stage2: StageDef = {
   initialWorld: cabledWorld,
   objectives: [
     { id: 'terminal', text: '관제실 관리 PC에서 터미널 열기', done: (_w, c) => c.events.includes('open:terminal') },
-    { id: 'dhcp', text: 'DHCP 서버 켜서 서버들에 주소 나눠주기', done: (w) => !!w.net?.dhcpServer && SERVERS.every((id) => !!w.devices[id].l3?.ip), after: ['terminal'] },
+    {
+      id: 'dhcp',
+      text: 'DHCP 서버 켜서 서버들에 주소 나눠주기',
+      done: (w) => !!w.net?.dhcpServer && SERVERS.every((id) => !!w.devices[id].l3?.ip),
+      after: ['terminal'],
+      concept: 'dhcp',
+      lesson: 'DHCP 서버를 켜자 서버들이 알아서 주소를 받았어요. 주소를 손으로 하나하나 박지 않아도 돼요!',
+    },
     { id: 'ping', text: 'ping 으로 web 서버 응답 확인하기', done: (_w, c) => c.events.some((e) => e.startsWith('ping:web:ok') || e.startsWith('ping:10.0.1.10:ok')), after: ['dhcp'] },
   ],
   scenarios,
-  cards: ['dhcp'],
   interactions: {
     rack1: { kind: 'consolePick', hosts: ['web', 'db'] },
     rack2: { kind: 'console', host: 'spare' },

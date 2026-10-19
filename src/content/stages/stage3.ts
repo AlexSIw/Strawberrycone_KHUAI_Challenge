@@ -110,7 +110,14 @@ export const stage3: StageDef = {
   initialWorld: networkedWorld,
   objectives: [
     { id: 'start', text: 'web 서버에 접속해 수강신청 앱 실행하기 (ssh web → server start)', done: (w) => !!w.web?.running },
-    { id: 'curl', text: 'curl 로 /enroll 페이지 직접 요청해보기 (200 OK 받기)', done: (_w, c) => c.events.includes('curl:200:/enroll'), after: ['start'] },
+    {
+      id: 'curl',
+      text: 'curl 로 /enroll 페이지 직접 요청해보기 (200 OK 받기)',
+      done: (_w, c) => c.events.includes('curl:200:/enroll'),
+      after: ['start'],
+      concept: 'tcp',
+      lesson: 'curl -v 로 보면 요청 전에 SYN → SYN-ACK → ACK 인사(3-way handshake)를 먼저 나눠요. 그다음 GET /enroll 주문서가 가고 200 OK가 돌아와요.',
+    },
   ],
   scenarios,
   interactions: {
