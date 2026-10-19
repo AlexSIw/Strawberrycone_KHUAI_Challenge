@@ -1,15 +1,23 @@
 import { repairCrac } from '../../sim/actions';
-import { endpointReaches, podsOf, readyPods, setImage } from '../../sim/k8s';
+import { endpointReaches, podsOf, readyPods, serviceAt, setImage } from '../../sim/k8s';
 import type { Scenario } from '../../sim/scenario';
-import { k8sHealth, k8sWorld, POD_RPS } from '../k8sWorld';
+import type { PlayContext } from '../../sim/types';
+import { cracNodesBack, k8sHealth, k8sWorld, POD_RPS } from '../k8sWorld';
 import type { StageDef } from '../types';
+
+/** Ways of looking at the cluster that show the replaced pod: terminal lists, pod logs, the dashboard. */
+const CRASH_LOOKS = ['k8s_get_pods', 'k8s_get_deploy', 'k8s_get_svc', 'k8s_logs:enroll', 'open:dashboard'];
+/** Seconds after the crash when the self-healing incident closes even if nobody looked. */
+const CRASH_SELF_CLOSE = 25;
+
+const lookedSince = (ctx: PlayContext, t: number, events: string[]) => events.some((e) => (ctx.eventTimes[e] ?? -1) >= t);
 
 const scenarios: Scenario[] = [
   {
     id: 's6-crash',
     stage: 6,
     title: 'pod 하나가 죽음',
-    alert: '신청 pod 하나가 갑자기 죽었어요! (메모리 부족) 빨리 가서 살려야…',
+    alert: '신청 pod 하나가 갑자기 죽었어요! 빨리 가서 살려야…',
     severity: 'warning',
     room: 'noc',
     trigger: { type: 'objective', objective: 'desired', delay: 6 },
@@ -21,19 +29,23 @@ const scenarios: Scenario[] = [
       w.flags.crashedPod = victim.name;
       w.flags.crashAt = w.t;
     },
-    check: (w, ctx) =>
-      (ctx.eventTimes['k8s_get_pods'] ?? -1) >= Number(w.flags.crashAt ?? 0) &&
-      readyPods(w.k8s!, 'enroll').length >= w.k8s!.deployments.enroll.replicas,
+    // Nothing to fix: the cluster heals itself. The player only has to look (any of the ways
+    // below), and even without looking the incident closes once the lesson has had time to play out.
+    check: (w, ctx) => {
+      const crashAt = Number(w.flags.crashAt ?? 0);
+      const healed = readyPods(w.k8s!, 'enroll').length >= w.k8s!.deployments.enroll.replicas;
+      return healed && (lookedSince(ctx, crashAt, CRASH_LOOKS) || w.t >= crashAt + CRASH_SELF_CLOSE);
+    },
     hints: [
       '일단 지금 pod 목록을 확인해봐. 정말 죽어 있어?',
       '네가 적어둔 "원하는 상태"에는 신청 pod가 몇 개였지? 실제 개수와 비교해봐.',
-      'pod 목록을 보는 명령어로 이름과 RESTARTS, 나이(새로 생겼는지)를 살펴봐.',
+      'pod 목록을 보는 명령어로 신청 pod들의 이름과 AGE(태어난 지 얼마나 됐는지)를 살펴봐. 유난히 어린 pod가 있어?',
     ],
     bannedPhrases: ['아무것도 안 해도', '자동으로 다시'],
-    solution: '아무것도 고칠 필요 없다. pods 로 확인하면 쿠버네티스가 이미 새 pod를 띄워 원하는 개수를 맞춰 놓았다.',
+    solution: '아무것도 고칠 필요 없다. pods(또는 deploys)로 확인하면 쿠버네티스가 이미 새 pod(처음 보는 이름, AGE 몇 초)를 띄워 원하는 개수를 맞춰 놓았다.',
     solutionSteps: [{ cmd: 'pods', host: 'ops' }],
     concept: 'selfHealing',
-    lesson: '내가 손대기도 전에 새 pod가 떴어요! "3개 유지"라는 원하는 상태를 쿠버네티스가 계속 맞추거든요 (self-healing).',
+    lesson: '내가 손대기도 전에 새 pod가 떴어요! 죽은 pod가 되살아난 게 아니라, 이름도 IP도 새로 받은 새 pod예요. 적어둔 원하는 개수를 쿠버네티스가 계속 맞추거든요 (self-healing).',
     courseRef: ['마서프 Lec13, 16'],
   },
   {
@@ -54,19 +66,21 @@ const scenarios: Scenario[] = [
     },
     check: (w) => {
       const k = w.k8s!;
-      const url = k.deployments.enroll.env.COURSE_URL;
-      return url in k.services && endpointReaches(k, url, 'course');
+      // Any way of naming the Service works: course-svc, course-svc:8000, http://course-svc …
+      // A pod IP may answer for now, but it is exactly the address that breaks on the next redeploy.
+      const url = k.deployments.enroll.env.COURSE_URL ?? '';
+      return !!serviceAt(k, url) && endpointReaches(k, url, 'course');
     },
     hints: [
       '신청 pod 로그를 봐. 누구한테 연락하다가 실패하고 있어?',
       'pod는 언젠가 죽고, 새로 태어나면 주소(IP)가 바뀌어. 바뀌는 주소 대신 절대 안 바뀌는 "대표 번호"가 있었지?',
       '신청 앱의 설정(환경변수)에서 과목조회를 부르는 주소를 대표 번호(Service 이름)로 바꿔봐. Service 목록도 확인해보고.',
     ],
-    bannedPhrases: ['COURSE_URL=course-svc', 'env set enroll'],
-    solution: 'enroll이 과목조회 pod IP를 직접 부르고 있다. env set enroll COURSE_URL=course-svc',
+    bannedPhrases: ['COURSE_URL=course-svc', 'env set enroll', 'course-svc'],
+    solution: 'enroll이 과목조회 pod IP를 직접 부르고 있다. env set enroll COURSE_URL=course-svc (course-svc:8000, http://course-svc 처럼 써도 된다)',
     solutionSteps: [{ cmd: 'env set enroll COURSE_URL=course-svc', host: 'ops' }],
     concept: 'service',
-    lesson: 'pod IP는 계속 바뀌어요. Service 이름(대표 번호)으로 부르면 살아 있는 pod로 알아서 연결돼요. Stage 2의 "IP 박아두지 마라" 기억나죠?',
+    lesson: 'pod IP는 계속 바뀌어요. Service 이름(대표 번호)으로 부르면 살아 있는 pod로 알아서 연결돼요. Stage 2에서 db를 숫자 대신 이름(DNS)으로 찾았던 것과 같은 원리예요.',
     courseRef: ['마서프 Lec18'],
   },
   {
@@ -80,17 +94,18 @@ const scenarios: Scenario[] = [
     inject: (w) => {
       w.cooling!.cracOk = false;
     },
-    check: (w) => !!w.cooling?.cracOk && Object.values(w.k8s!.nodes).every((n) => n.ready),
+    check: (w) => cracNodesBack(w),
     hints: [
-      '대시보드 온도 그래프와 nodes 를 봐. 어떤 노드들이 아프고, 그 pod들은 어디로 갔어?',
-      '쿠버네티스는 pod를 살아 있는 노드로 옮겨줄 수는 있어도, 더운 방을 식혀주진 못해. 그건 사람 몫이야.',
+      '대시보드 온도 그래프와 nodes 를 봐. 어떤 노드들이 아파? 그 노드에 있던 pod들은 어떻게 됐어?',
+      '쿠버네티스는 쓰러진 노드 대신 살아 있는 노드에 pod를 새로 띄워줄 수는 있어도, 더운 방을 식혀주진 못해. 그건 사람 몫이야.',
       '냉각실로 직접 가서 항온항습기를 고쳐봐. 온도가 내려가면 노드가 돌아와.',
     ],
-    bannedPhrases: ['냉각실로 가서 수리', 'CRAC 수리'],
+    bannedPhrases: ['냉각실로 가서 수리', 'CRAC 수리', '항온항습기를 수리', '항온항습기 수리'],
     solution: '냉각실 항온항습기(CRAC)를 수리한다. 온도가 35°C 아래로 내려가면 노드가 Ready로 돌아온다.',
     solutionSteps: [{ label: 'CRAC 수리', action: repairCrac }],
     concept: 'reschedule',
-    lesson: '과열된 노드의 pod는 다른 노드로 옮겨졌어요(재스케줄링). 2022년 카카오 데이터센터 화재 때도 이런 대비가 중요했죠.',
+    lesson:
+      '과열된 노드의 pod는 사라지고, 쿠버네티스가 살아 있는 노드에 새 pod를 대신 띄웠어요(재스케줄링 · 이름도 IP도 새로). 하지만 방을 식히는 건 사람 몫! 그리고 2022년 카카오 판교 데이터센터 화재처럼 건물 전체 전원이 끊기면 노드끼리 돕는 걸로는 못 버텨요. 그땐 다른 데이터센터로의 이중화(DR)가 필요해요.',
     courseRef: ['마서프 Lec13–14'],
   },
   {
@@ -110,7 +125,7 @@ const scenarios: Scenario[] = [
       'Stage 4에선 서버를 손으로 깔았지? 이제는 "원하는 개수"만 바꾸면 돼.',
       'pod 개수를 바꾸는 명령어를 help에서 찾아서, 필요한 만큼 늘려봐.',
     ],
-    bannedPhrases: ['scale enroll 9', 'scale enroll 10'],
+    bannedPhrases: ['scale enroll 9', 'scale enroll 10', '--replicas', 'deploy/enroll', '9개', '10개'],
     solution: '신청 pod를 늘린다: scale enroll 10',
     solutionSteps: [{ cmd: 'scale enroll 10', host: 'ops' }],
     concept: 'scaleOut',
@@ -138,11 +153,12 @@ const scenarios: Scenario[] = [
       '새 버전이 문제라면, 고치는 동안 학생들은 기다려야 할까? 예전 버전으로 돌아갈 수는 없을까?',
       'rollout 관련 명령어 중에 이전 버전으로 되돌리는 게 있어.',
     ],
-    bannedPhrases: ['rollout undo'],
-    solution: 'v2에 버그가 있다. rollout undo enroll 로 v1으로 되돌린다.',
+    bannedPhrases: ['rollout undo', 'set image enroll'],
+    solution: 'v2에 버그가 있다. rollout undo enroll 로 v1으로 되돌린다. (set image enroll enroll:v1 로 다시 배포해도 된다)',
     solutionSteps: [{ cmd: 'rollout undo enroll', host: 'ops' }],
     concept: 'rollback',
-    lesson: '한 개씩 교체하는 rolling update 덕분에 전부 망가지기 전에 되돌릴 수 있었어요. 버전 태그(:v1, :v2)가 있어서 가능했죠!',
+    lesson:
+      '쿠버네티스가 이전 버전(:v1)을 기록해 둬서 명령 한 줄로 되돌렸어요. 버전 태그(:v1, :v2) 덕분이에요. :latest였다면 어디로 돌아가야 할지 몰랐을 거예요! 그리고 rolling update는 새 pod가 준비돼야 옛 pod를 하나씩 내리니까, 일찍 알아챌수록 덜 망가진 상태에서 되돌릴 수 있어요.',
     courseRef: ['마서프 Lec16, 19–20'],
   },
 ];

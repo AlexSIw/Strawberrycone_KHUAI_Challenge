@@ -45,8 +45,10 @@ export function cabledWorld(): World {
   w.power!.ups = true;
   w.net = {
     dhcpServer: false,
-    dhcpLeases: { web: '10.0.1.10', db: '10.0.1.20', spare: '10.0.1.30' },
-    dns: { web: '10.0.1.10', spare: '10.0.1.30', 'google.com': '8.8.8.8' },
+    // ops normally keeps its fixed address; the reservation only matters if someone switches it to DHCP,
+    // so the admin PC never ends up with no address at all.
+    dhcpLeases: { web: '10.0.1.10', db: '10.0.1.20', spare: '10.0.1.30', ops: '10.0.1.5' },
+    dns: { web: '10.0.1.10', db: '10.0.1.20', spare: '10.0.1.30', r1: '10.0.1.1', ops: '10.0.1.5', 'google.com': '8.8.8.8' },
     routerIp: '10.0.1.1',
     mask: 24,
   };
@@ -54,19 +56,21 @@ export function cabledWorld(): World {
   return w;
 }
 
-/** Stage 3 start: network healthy, web server installed but not started. */
+/**
+ * Stage 3 start: network healthy, web server installed but not started (on the wrong port, single-threaded).
+ * Only a few beta testers are online and no notice has been posted yet, so nothing else is broken
+ * until an incident says so. Stages 0 and 4 build on this world and set their own traffic/notice.
+ */
 export function networkedWorld(): World {
   const w = cabledWorld();
   w.net!.dhcpServer = true;
-  w.net!.dns.db = '10.0.1.20';
   for (const id of ['web', 'db', 'spare']) {
     const l3 = w.devices[id].l3!;
     l3.ip = w.net!.dhcpLeases[id];
-    l3.gw = '10.0.1.1';
+    l3.gw = w.net!.routerIp;
   }
   w.web = { host: 'web', running: false, port: 8080, threads: 'single', routes: ['/', '/enroll', '/courses'] };
-  w.notice = { url: '/enrol' };
-  w.traffic.rps = 100;
+  w.traffic.rps = 20;
   return w;
 }
 
@@ -94,11 +98,17 @@ export function serverStatus(w: World, id: string): 'up' | 'degraded' | 'down' {
 /** Students → web, and web → db (by name). Used by stages 2 and 3. */
 export function networkPath(w: World): { ok: number; notes: string[] } {
   const notes: string[] = [];
+  // Each name must lead to the machine itself; another box answering (or answering only half the time) is a failure too.
   const outside = ping(w, 'internet', 'web');
+  const rightWeb = outside.ok && outside.targetId === 'web';
   if (!outside.ok) notes.push('외부(학생)에서 web 접속 실패');
+  else if (!rightWeb) notes.push('외부(학생) 요청에 엉뚱한 장비가 응답함');
+  else if (outside.loss > 0) notes.push('외부(학생) → web 응답이 들쭉날쭉');
   const toDb = ping(w, 'web', 'db');
+  const rightDb = toDb.ok && toDb.targetId === 'db';
   if (!toDb.ok) notes.push('web → db 연결 실패');
+  else if (!rightDb) notes.push('web → db 요청에 엉뚱한 장비가 응답함');
   else if (toDb.loss > 0) notes.push('web → db 응답이 들쭉날쭉');
-  const ok = (outside.ok ? 1 : 0) * (toDb.ok ? 1 - toDb.loss : 0);
+  const ok = (rightWeb ? 1 - outside.loss : 0) * (rightDb ? 1 - toDb.loss : 0);
   return { ok, notes };
 }

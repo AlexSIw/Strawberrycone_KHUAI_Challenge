@@ -1,10 +1,41 @@
-import { addressOf, isIp, l1Path, linkUp, ping, powered, resolveName } from '../network';
-import type { Command } from './types';
-import { bold, dim, err, green, ok, out, red } from './types';
+import {
+  addressOf,
+  devicesWithIp,
+  isIp,
+  isLoopback,
+  l1Path,
+  linkUp,
+  networkOf,
+  onWire,
+  ping,
+  powered,
+  resolveName,
+  sameSubnet,
+} from '../network';
+import type { World } from '../types';
+import { own } from '../util';
+import type { CmdResult, Command } from './types';
+import { bold, dim, err, green, ok, out, red, yellow } from './types';
 
-function requireL3(host: string, w: import('../types').World) {
-  return w.devices[host]?.l3 ? null : err(`${host}: 이 장비에는 IP 설정이 없어요.`);
+function requireL3(host: string, w: World) {
+  return own(w.devices, host)?.l3 ? null : err(`${host}: 이 장비에는 IP 설정이 없어요.`);
 }
+
+/** Does this world model cabling for the device (so "can I reach it over the wire?" is a fair question)? */
+function cabled(w: World, id: string): boolean {
+  const d = own(w.devices, id);
+  return !!d && Object.values(w.cables).some((c) => d.ports.some((p) => c.a === `${id}:${p}` || c.b === `${id}:${p}`));
+}
+
+/** Stages 2–3 have rack consoles to fall back on; later stages just say the network can't reach it. */
+const sshTimeout = (target: string, console: boolean): CmdResult => ({
+  lines: [
+    red(`ssh: connect to host ${target} port 22: Connection timed out`),
+    dim(console ? '(네트워크로는 닿지 않아요. 서버 랙 앞에 직접 가서 콘솔로 접속해 볼 수 있어요)' : '(네트워크로는 닿지 않아요)'),
+  ],
+});
+
+const PING_VALUE_FLAGS = new Set(['-c', '-i', '-W', '-w', '-t', '-s']);
 
 export const netCommands: Command[] = [
   {
@@ -15,14 +46,16 @@ export const netCommands: Command[] = [
     usage: 'ip addr',
     summary: '이 장비의 IP 주소·게이트웨이·링크 상태 보기',
     run(_args, { w, host }) {
-      const d = w.devices[host];
+      const d = own(w.devices, host);
       if (!d) return err('알 수 없는 장비');
       const a = addressOf(w, host);
       const up = d.ports.some((p) => linkUp(w, host, p));
+      // The router sits on both sides (inside network and internet), so it has no gateway of its own.
+      const gw = d.kind === 'router' ? dim('(라우터 자신 · 인터넷과 직접 연결)') : (a.gw ?? red('(없음)'));
       return out(
         `${bold('eth0')}: link ${up ? green('UP') : red('DOWN')}`,
         `    inet    ${a.ip ? `${a.ip}/${a.mask}` : red('(주소 없음)')}`,
-        `    gateway ${a.gw ?? red('(없음)')}`,
+        `    gateway ${gw}`,
         `    mode    ${d.l3?.mode ?? '-'}`,
       );
     },
@@ -36,21 +69,39 @@ export const netCommands: Command[] = [
     run(args, { w, host }) {
       const bad = requireL3(host, w);
       if (bad) return bad;
-      const l3 = w.devices[host].l3!;
+      const d = w.devices[host];
+      if (d.kind === 'router') {
+        return err('라우터 주소는 네트워크 전체의 "출입문"이라 여기서는 바꾸지 않아요. 서버 쪽 설정을 확인해 보세요.');
+      }
+      const l3 = d.l3!;
       const [what, value] = args;
       if (what === 'dhcp') {
+        // Asking for a new lease drops the old address and gateway until the DHCP server answers.
         l3.mode = 'dhcp';
         l3.ip = null;
-        return { lines: [green('DHCP 모드로 바꿨어요. 안내데스크(DHCP 서버)에서 주소를 받아요.')], events: [`ip_dhcp:${host}`] };
+        l3.gw = null;
+        const lines = [green('DHCP 모드로 바꿨어요. 안내데스크(DHCP 서버)에서 주소를 받아요.')];
+        if (!w.net?.dhcpServer) lines.push(dim('(그런데 지금 DHCP 서버가 꺼져 있어서 주소를 못 받아요)'));
+        return { lines, events: [`ip_dhcp:${host}`] };
       }
       if (what === 'static' && value && isIp(value)) {
         l3.mode = 'static';
         l3.ip = value;
-        return ok(`고정 IP ${value} 로 설정했어요.`);
+        const lines = [green(`고정 IP ${value} 로 설정했어요.`)];
+        const net = w.net;
+        if (net && !sameSubnet(value, net.routerIp, net.mask)) {
+          lines.push(dim(`(주의: 이 네트워크는 ${networkOf(net.routerIp, net.mask)} 예요. 그 밖의 주소면 라우터가 이 장비로 오는 길을 몰라요)`));
+        }
+        if (devicesWithIp(w, value).some((o) => o.id !== host && onWire(w, o))) {
+          lines.push(yellow('(경고: 이 주소를 이미 쓰고 있는 장비가 있어요. 주소 충돌!)'));
+        }
+        return { lines, events: [`ip_static:${host}`] };
       }
       if ((what === 'gw' || what === 'gateway') && value && isIp(value)) {
         l3.gw = value;
-        return { lines: [green(`게이트웨이를 ${value} 로 설정했어요.`)], events: [`gw_set:${host}`] };
+        const lines = [green(`게이트웨이를 ${value} 로 설정했어요.`)];
+        if (l3.mode === 'dhcp' && w.net?.dhcpServer) lines.push(dim('(DHCP 모드라서 안내데스크가 준 값으로 곧 다시 바뀌어요)'));
+        return { lines, events: [`gw_set:${host}`] };
       }
       return err('사용법: ip set dhcp | ip set static <ip> | ip set gw <ip>');
     },
@@ -61,8 +112,17 @@ export const netCommands: Command[] = [
     usage: 'ping <이름 또는 IP>',
     summary: '상대에게 신호를 보내 응답이 오는지 확인',
     run(args, { w, host }) {
-      const target = args[0];
+      // "ping -c 3 web": skip flags and the value of flags that take one.
+      const target = args.find((a, i) => !a.startsWith('-') && !PING_VALUE_FLAGS.has(args[i - 1]));
       if (!target) return err('사용법: ping <이름 또는 IP>');
+      if (!w.net && !isLoopback(target)) {
+        // Later stages don't model addresses; send the player to the tool that shows machine health there.
+        const tool = w.k8s ? '노드 상태는 nodes, pod 상태는 pods' : '서버·컨테이너 상태는 docker ps';
+        return {
+          lines: [yellow('ping: 이 단계에서는 장비 IP 주소를 직접 다루지 않아요.'), dim(`(${tool} 로 확인해요)`)],
+          events: [`ping:${target}:n/a`],
+        };
+      }
       const r = ping(w, host, target);
       const ip = r.targetIp ?? resolveName(w, target) ?? target;
       const lines = [`PING ${target} (${ip}): 56 data bytes`];
@@ -110,10 +170,11 @@ export const netCommands: Command[] = [
       }
       if (sub === 'off') {
         w.net.dhcpServer = false;
-        return ok('DHCP 서버를 껐어요.');
+        return out(green('DHCP 서버를 껐어요.'), dim('(이미 받은 주소는 그대로 써요. 새로 주소를 받으려는 장비만 못 받아요)'));
       }
+      if (sub !== 'status') return err('사용법: dhcp status | dhcp on | dhcp off');
       const leases = Object.entries(w.net.dhcpLeases)
-        .filter(([id]) => w.devices[id]?.l3?.mode === 'dhcp' && w.devices[id]?.l3?.ip)
+        .filter(([id]) => own(w.devices, id)?.l3?.mode === 'dhcp' && own(w.devices, id)?.l3?.ip)
         .map(([id, ip]) => `  ${id.padEnd(8)} ${ip}`);
       return out(`DHCP 서버: ${w.net.dhcpServer ? green('ON') : red('OFF')}`, '나눠준 주소:', ...(leases.length ? leases : [dim('  (없음)')]));
     },
@@ -139,9 +200,17 @@ export const netCommands: Command[] = [
     summary: 'DNS 장부에 이름 등록',
     run(args, { w }) {
       const [name, ip] = args;
-      if (!w.net || !name || !ip || !isIp(ip)) return err('사용법: dns add <이름> <IP>');
-      w.net.dns[name] = ip;
-      return { lines: [green(`등록했어요: ${name} → ${ip}`)], events: [`dns_add:${name}`] };
+      const net = w.net;
+      if (!net || !name || !/^[a-z0-9][a-z0-9.-]*$/i.test(name) || !ip || !isIp(ip)) return err('사용법: dns add <이름> <IP>');
+      net.dns[name] = ip;
+      const lines = [green(`등록했어요: ${name} → ${ip}`)];
+      // A friendly sanity check for addresses inside our own network.
+      if (sameSubnet(ip, net.routerIp, net.mask)) {
+        const users = devicesWithIp(w, ip).filter((d) => onWire(w, d));
+        if (users.length === 0) lines.push(dim(`(참고: 지금 ${ip} 를 쓰는 장비는 없어요)`));
+        else if (!users.some((d) => d.id === name)) lines.push(dim(`(참고: ${ip} 는 지금 ${users.map((d) => d.id).join(', ')} 장비의 주소예요)`));
+      }
+      return { lines, events: [`dns_add:${name}`] };
     },
   },
   {
@@ -151,27 +220,44 @@ export const netCommands: Command[] = [
     usage: 'dns del <이름>',
     summary: 'DNS 장부에서 이름 지우기',
     run(args, { w }) {
-      if (!w.net || !args[0] || !(args[0] in w.net.dns)) return err('그런 이름은 장부에 없어요.');
-      delete w.net.dns[args[0]];
-      return ok(`${args[0]} 를 지웠어요.`);
+      const name = args[0];
+      if (!w.net || !name || own(w.net.dns, name) === undefined) return err('그런 이름은 장부에 없어요.');
+      delete w.net.dns[name];
+      return ok(`${name} 를 지웠어요.`);
     },
   },
   {
     name: 'ssh',
     minStage: 2,
-    usage: 'ssh <장비이름>',
+    usage: 'ssh <이름 또는 IP>',
     summary: '다른 장비에 원격 접속',
     run(args, { w, host, stage }) {
       const target = args[0];
-      if (!target) return err('사용법: ssh <장비이름>');
-      const id = Object.keys(w.devices).find((k) => k === target) ?? null;
-      if (!id) return err(`ssh: Could not resolve hostname ${target}`);
-      if (id === host) return out(dim('이미 그 장비에 있어요.'));
-      if (stage <= 3) {
-        const p = ping(w, host, resolveName(w, target) ?? target);
-        if (!powered(w, id)) return err(`ssh: ${target} 전원이 꺼져 있어요.`);
-        if (!p.ok && !l1Path(w, host, id)) return err(`ssh: connect to host ${target} port 22: Connection timed out`);
+      if (!target) return err('사용법: ssh <이름 또는 IP>');
+      if (isLoopback(target)) return out(dim('이미 그 장비에 있어요.'));
+      let id: string;
+      if (w.net) {
+        // ssh goes over the network exactly like ping: name → DNS → address → the machine that answers.
+        const p = ping(w, host, target);
+        if (p.failure === 'unknown_host') return { lines: [red(`ssh: Could not resolve hostname ${target}`), dim('(DNS 장부에 없는 이름이에요)')] };
+        if (p.failure === 'no_ip') return { lines: [red('ssh: connect: No route to host'), dim('(이 장비에 IP 주소가 없어요)')] };
+        if (p.failure === 'no_power') return err('장비 전원이 꺼져 있어요.');
+        if (p.targetId && !powered(w, p.targetId)) return err(`ssh: ${target} 전원이 꺼져 있어요.`);
+        if (!p.ok || !p.targetId) return sshTimeout(target, stage <= 3);
+        if (own(w.devices, p.targetId)?.kind === 'internet') return err(`ssh: ${target} 는 우리 장비가 아니라서 접속할 수 없어요.`);
+        id = p.targetId;
+      } else {
+        // No addresses in this world: machines are reached by name.
+        const d = own(w.devices, target);
+        if (!d || d.kind === 'internet') return err(`ssh: Could not resolve hostname ${target}`);
+        id = d.id;
+        // Where the world models cabling, a machine you can't reach over the wire can't be logged into.
+        if (id !== host && cabled(w, id) && cabled(w, host)) {
+          if (!powered(w, id)) return err(`ssh: ${target} 전원이 꺼져 있어요.`);
+          if (!l1Path(w, host, id)) return sshTimeout(target, false);
+        }
       }
+      if (id === host) return out(dim('이미 그 장비에 있어요.'));
       return { lines: [green(`${target} 에 접속했어요. (돌아가려면 exit)`)], host: id, events: [`ssh:${id}`] };
     },
   },

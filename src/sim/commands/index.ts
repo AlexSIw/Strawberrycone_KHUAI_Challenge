@@ -5,7 +5,7 @@ import { k8sCommands } from './k8s';
 import { netCommands } from './net';
 import { svcCommands } from './svc';
 import type { Command, CmdResult } from './types';
-import { bold, dim, err } from './types';
+import { bold, dim, err, red } from './types';
 import { webCommands } from './web';
 
 /** Terminal width of a string: wide (Hangul/CJK) characters take two cells. */
@@ -68,10 +68,13 @@ export function runCommand(line: string, world: World, host: string, stage: Stag
   if (!tokens.length) return { lines: [], world };
   const m = match(tokens, stage);
   if (!m) {
-    const known = ALL_COMMANDS.some((c) => c.name.split(' ')[0] === tokens[0]);
-    const msg = known
-      ? `${tokens[0]}: 이 단계에서는 아직 못 써요. 또는 사용법이 달라요. (help)`
-      : `${tokens[0]}: 그런 명령어는 아직 몰라요. help 를 쳐보세요.`;
+    const same = ALL_COMMANDS.filter((c) => c.name.split(' ')[0] === tokens[0]);
+    const usable = available(stage).filter((c) => c.name.split(' ')[0] === tokens[0]);
+    // The word exists in this stage: show its forms instead of claiming it's unavailable.
+    if (usable.length) return { lines: [red(`${tokens[0]}: 사용법이 달라요. 이렇게 써보세요:`), ...usable.map((c) => dim(`  ${c.usage}`))], world };
+    let msg = `${tokens[0]}: 그런 명령어는 아직 몰라요. help 를 쳐보세요.`;
+    if (same.length && same.every((c) => c.minStage > stage)) msg = `${tokens[0]}: 이 명령어는 다음 단계에서 배워요. (help)`;
+    else if (same.length) msg = `${tokens[0]}: 이 단계에서는 쓰지 않는 명령어예요. help 로 지금 쓸 수 있는 명령어를 보세요.`;
     return { ...err(msg), world };
   }
   const w = clone(world);

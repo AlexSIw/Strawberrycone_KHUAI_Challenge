@@ -1,6 +1,7 @@
 // 전원실 미니게임: 상용 전원 · UPS · PDU A/B 상태를 보고, 장비마다 A/B 플러그를 꽂는다.
+// A = UPS 뒤의 줄(정전 대비), B = 따로 들어오는 두 번째 줄(PDU·회로 고장 대비).
 import { setFeeds, setUps } from '../../sim/actions';
-import { powered } from '../../sim/network';
+import { feedLive, powered } from '../../sim/network';
 import type { Device } from '../../sim/types';
 import { gameStore } from '../../store/game';
 import { GameFooter, Led, MiniGameFrame, TaskBar, rackName, useWorld } from './common';
@@ -58,12 +59,12 @@ export function PowerGame() {
     );
   }
 
-  const { mains, ups } = world.power;
+  const { mains, ups, pduDown } = world.power;
   const all = Object.values(world.devices).filter((d) => d.kind !== 'internet' && d.id !== 'ops');
   const rows = all.filter((d) => d.installed).sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
   const notMounted = all.filter((d) => !d.installed);
-  const pduA = mains || ups;
-  const pduB = mains;
+  const pduA = feedLive(world, 'A');
+  const pduB = feedLive(world, 'B');
   const plugged = (f: Feed) => rows.filter((d) => d.feeds.includes(f)).length;
   const offRows = rows.filter((d) => !powered(world, d.id));
   const unplugged = rows.filter((d) => d.feeds.length === 0);
@@ -72,8 +73,9 @@ export function PowerGame() {
   let task: string;
   if (rows.length === 0) task = '아직 랙에 장착된 장비가 없어요. 먼저 서버실에서 서버를 장착하세요.';
   else if (!mains && offRows.length) task = `⚡ 정전! 장비 ${offRows.length}대가 꺼졌어요. 정전에도 버티게 만들 방법을 찾아보세요.`;
-  // The blackout incident restores mains the moment it is solved, so "no mains but all on" means it isn't solved yet.
-  else if (!mains) task = '모든 장비가 켜졌어요! 그래도 경보가 그대로라면 창을 닫고 쿠사수(H)에게 힌트를 받아 보세요.';
+  else if (!mains) task = '정전이지만 모든 장비가 UPS 배터리로 버티고 있어요!';
+  else if (pduDown && offRows.length) task = `PDU ${pduDown} 차단기가 내려갔어요! 장비 ${offRows.length}대가 꺼졌어요. 줄 하나가 끊겨도 버티게 만들 방법을 찾아보세요.`;
+  else if (pduDown) task = `PDU ${pduDown} 차단기가 내려갔지만 모든 장비가 다른 줄로 버티고 있어요!`;
   else if (notMounted.length) task = `서버 ${notMounted.length}대가 아직 랙에 없어요. 서버실에서 먼저 장착한 뒤 전원을 꽂으세요.`;
   else if (unplugged.length) task = '장비마다 플러그 A 또는 B를 눌러 꽂아서 전원을 넣으세요.';
   else if (offRows.length) task = '꺼진 장비가 있어요. 플러그를 확인하세요.';
@@ -119,7 +121,7 @@ export function PowerGame() {
         <div className={`pw-node pw-pdu pw-pdu-a${pduA ? ' live' : ' dead'}`}>
           <div className="pw-node-title">PDU A</div>
           <div className="pw-pdu-row">
-            <Led state={pduA ? 'on' : 'off'} /> {pduA ? '전기 있음' : '전기 없음'} · <span className="pw-pdu-count">{plugged('A')}대</span>
+            <Led state={pduA ? 'on' : 'off'} /> {pduDown === 'A' ? '차단기 내려감 (점검 중)' : pduA ? '전기 있음' : '전기 없음'} · <span className="pw-pdu-count">{plugged('A')}대</span>
           </div>
         </div>
 
@@ -128,13 +130,13 @@ export function PowerGame() {
         <div className={`pw-node pw-pdu pw-pdu-b${pduB ? ' live' : ' dead'}`}>
           <div className="pw-node-title">PDU B</div>
           <div className="pw-pdu-row">
-            <Led state={pduB ? 'on' : 'off'} /> {pduB ? '전기 있음' : '전기 없음'} · <span className="pw-pdu-count">{plugged('B')}대</span>
+            <Led state={pduB ? 'on' : 'off'} /> {pduDown === 'B' ? '차단기 내려감 (점검 중)' : pduB ? '전기 있음' : '전기 없음'} · <span className="pw-pdu-count">{plugged('B')}대</span>
           </div>
         </div>
       </div>
 
       <div className="pw-legend">
-        <b>A</b> = UPS 뒤에 있는 줄(정전에도 버팀, UPS 연결 시) · <b>B</b> = 일반 전원
+        <b>A</b> = UPS 뒤에 있는 줄(UPS를 연결하면 정전에도 버팀) · <b>B</b> = 따로 들어오는 두 번째 줄(A쪽 PDU가 고장 나도 살아 있음)
       </div>
 
       <table className="pw-table">

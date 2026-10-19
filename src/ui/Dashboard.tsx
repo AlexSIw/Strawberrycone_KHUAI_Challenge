@@ -343,6 +343,12 @@ function PowerPanel({ w, h }: { w: World; h: Health }) {
           <span>UPS (무정전 전원장치)</span>
           <b>{p.ups ? '● PDU A에 연결됨' : '▲ 연결 안 됨'}</b>
         </div>
+        {p.pduDown && (
+          <div className="dash-tile bad">
+            <span>PDU {p.pduDown}</span>
+            <b>✕ 차단기 내려감</b>
+          </div>
+        )}
         <div className="dash-tile">
           <span>사용 전력</span>
           <b>{h.powerKw.toFixed(2)} kW</b>
@@ -475,6 +481,11 @@ function PodsPanel({ w }: { w: World }) {
           );
         })}
       </div>
+      {k.pods.some((p) => p.node === '') && (
+        <p className="warn dash-unscheduled">
+          ▲ 들어갈 노드가 없어 대기 중(Pending): {k.pods.filter((p) => p.node === '').map((p) => p.name).join(', ')}
+        </p>
+      )}
       <table className="dash-table">
         <thead>
           <tr>

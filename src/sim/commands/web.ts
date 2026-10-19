@@ -1,4 +1,5 @@
-import { ping, resolveName } from '../network';
+import { isLoopback, ping, resolveName } from '../network';
+import { own } from '../util';
 import type { Command } from './types';
 import { bold, dim, err, green, ok, out, red, yellow } from './types';
 
@@ -7,6 +8,8 @@ function onWeb(host: string, w: import('../types').World) {
   if (host !== w.web.host) return err(`server: 이 장비에는 웹 서버가 없어요. 먼저 ${w.web.host} 에 접속하세요 (ssh ${w.web.host}).`);
   return null;
 }
+
+const CURL_VALUE_FLAGS = new Set(['-o', '-X', '-H', '-d', '--data', '-m', '--max-time', '-u']);
 
 export const webCommands: Command[] = [
   {
@@ -97,13 +100,15 @@ export const webCommands: Command[] = [
     usage: 'curl [-v] http://<이름>[:포트]/<경로>',
     summary: '로봇 손님처럼 HTTP 요청 보내기',
     run(args, { w, host }) {
-      const verbose = args.includes('-v');
-      const url = args.find((a) => a !== '-v');
+      const verbose = args.includes('-v') || args.includes('--verbose');
+      // Other flags (-i, -s, -L …) are ignored; skip the value of flags that take one.
+      const url = args.find((a, i) => !a.startsWith('-') && !CURL_VALUE_FLAGS.has(args[i - 1]));
       const m = url?.match(/^(?:https?:\/\/)?([^/:]+)(?::(\d+))?(\/.*)?$/);
       if (!m) return err('사용법: curl [-v] http://web/enroll');
       const [, name, portStr, path = '/'] = m;
       const port = portStr ? parseInt(portStr, 10) : 80;
-      const ip = resolveName(w, name);
+      // localhost / 127.0.0.1 is the machine you are on.
+      const ip = isLoopback(name) ? '127.0.0.1' : resolveName(w, name);
       if (!ip) return err(`curl: (6) Could not resolve host: ${name}`);
       const p = ping(w, host, name);
       const lines: string[] = [];
@@ -140,7 +145,7 @@ export const webCommands: Command[] = [
         '/enroll': '{"message":"수강신청 페이지","open":true}',
         '/courses': '{"courses":["자료구조","이산구조","마이크로서비스프로그래밍"]}',
       };
-      lines.push(green(body[path] ?? '{"status":"ok"}'));
+      lines.push(green(own(body, path) ?? '{"status":"ok"}'));
       return { lines, events: [`curl:200:${path}`] };
     },
   },
@@ -152,7 +157,7 @@ export const webCommands: Command[] = [
     usage: 'notice show',
     summary: '학생 공지에 적힌 수강신청 주소 보기',
     run(_a, { w }) {
-      if (!w.notice) return err('공지가 없어요.');
+      if (!w.notice) return out(dim('아직 올라온 학생 공지가 없어요.'));
       return out(`📢 학생 공지: "수강신청은 http://web${w.notice.url} 에서!"`);
     },
   },
@@ -163,7 +168,8 @@ export const webCommands: Command[] = [
     usage: 'notice set <경로>',
     summary: '학생 공지의 주소 고치기',
     run(args, { w }) {
-      if (!w.notice || !args[0]?.startsWith('/')) return err('사용법: notice set /경로');
+      if (!w.notice) return err('아직 올라온 학생 공지가 없어요. 고칠 공지가 생기면 그때 써요.');
+      if (!args[0]?.startsWith('/')) return err('사용법: notice set /경로');
       w.notice.url = args[0];
       return ok(`공지를 고쳤어요: http://web${args[0]}`);
     },

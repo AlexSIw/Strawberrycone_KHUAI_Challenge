@@ -1,6 +1,7 @@
 # 운영 매뉴얼 — Stage 3 · 서비스 오픈 (L4 · 소켓 · HTTP)
 
 네트워크는 정상이야. 이제 web 서버에서 수강신청 앱(모놀리식 앱)을 켜고, 학생들이 실제로 접속하게 만드는 단계야.
+처음엔 베타 테스터 몇 명만 접속하고, 학생 공지도 아직 안 올라왔어. 문제는 장애 경보와 함께 하나씩 나타나.
 
 ## 이번 단계 목표
 1. web 서버에 접속해 수강신청 앱 실행하기
@@ -15,14 +16,14 @@
 ## 쓸 수 있는 명령어
 | 명령 | 뜻 |
 |---|---|
-| ssh <장비이름> / exit | 다른 장비 접속 / 관리 PC로 돌아오기 |
+| ssh <이름 또는 IP> / exit | 다른 장비 접속 / 관리 PC로 돌아오기 |
 | server status | (web 서버에서) 앱 상태, 포트, 스레드 방식, 가진 경로 목록 보기 |
 | server start / server stop | 앱 실행 / 중지 |
 | server set port <번호> | 앱이 기다리는 포트 바꾸기 |
 | server set threads single\|multi | 직원 한 명 방식 / 요청마다 도우미 방식 |
 | ports | 이 장비에서 열려 있는(LISTEN) 포트 목록 |
-| curl [-v] http://<이름>[:포트]/<경로> | 로봇 손님처럼 HTTP 요청 보내기 (-v 는 handshake 과정까지 보여줌) |
-| notice show / notice set <경로> | 학생 공지에 적힌 주소 보기 / 고치기 |
+| curl [-v] http://<이름>[:포트]/<경로> | 로봇 손님처럼 HTTP 요청 보내기 (-v 는 handshake 과정까지 보여줌). web 서버 안에서는 localhost 로 자기 자신에게 요청할 수도 있어 |
+| notice show / notice set <경로> | 학생 공지에 적힌 주소 보기 / 고치기 (공지가 올라온 뒤에만) |
 | ip addr, ping, dhcp, dns list | Stage 2 네트워크 도구도 그대로 쓸 수 있어 |
 | help, clear, hint, hostname | 공통 |
 

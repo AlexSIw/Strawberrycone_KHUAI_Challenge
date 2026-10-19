@@ -72,18 +72,29 @@ const scenarios: Scenario[] = [
     id: 's3-404',
     stage: 3,
     title: '404 Not Found',
-    alert: '학생 커뮤니티: "공지 링크 누르면 Not Found 떠요ㅠ" (직접 주소 친 학생은 괜찮대요)',
+    alert: '수강신청 안내 공지가 올라갔어요. 그런데 학생 커뮤니티: "공지 링크 누르면 Not Found 떠요ㅠ" (직접 주소 친 학생은 괜찮대요)',
     severity: 'warning',
     room: 'noc',
     trigger: { type: 'after', scenario: 's3-thread', delay: 6 },
-    inject: () => {},
+    inject: (w) => {
+      // The enrolment notice goes up for every student — with a typo in the link.
+      w.notice = { url: '/enrol' };
+    },
     check: (w) => !!w.notice && !!w.web?.routes.includes(w.notice.url),
     hints: [
       '서버는 잘 응답하고 있어. "공지 링크"로 온 학생만 문제라면 그 링크엔 뭐가 적혀 있을까?',
       '404는 "그런 메뉴는 없어요"라는 뜻이야. 서버가 가진 경로 목록과 공지의 경로를 비교해봐.',
       '공지를 보는 명령어와, 로봇 손님(curl)으로 경로를 직접 시험해보는 방법이 있어.',
     ],
-    bannedPhrases: ['notice set /enroll', '/enrol '],
+    // The typo path is the whole diagnosis. A leading/trailing space marks a word edge for the mentor's guard, so
+    // ' enrol ' catches '/enrol로', '`/enrol`', '/enrol.', a bare 'enrol이라고' … but never the real '/enroll'.
+    bannedPhrases: [
+      'notice set /enroll',
+      '/enrol ',
+      ' enrol ',
+      'enrol 오타', 'l이 하나 빠', 'l 하나 빠', 'l자 하나',
+      '/enroll로 고쳐', '/enroll로 바꿔', '/enroll 로 고쳐', '/enroll 로 바꿔',
+    ],
     solution: '공지에 오타 경로(/enrol)가 적혀 있다. notice set /enroll',
     solutionSteps: [{ cmd: 'notice set /enroll', host: 'ops' }],
     concept: 'http',
@@ -107,6 +118,7 @@ export const stage3: StageDef = {
     { who: 'boss', text: '좋아… 그런데 다음 주가 진짜 수강신청이야. 접속자가 50배는 될 텐데…' },
     { who: 'lion', text: '…설마 괜찮겠죠?', mood: 'worried' },
   ],
+  // networkedWorld: a handful of beta testers, no notice posted yet — each later problem arrives with its incident.
   initialWorld: networkedWorld,
   objectives: [
     { id: 'start', text: 'web 서버에 접속해 수강신청 앱 실행하기 (ssh web → server start)', done: (w) => !!w.web?.running },

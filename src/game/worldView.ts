@@ -75,8 +75,11 @@ export function blackout(w: World): boolean {
 /** PDU feed A sits behind the UPS, feed B is mains only. */
 export function pduLeds(w: World): { A: LedState; B: LedState } {
   if (!w.power) return { A: 'green', B: 'green' };
-  const { mains, ups } = w.power;
-  return { A: mains ? 'green' : ups ? 'amber' : 'red', B: mains ? 'green' : 'red' };
+  const { mains, ups, pduDown } = w.power;
+  return {
+    A: pduDown === 'A' ? 'red' : mains ? 'green' : ups ? 'amber' : 'red',
+    B: pduDown === 'B' || !mains ? 'red' : 'green',
+  };
 }
 
 export function upsView(w: World): { lcd: 'normal' | 'battery' | 'off'; led: LedState } {

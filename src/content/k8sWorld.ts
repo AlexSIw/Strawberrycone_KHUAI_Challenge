@@ -1,4 +1,4 @@
-import { endpointReaches, readyPods, reconcile } from '../sim/k8s';
+import { endpointReaches, readyPods, reconcile, serviceAt } from '../sim/k8s';
 import type { Device, Health, World } from '../sim/types';
 import { emptyHealth } from './worlds';
 
@@ -55,14 +55,27 @@ export function k8sWorld(opts: { enrollReplicas: number }): World {
       ipSeq: 0,
       badVersions: ['enroll:v2'],
       maxPodsPerNode: 6,
+      // Tags pushed to the registry; v2 is the buggy release the deploy team pushes in Stage 6.
+      images: ['login:v1', 'course:v1', 'enroll:v1', 'enroll:v2', 'notify:v1'],
+      clock: 0,
     },
     cooling: { cracOk: true, temps: { rack1: 24, rack2: 24, rack3: 24, rack4: 24 }, cracRacks: ['rack1', 'rack2'] },
     traffic: { rps: 2500, noticeShare: 0 },
     flags: {},
   };
-  // Start with every pod already running.
+  // Start with every pod already running — for a few hours, so a freshly created pod stands out by its AGE.
   for (let i = 0; i < 4; i++) reconcile(w.k8s!);
+  for (const p of w.k8s!.pods) p.born = -3 * 3600;
   return w;
+}
+
+/** The CRAC is fixed and the nodes it cools are back. Other racks' nodes are another incident's business. */
+export function cracNodesBack(w: World): boolean {
+  const c = w.cooling;
+  if (!c?.cracOk) return false;
+  return Object.values(w.k8s!.nodes)
+    .filter((n) => c.cracRacks.includes(n.rack))
+    .every((n) => n.ready);
 }
 
 export function k8sHealth(w: World): Health {
@@ -79,10 +92,15 @@ export function k8sHealth(w: World): Health {
   const cap = enroll.length * POD_RPS;
   const served = Math.min(1, cap / Math.max(1, w.traffic.rps));
   if (served < 1) notes.push(`신청 pod 부족: ${Math.round(served * 100)}%만 처리`);
-  const courseOk = endpointReaches(k, k.deployments.enroll.env.COURSE_URL, 'course');
+  const courseUrl = k.deployments.enroll.env.COURSE_URL ?? '';
+  const courseOk = endpointReaches(k, courseUrl, 'course');
   if (!courseOk) {
     notes.push('신청(enroll)이 과목조회(course)를 부르지 못함');
     services.enroll = 'down';
+  } else if (!serviceAt(k, courseUrl)) {
+    // Works right now, but only through one pod's IP: the next time that pod is replaced it breaks again.
+    notes.push('신청(enroll)이 과목조회 pod 하나의 IP로 직접 연결 중 — 그 pod가 바뀌면 다시 끊겨요');
+    if (services.enroll === 'up') services.enroll = 'degraded';
   }
   const bad = enroll.filter((p) => k.badVersions.includes(p.version)).length;
   const badShare = enroll.length ? bad / enroll.length : 0;

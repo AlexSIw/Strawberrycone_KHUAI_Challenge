@@ -30,10 +30,17 @@ export interface Cable {
   broken: boolean;
 }
 
+/**
+ * Power path: mains → (UPS) → PDU A, and mains → PDU B.
+ * A is the battery-backed line (survives a blackout once the UPS is connected);
+ * B is a separate line (survives when PDU A itself fails). A device fed by both survives either fault.
+ */
 export interface PowerState {
   mains: boolean;
   /** UPS connected in front of PDU A */
   ups: boolean;
+  /** PDU whose breaker has tripped: that line carries no power until it is reset */
+  pduDown?: 'A' | 'B';
 }
 
 export interface NetState {
@@ -85,24 +92,35 @@ export interface Container {
   name: string;
   image: string;
   host: string;
+  /** -p host:container — [port on the server, port inside the container] */
   ports: [number, number] | null;
+  /** -v source:path — named volume (or bind-mounted server folder) and where it is mounted inside */
   volume: string | null;
+  volumePath: string | null;
+  /**
+   * Enrollment rows in the container's own writable layer (only a DB whose data folder has no volume
+   * writes here). Kept across stop/start/restart, gone when the container is removed.
+   */
+  rows: number;
   running: boolean;
 }
 
 export interface DockerHost {
   python: string;
+  /** Images on this server */
   pulled: string[];
+  /** Volumes (and bind-mounted folders) on this server → enrollment rows MySQL wrote into them; 0 = empty */
+  volumes: Record<string, number>;
+  /** Host ports already used by programs outside Docker (e.g. a hand-installed app) */
+  busyPorts?: number[];
 }
 
 export interface DockerState {
+  /** Images on the admin PC (ops) */
   built: string[];
   registry: string[];
   hosts: Record<string, DockerHost>;
   containers: Container[];
-  volumes: string[];
-  /** Enrollment rows stored by the db container */
-  enrollments: number;
   manualDeploy: { host: string; service: string; status: 'failed' | 'ok' } | null;
   nextId: number;
 }
@@ -110,12 +128,16 @@ export interface DockerState {
 export interface Pod {
   name: string;
   app: string;
+  /** Node it runs on; '' = not scheduled yet (no node had room), so it waits as Pending */
   node: string;
+  /** Pod IP; '' until the pod lands on a node */
   ip: string;
   version: string;
   status: 'Running' | 'Pending' | 'CrashLoopBackOff';
   pendingFor: number;
   restarts: number;
+  /** World time (w.t) when this pod object was created, for the AGE column */
+  born: number;
 }
 
 export interface Deployment {
@@ -136,6 +158,10 @@ export interface K8sState {
   /** Image versions that are buggy */
   badVersions: string[];
   maxPodsPerNode: number;
+  /** Image tags that exist in the registry (set image to anything else fails to pull) */
+  images?: string[];
+  /** World time the cluster last saw (kept by updateNodes); new pods are born at this time */
+  clock?: number;
 }
 
 export interface CoolingState {

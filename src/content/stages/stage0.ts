@@ -24,7 +24,8 @@ export const stage0: StageDef = {
     w.web!.running = true;
     w.web!.port = 80;
     w.web!.threads = 'multi';
-    w.notice!.url = '/enroll';
+    w.notice = { url: '/enroll' };
+    w.traffic.rps = 100;
     w.cooling = { cracOk: true, temps: { rack1: 24, rack2: 24, rack3: 24, rack4: 24 }, cracRacks: ['rack1', 'rack2'] };
     return w;
   },

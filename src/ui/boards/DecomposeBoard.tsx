@@ -40,6 +40,7 @@ function shuffle<T>(xs: T[]): T[] {
 
 export function DecomposeBoard() {
   const app = useGame((s) => s.run?.world.app);
+  const crashed = useGame((s) => s.run?.scenarios.find((x) => x.id === 's4-monolith')?.state !== 'waiting');
   if (!app) {
     return (
       <ModalFrame title="설계 보드" icon="📋" size="narrow">
@@ -48,6 +49,17 @@ export function DecomposeBoard() {
     );
   }
   if (app.arch === 'msa') return <ArchView services={app.services} />;
+  if (!crashed) {
+    // Redesigning before anything goes wrong would skip the stage's lesson.
+    return (
+      <ModalFrame title="설계 보드" icon="📋" size="narrow">
+        <p style={{ lineHeight: 1.7, margin: 0 }}>
+          지금 구조: 수강신청 앱 하나(모놀리스)가 로그인·과목조회·장바구니·신청·알림을 전부 맡고 있어요.
+        </p>
+        <p className="muted">아직은 설계를 바꿀 이유가 없어요. 수강신청이 시작되면 대시보드를 지켜보세요.</p>
+      </ModalFrame>
+    );
+  }
   return <Puzzle />;
 }
 

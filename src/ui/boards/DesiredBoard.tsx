@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { applyDesired } from '../../sim/actions';
-import { podsOf, readyPods } from '../../sim/k8s';
+import { podsOf, readyPods, unscheduled } from '../../sim/k8s';
 import type { K8sState } from '../../sim/types';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
@@ -62,11 +62,8 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
   const applyCount = () => {
     if (replicas < 2) return setMsg({ tone: 'warn', text: ONE_MSG });
     const n = replicas;
-    gameStore.getState().act((w) => {
-      // Only the count changes here; keep whatever version is currently deployed.
-      const d = w.k8s?.deployments[APP];
-      if (d) applyDesired(w, APP, n, d.image);
-    }, 'board:desired');
+    // Only the count changes here: no image, so a version that is deployed or still rolling out stays as it is.
+    gameStore.getState().act((w) => applyDesired(w, APP, n), 'board:desired');
     setDraft(null);
     setMsg({ tone: 'ok', text: `원하는 개수를 ${n}개로 바꿨어요. 쿠버네티스가 알아서 맞춰요.` });
   };
@@ -217,7 +214,10 @@ function Deployments({ k8s }: { k8s: K8sState }) {
         <tbody>
           {Object.entries(k8s.deployments).map(([name, d]) => {
             const ready = readyPods(k8s, name).length;
-            const pending = podsOf(k8s, name).filter((p) => p.status !== 'Running').length;
+            const waiting = podsOf(k8s, name).filter((p) => p.status !== 'Running');
+            // No node had room for these: they stay Pending until a node frees up.
+            const noRoom = waiting.filter(unscheduled).length;
+            const pending = waiting.length - noRoom;
             const tone = ready >= d.replicas ? 'ok' : ready === 0 && d.replicas > 0 ? 'bad' : 'warn';
             return (
               <tr key={name} className={name === APP ? 'mine' : ''}>
@@ -227,6 +227,7 @@ function Deployments({ k8s }: { k8s: K8sState }) {
                     {ready} / {d.replicas}
                   </span>
                   {pending > 0 && <span className="muted"> · 준비 중 {pending}</span>}
+                  {noRoom > 0 && <span className="warn"> · 자리 없음 {noRoom}</span>}
                   <span className="dsb-bar" aria-hidden>
                     <span style={{ width: `${d.replicas ? Math.min(100, (ready / d.replicas) * 100) : 100}%` }} className={`is-${tone}`} />
                   </span>

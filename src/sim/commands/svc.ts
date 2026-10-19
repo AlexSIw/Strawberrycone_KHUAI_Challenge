@@ -1,4 +1,4 @@
-import { capacity, restartService, scaleService } from '../app';
+import { capacity, restartService, scaleService, svc } from '../app';
 import type { Command } from './types';
 import { bold, dim, err, green, ok, out, red, yellow } from './types';
 
@@ -45,8 +45,10 @@ export const svcCommands: Command[] = [
       const n = parseInt(args[1] ?? '', 10);
       if (!w.app || !args[0] || Number.isNaN(n) || !scaleService(w.app, args[0], n)) return err('사용법: svc scale <서비스> <서버 수>');
       if (w.app.arch === 'monolith') return out(yellow('모놀리스는 통째로만 늘릴 수 있어요… 그래도 시도해볼게요.'));
-      const s = w.app.services[args[0]];
-      if (s.installing.length) return out(yellow(`${args[0]} 서버 ${s.installing.length}대를 손으로 설치하는 중… (한 대에 몇 초씩 걸려요)`));
+      const s = svc(w.app, args[0])!;
+      if (s.installing.length) {
+        return out(yellow(`${args[0]} 서버를 ${s.replicas + s.installing.length}대로 맞추는 중: ${s.installing.length}대를 손으로 설치하고 있어요… (한 대에 몇 초씩 걸려요)`));
+      }
       return ok(`${args[0]} 서버 수: ${s.replicas}`);
     },
   },
@@ -57,7 +59,7 @@ export const svcCommands: Command[] = [
     usage: 'svc deps <서비스>',
     summary: '서비스가 누구를 부르고 어떤 DB를 쓰는지',
     run(args, { w }) {
-      const s = w.app?.services[args[0] ?? ''];
+      const s = w.app && svc(w.app, args[0] ?? '');
       if (!s) return err('사용법: svc deps <서비스>');
       const own = `${s.name}-db`;
       const db = s.dbAccess.map((d) => (d === own || s.name === 'monolith' ? d : red(`${d}  ⚠ 남의 DB를 직접 읽는 중!`)));
@@ -76,7 +78,7 @@ export const svcCommands: Command[] = [
     summary: '과목 정보를 API로 받을지, DB에서 직접 읽을지 설정',
     run(args, { w }) {
       const [name, key, value] = args;
-      const s = w.app?.services[name ?? ''];
+      const s = w.app && svc(w.app, name ?? '');
       if (!s || key !== 'course-source' || (value !== 'api' && value !== 'db')) return err('사용법: svc config <서비스> course-source api|db');
       if (value === 'api') {
         s.dbAccess = s.dbAccess.filter((d) => d !== 'course-db');

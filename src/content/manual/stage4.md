@@ -22,7 +22,7 @@ login(로그인) · course(과목조회) · cart(장바구니) · enroll(수강�
 |---|---|
 | svc list | 서비스별 상태(up/DOWN), 서버 수, 처리 용량(rps), 설치 중인 서버 수, 현재 접속자와 구조(모놀리스/MSA) |
 | svc restart <서비스> | 그 서비스만 재시작 |
-| svc scale <서비스> <서버 수> | 그 서비스의 서버 수 바꾸기 (손으로 설치라 한 대에 몇 초씩) |
+| svc scale <서비스> <서버 수> | 그 서비스의 서버 수를 그 숫자로 맞추기 (손으로 설치라 한 대에 몇 초씩, 한 대씩 차례로). 설치 중에 숫자를 낮추면 남은 설치가 취소돼 |
 | svc deps <서비스> | 그 서비스가 부르는 API와 직접 읽는 DB 목록 (남의 DB면 ⚠ 경고) |
 | svc config <서비스> course-source api\|db | 과목 정보를 과목조회 API로 받을지, DB에서 직접 읽을지 |
 | ping, ssh, exit, hostname | 공통 네트워크 도구 |

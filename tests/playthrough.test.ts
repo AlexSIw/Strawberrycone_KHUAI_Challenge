@@ -110,19 +110,24 @@ describe('every stage can be played to the end', () => {
 describe('incidents actually hurt the service', () => {
   for (const def of STAGES) {
     for (const s of def.scenarios.filter((x) => x.severity === 'critical')) {
-      it(`${s.id} lowers availability or breaks a check`, () => {
+      it(`${s.id} lowers availability and stays broken`, () => {
         // Play until just after the incident fires, without fixing it.
         let run = startStage(def.id);
         const errors: string[] = [];
         let fired = false;
+        let preFire = 1;
         for (let t = 0; t < 300 && !fired; t++) {
           for (const o of visibleObjectives(def, run)) {
             if (o.id in run.objectivesDone) continue;
             for (const st of AUTOPLAY[def.id]?.[o.id] ?? []) run = apply(run, st, null);
           }
+          const before = run.health.availability;
           const r = tickRun(run);
           run = r.run;
-          if (run.scenarios.find((x) => x.id === s.id)?.state === 'active') fired = true;
+          if (run.scenarios.find((x) => x.id === s.id)?.state === 'active') {
+            fired = true;
+            preFire = before;
+          }
           for (const rt of run.scenarios) {
             if (rt.state === 'active' && rt.id !== s.id) {
               for (const st of def.scenarios.find((x) => x.id === rt.id)!.solutionSteps) run = apply(run, st, errors);
@@ -131,7 +136,13 @@ describe('incidents actually hurt the service', () => {
         }
         expect(fired, `${s.id} never fired`).toBe(true);
         // Let the fault play out for a while.
-        for (let i = 0; i < 20; i++) run = tickRun(run).run;
+        let minAv = run.health.availability;
+        for (let i = 0; i < 20; i++) {
+          run = tickRun(run).run;
+          minAv = Math.min(minAv, run.health.availability);
+        }
+        // Students must feel it (unless the service was already down when the alert came).
+        expect(minAv < preFire || preFire === 0, `${s.id} never lowered availability (${preFire} → ${minAv})`).toBe(true);
         const stillBroken = !s.check(run.world, run.ctx, run.health);
         expect(stillBroken, `${s.id} fixed itself without the player`).toBe(true);
       });

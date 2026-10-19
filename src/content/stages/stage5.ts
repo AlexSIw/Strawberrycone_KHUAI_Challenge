@@ -1,5 +1,15 @@
 import { writeDockerfile } from '../../sim/actions';
-import { enrollContainerReachable } from '../../sim/commands/docker';
+import {
+  appDb,
+  dataOnVolume,
+  DB_ENDPOINT,
+  dbRows,
+  enrollContainerReachable,
+  enrollPublished,
+  isDb,
+  isEnroll,
+  nextContainerId,
+} from '../../sim/commands/docker';
 import type { Scenario } from '../../sim/scenario';
 import type { Device, World } from '../../sim/types';
 import type { StageDef } from '../types';
@@ -21,13 +31,15 @@ export function stage5World(): World {
       built: [],
       registry: ['mysql:8'],
       hosts: {
-        'srv-old': { python: '3.12.4', pulled: [] },
-        'srv-new': { python: '3.9.18', pulled: [] },
-        'srv-db': { python: '3.12.4', pulled: ['mysql:8'] },
+        // srv-old runs the hand-installed enroll app, which already holds port 80.
+        'srv-old': { python: '3.12.4', pulled: [], volumes: {}, busyPorts: [80] },
+        'srv-new': { python: '3.9.18', pulled: [], volumes: {} },
+        'srv-db': { python: '3.12.4', pulled: ['mysql:8'], volumes: {} },
       },
-      containers: [{ id: 'a1b2c3d4e5f6', name: 'db', image: 'mysql:8', host: 'srv-db', ports: [3306, 3306], volume: null, running: true }],
-      volumes: [],
-      enrollments: 1520,
+      // The DB keeps its data in its own writable layer: fine until the container is recreated.
+      containers: [
+        { id: 'a1b2c3d4e5f6', name: 'db', image: 'mysql:8', host: 'srv-db', ports: [3306, 3306], volume: null, volumePath: null, rows: 1520, running: true },
+      ],
       manualDeploy: null,
       nextId: 1,
     },
@@ -41,21 +53,31 @@ const PER_SERVER = 3000;
 function dockerHealth(w: World) {
   const d = w.docker!;
   const notes: string[] = [];
-  const containers = d.containers.filter((c) => c.running && c.image.startsWith('enroll:') && c.ports?.[0] === 80).length;
-  const cap = PER_SERVER * (1 + containers); // srv-old (manual install) + containers
+  const published = d.containers.filter(enrollPublished);
+  const cap = PER_SERVER * (1 + published.length); // srv-old (manual install) + reachable containers
   const served = Math.min(1, cap / Math.max(1, w.traffic.rps));
   if (served < 1) notes.push(`신청 서버 부족: ${Math.round(served * 100)}%만 처리`);
-  const db = d.containers.find((c) => c.name === 'db' && c.running);
-  if (!db) notes.push('DB 컨테이너가 꺼져 있음');
-  if (d.enrollments === 0) notes.push('신청 내역 0건! 데이터 유실');
-  const dataOk = db ? (d.enrollments > 0 ? 1 : 0.3) : 0;
+  // The app finds its DB at srv-db:3306 — whatever the container is called.
+  const db = appDb(w);
+  const rows = db ? dbRows(w, db) : 0;
+  if (!db) notes.push(`DB 응답 없음 (신청 앱 → ${DB_ENDPOINT.host}:${DB_ENDPOINT.port})`);
+  else if (rows === 0) notes.push('신청 내역 0건! 데이터 유실');
+  const dataOk = db ? (rows > 0 ? 1 : 0.3) : 0;
   const services: Record<string, 'up' | 'degraded' | 'down'> = {
     'srv-old': 'up',
-    'srv-new': containers > 0 ? 'up' : d.manualDeploy?.status === 'failed' ? 'down' : 'degraded',
-    db: !db ? 'down' : d.enrollments === 0 ? 'degraded' : 'up',
+    'srv-new': published.some((c) => c.host === 'srv-new') ? 'up' : d.manualDeploy?.status === 'failed' ? 'down' : 'degraded',
+    db: !db ? 'down' : rows === 0 ? 'degraded' : 'up',
   };
   return { ok: served * dataOk, latency: served < 1 ? 1500 : 60, services, notes };
 }
+
+/**
+ * Enroll containers are running but students reach none of them (no -p, or the wrong ports).
+ * A leftover unpublished container next to a working one is harmless, so it doesn't count —
+ * this keeps the incident in step with the dashboard's capacity.
+ */
+const enrollUnreachable = (w: World) =>
+  !!w.docker?.containers.some((c) => c.running && isEnroll(c) && !enrollPublished(c)) && !enrollContainerReachable(w);
 
 const scenarios: Scenario[] = [
   {
@@ -70,7 +92,7 @@ const scenarios: Scenario[] = [
       w.docker!.manualDeploy = { host: 'srv-new', service: 'enroll', status: 'failed' };
       w.traffic.rps = 6000;
     },
-    check: (w) => !!w.docker?.containers.some((c) => c.running && c.host === 'srv-new' && c.image.startsWith('enroll:')),
+    check: (w) => !!w.docker?.containers.some((c) => c.running && c.host === 'srv-new' && isEnroll(c)),
     hints: [
       '기존 서버에선 잘 되는 앱이 새 서버에선 안 돼. 두 서버가 뭐가 다를까? 새 서버의 배포 기록부터 봐.',
       '서버마다 설치된 프로그램 버전이 달라. 매번 맞춰 깔기보단, 앱과 실행 환경을 통째로 포장하면 어떨까? (밀키트처럼)',
@@ -92,23 +114,20 @@ const scenarios: Scenario[] = [
     id: 's5-port',
     stage: 5,
     title: '컨테이너는 떴는데 접속 불가',
-    alert: '새 서버 컨테이너는 Up 상태인데… 학생 요청이 하나도 안 들어가요.',
+    alert: '새로 띄운 신청 앱 컨테이너는 Up 상태인데… 학생 요청이 하나도 안 들어가요.',
     severity: 'warning',
     room: 'noc',
     optional: true,
-    trigger: {
-      type: 'condition',
-      when: (w) => !!w.docker?.containers.some((c) => c.running && c.image.startsWith('enroll:') && c.ports?.[0] !== 80),
-    },
+    trigger: { type: 'condition', when: enrollUnreachable },
     inject: () => {},
-    check: (w) => enrollContainerReachable(w) && !w.docker!.containers.some((c) => c.running && c.image.startsWith('enroll:') && c.ports?.[0] !== 80),
+    check: enrollContainerReachable,
     hints: [
-      '컨테이너 목록에서 PORTS 칸을 봐. 다른 서버랑 뭐가 달라?',
-      '컨테이너는 잠긴 방이야. 길가 문(80번)과 방 안 창구(8000번)를 이어줘야 손님이 들어와.',
-      '컨테이너를 지우고, 포트를 이어주는 옵션을 붙여서 다시 실행해봐.',
+      '컨테이너 목록의 PORTS 칸을 봐. 다른 서버의 PORTS 칸, 그리고 앱 로그(docker logs)가 말하는 번호와 비교해봐.',
+      '컨테이너는 잠긴 방이야. 학생들이 오는 길가 문(웹 기본 포트)과, 앱이 방 안에서 기다리는 창구 번호를 이어줘야 손님이 들어와.',
+      '컨테이너를 지우고, 바깥 문과 안쪽 창구를 잇는 실행 옵션을 붙여서 다시 실행해봐.',
     ],
-    bannedPhrases: ['-p 80:8000'],
-    solution: '포트 매핑 없이 실행했다. docker rm -f enroll → docker run -p 80:8000 enroll:1.0',
+    bannedPhrases: ['-p 80:8000', '80->8000', '80 -> 8000', '80→8000', '80 → 8000', '80번과 8000번', '80번을 8000번', '80번에서 8000번', '80번 문과 8000번'],
+    solution: '포트 매핑이 없거나 안쪽 번호가 앱 창구(8000)와 달랐다. docker rm -f enroll → docker run -p 80:8000 enroll:1.0',
     solutionSteps: [
       { cmd: 'docker rm -f enroll', host: 'srv-new' },
       { cmd: 'docker run -p 80:8000 enroll:1.0', host: 'srv-new' },
@@ -121,29 +140,47 @@ const scenarios: Scenario[] = [
     id: 's5-volume',
     stage: 5,
     title: '데이터 증발',
-    alert: 'DB 컨테이너가 재시작됐는데… 수강신청 내역이 전부 0건이에요!!! 학생들 난리 났어요!',
+    alert: 'DB 업데이트 스크립트가 DB 컨테이너를 지우고 새로 만들었는데… 수강신청 내역이 전부 0건이에요!!! 학생들 난리 났어요!',
     severity: 'critical',
     room: 'noc',
     trigger: { type: 'after', scenario: 's5-drift', delay: 8 },
     inject: (w) => {
-      // A routine restart recreated the db container; its data lived inside the container.
-      const db = w.docker!.containers.find((c) => c.name === 'db');
-      if (db && !db.volume) w.docker!.enrollments = 0;
+      // The update script removed and recreated every DB container on srv-db (same name, ports, mounts,
+      // state). A fresh container has an empty writable layer; only data on a volume survives.
+      const d = w.docker!;
+      for (const c of d.containers) {
+        if (isDb(c) && c.host === DB_ENDPOINT.host) {
+          c.id = nextContainerId(d);
+          c.rows = 0;
+        }
+      }
     },
-    check: (w) => !!w.docker?.containers.some((c) => c.name === 'db' && c.running && !!c.volume) && w.docker!.enrollments > 0,
+    check: (w) => {
+      const db = appDb(w);
+      return !!db && dataOnVolume(db) && dbRows(w, db) > 0;
+    },
     hints: [
-      'DB 컨테이너를 다시 켰더니 데이터가 사라졌어. 데이터는 원래 어디에 적혀 있었을까? DB 로그를 봐.',
-      '컨테이너 안에 적은 메모는 컨테이너와 함께 사라져. 컨테이너가 없어져도 남는 공간이 필요해.',
-      '식당 전용 사물함 같은 저장소(볼륨)를 붙여서 DB 컨테이너를 새로 실행하면, 백업도 거기로 복원돼.',
+      'DB 컨테이너를 지우고 새로 만들었더니 데이터가 사라졌어. 데이터는 원래 어디에 적혀 있었을까? DB 서버(srv-db)에 접속해서 DB 로그를 봐.',
+      '컨테이너 안(쓰기 레이어)에 적은 데이터는 그 컨테이너를 지우면 같이 사라져. 컨테이너를 새로 만들어도 남는 공간이 필요해.',
+      '식당 전용 사물함 같은 저장소(볼륨)를 DB가 데이터를 쓰는 폴더(로그의 data dir)에 붙여서 DB 컨테이너를 새로 실행해봐. 신청 앱이 찾아오는 포트도 그대로 열어줘야 해. 백업은 빈 사물함으로 복원돼.',
     ],
-    bannedPhrases: ['-v dbdata', 'docker volume create'],
-    solution: 'ssh srv-db → docker rm -f db → docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8',
+    bannedPhrases: [
+      '-v dbdata',
+      'docker volume create',
+      ':/var/lib/mysql',
+      '/var/lib/mysql에 붙',
+      '/var/lib/mysql 에 붙',
+      '/var/lib/mysql에 볼륨',
+      '/var/lib/mysql 에 볼륨',
+      '볼륨을 /var/lib/mysql',
+    ],
+    solution: 'ssh srv-db → docker rm -f db → docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8 (볼륨·컨테이너 이름은 아무거나 괜찮아요)',
     solutionSteps: [
       { cmd: 'docker rm -f db', host: 'srv-db' },
       { cmd: 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8', host: 'srv-db' },
     ],
     concept: 'volume',
-    lesson: '컨테이너 안(쓰기 레이어)은 임시 메모장! 중요한 데이터는 볼륨(사물함)에 저장해야 남아요.',
+    lesson: '컨테이너 안(쓰기 레이어)은 컨테이너를 지우면 같이 사라지는 임시 메모장! (재시작은 괜찮아요) 중요한 데이터는 볼륨(사물함)에 저장해야 컨테이너를 새로 만들어도 남아요.',
     courseRef: ['마서프 Lec10'],
   },
 ];
@@ -168,7 +205,7 @@ export const stage5: StageDef = {
     { id: 'log', text: '새 서버(srv-new)의 배포 기록 확인하기 (ssh srv-new → deploy log)', done: (_w, c) => c.events.includes('deploy_log_failed') },
     { id: 'recipe', text: '관제실 설계 보드에서 Dockerfile(레시피 카드) 완성', done: (w) => w.flags['dockerfile:enroll'] === 'ok', after: ['log'] },
     { id: 'image', text: '관리 PC에서 이미지 빌드 → 레지스트리에 push', done: (w) => !!w.docker?.registry.some((i) => i.startsWith('enroll:')), after: ['recipe'] },
-    { id: 'run', text: 'srv-new 에서 컨테이너 실행', done: (w) => !!w.docker?.containers.some((c) => c.host === 'srv-new' && c.running && c.image.startsWith('enroll:')), after: ['image'] },
+    { id: 'run', text: 'srv-new 에서 컨테이너 실행', done: (w) => !!w.docker?.containers.some((c) => c.host === 'srv-new' && c.running && isEnroll(c)), after: ['image'] },
   ],
   scenarios,
   interactions: {

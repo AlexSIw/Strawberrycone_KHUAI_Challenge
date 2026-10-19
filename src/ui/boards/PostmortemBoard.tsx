@@ -90,6 +90,11 @@ function scenarioTitle(run: StageRun, id: string): string {
   return getStage(run.stage).scenarios.find((s) => s.id === id)?.title ?? id;
 }
 
+/** Other incidents that fired during the rush (e.g. the student-complaint alarm when service collapsed). */
+function extraIncidents(run: StageRun): string[] {
+  return run.scenarios.filter((s) => s.activatedAt !== null && !INCIDENTS.some((i) => i.id === s.id)).map((s) => s.id);
+}
+
 function timeline(run: StageRun, id: string): string {
   const rt = run.scenarios.find((s) => s.id === id);
   if (!rt || rt.activatedAt === null) return '발생 안 함';
@@ -131,6 +136,15 @@ function Waiting({ run }: { run: StageRun }) {
               <span className={state === 'resolved' ? 'ok' : state === 'active' ? 'bad' : 'muted'}>
                 {state === 'resolved' ? '✅ 해결' : state === 'active' ? '🚨 진행 중' : '대기'}
               </span>
+            </li>
+          );
+        })}
+        {extraIncidents(run).map((id) => {
+          const state = run.scenarios.find((s) => s.id === id)?.state;
+          return (
+            <li key={id}>
+              <span>📣 {scenarioTitle(run, id)}</span>
+              <span className={state === 'resolved' ? 'ok' : 'bad'}>{state === 'resolved' ? '✅ 해결' : '🚨 진행 중'}</span>
             </li>
           );
         })}
@@ -193,6 +207,11 @@ function Report({ run }: { run: StageRun }) {
         <div className="pmb-summary-head">
           <span className="tag">📄 본 수강신청 장애 보고서</span>
           <span className="tag">평균 가용성 {(availability * 100).toFixed(1)}%</span>
+          {extraIncidents(run).map((id) => (
+            <span key={id} className="tag">
+              📣 {scenarioTitle(run, id)}: {timeline(run, id)}
+            </span>
+          ))}
         </div>
         <div className="pmb-summary">
           {INCIDENTS.map((inc) => {

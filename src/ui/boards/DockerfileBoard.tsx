@@ -1,5 +1,6 @@
 import { useState, type DragEvent } from 'react';
 import { writeDockerfile } from '../../sim/actions';
+import { APP_PORT, ENROLL_DOCKERFILE } from '../../sim/commands/docker';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
 import { Portrait } from '../Portrait';
@@ -15,14 +16,21 @@ interface Line {
   detail: string;
 }
 
-const LINES: Line[] = [
-  { id: 'from', code: 'FROM python:3.12-slim', icon: '🥕', tag: '재료 준비', detail: '파이썬 3.12가 들어 있는 기본 이미지에서 시작해요. 서버에 뭐가 깔려 있든 상관없어져요.' },
-  { id: 'workdir', code: 'WORKDIR /app', icon: '🍳', tag: '작업대', detail: '컨테이너 안의 /app 폴더를 작업대로 정해요. 다음 줄부터는 여기서 일해요.' },
-  { id: 'copy', code: 'COPY . /app', icon: '📦', tag: '재료 넣기', detail: '내 코드(지금 폴더 ".")를 컨테이너 안 /app 으로 복사해요.' },
-  { id: 'run', code: 'RUN pip install -r requirements.txt', icon: '🔪', tag: '손질', detail: 'requirements.txt에 적힌 라이브러리를 설치해요. 이미지를 만들 때 한 번 실행돼요.' },
-  { id: 'expose', code: 'EXPOSE 8000', icon: '🏷️', tag: '창구 번호 메모', detail: '"이 앱은 안쪽 8000번 창구에서 손님을 받아요"라고 적어두는 메모예요.' },
-  { id: 'cmd', code: 'CMD ["python", "app.py"]', icon: '🍽️', tag: '완성 후 실행', detail: '컨테이너가 켜질 때 실행할 명령이에요. 요리가 다 된 뒤 손님에게 내기!' },
+/** Card text for each recipe line. The code comes from ENROLL_DOCKERFILE (which `docker build` prints), matched by instruction. */
+const CARDS: Omit<Line, 'code'>[] = [
+  { id: 'from', icon: '🥕', tag: '재료 준비', detail: '파이썬 3.12가 들어 있는 기본 이미지에서 시작해요. 서버에 뭐가 깔려 있든 상관없어져요.' },
+  { id: 'workdir', icon: '🍳', tag: '작업대', detail: '컨테이너 안의 /app 폴더를 작업대로 정해요. 다음 줄부터는 여기서 일해요.' },
+  { id: 'copy', icon: '📦', tag: '재료 넣기', detail: '내 코드(지금 폴더 ".")를 컨테이너 안 /app 으로 복사해요.' },
+  { id: 'run', icon: '🔪', tag: '손질', detail: 'requirements.txt에 적힌 라이브러리를 설치해요. 이미지를 만들 때 한 번 실행돼요.' },
+  { id: 'expose', icon: '🏷️', tag: '창구 번호 메모', detail: `"이 앱은 안쪽 ${APP_PORT.enroll}번 창구에서 손님을 받아요"라고 적어두는 메모예요.` },
+  { id: 'cmd', icon: '🍽️', tag: '완성 후 실행', detail: '컨테이너가 켜질 때 실행할 명령이에요. 요리가 다 된 뒤 손님에게 내기!' },
 ];
+
+/** Each card shows the recipe line that starts with its instruction (FROM, WORKDIR, …). */
+const LINES: Line[] = CARDS.map((c) => ({
+  ...c,
+  code: ENROLL_DOCKERFILE.find((l) => l.split(' ')[0] === c.id.toUpperCase()) ?? c.id.toUpperCase(),
+}));
 
 const BY_ID = Object.fromEntries(LINES.map((l) => [l.id, l])) as Record<Line['id'], Line>;
 

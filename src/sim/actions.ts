@@ -1,13 +1,15 @@
 // Direct world changes made by mini-games (the "hands" of the player).
+import { setImage } from './k8s';
 import type { AppService, World } from './types';
+import { own } from './util';
 
 export function mount(w: World, id: string): void {
-  const d = w.devices[id];
+  const d = own(w.devices, id);
   if (d) d.installed = true;
 }
 
 export function setFeeds(w: World, id: string, feeds: ('A' | 'B')[]): void {
-  const d = w.devices[id];
+  const d = own(w.devices, id);
   if (d) d.feeds = [...feeds].sort() as ('A' | 'B')[];
 }
 
@@ -26,7 +28,7 @@ export function connectCable(w: World, a: string, b: string): string {
 }
 
 export function replaceCable(w: World, cableId: string): void {
-  const c = w.cables[cableId];
+  const c = own(w.cables, cableId);
   if (c) c.broken = false;
 }
 
@@ -57,12 +59,14 @@ export function writeDockerfile(w: World, service: string): void {
   w.flags[`dockerfile:${service}`] = 'ok';
 }
 
-export function applyDesired(w: World, app: string, replicas: number, image: string): void {
-  const dep = w.k8s?.deployments[app];
-  if (!dep) return;
+/**
+ * Desired-state card: set the pod count and, optionally, the image. Leave `image` out to keep
+ * whatever version is deployed or being rolled out (changing only the count never touches a rollout).
+ */
+export function applyDesired(w: World, app: string, replicas: number, image?: string): void {
+  const k = w.k8s;
+  const dep = own(k?.deployments, app);
+  if (!k || !dep) return;
   dep.replicas = replicas;
-  if (image !== dep.image) {
-    dep.history.push(dep.image);
-    dep.rolling = { target: image };
-  }
+  if (image !== undefined) setImage(k, app, image);
 }

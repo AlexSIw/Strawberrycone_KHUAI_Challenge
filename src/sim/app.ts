@@ -1,4 +1,5 @@
 import type { AppService, AppState, World } from './types';
+import { own } from './util';
 
 /** Seconds a manually installed server takes before it can serve (Stage 4 pain point). */
 export const MANUAL_INSTALL_SECONDS = 8;
@@ -7,7 +8,7 @@ const CRASH_AFTER = 5;
 const CRASH_RPS = 800;
 
 export function svc(app: AppState, name: string): AppService | undefined {
-  return app.services[name];
+  return own(app.services, name);
 }
 
 export function capacity(s: AppService): number {
@@ -15,7 +16,7 @@ export function capacity(s: AppService): number {
 }
 
 export function restartService(app: AppState, name: string): boolean {
-  const s = app.services[name];
+  const s = own(app.services, name);
   if (!s) return false;
   s.up = true;
   s.restartTimer = CRASH_AFTER;
@@ -24,18 +25,31 @@ export function restartService(app: AppState, name: string): boolean {
   return true;
 }
 
+/**
+ * Set the number of servers a service should have. Lowering it removes servers (or cancels installs
+ * that haven't finished); raising it queues manual installs one after another.
+ */
 export function scaleService(app: AppState, name: string, replicas: number): boolean {
-  const s = app.services[name];
+  const s = own(app.services, name);
   if (!s) return false;
-  const pending = s.installing.length;
   const target = Math.max(1, Math.min(10, replicas));
   if (target <= s.replicas) {
     s.replicas = target;
     s.installing = [];
     return true;
   }
-  const toAdd = target - s.replicas - pending;
-  for (let i = 0; i < toAdd; i++) s.installing.push(MANUAL_INSTALL_SECONDS + i * MANUAL_INSTALL_SECONDS);
+  const want = target - s.replicas; // installs still needed to reach the target
+  s.installing.sort((a, b) => a - b);
+  if (want <= s.installing.length) {
+    s.installing = s.installing.slice(0, want); // cancel the extra installs, keep the ones finishing soonest
+    return true;
+  }
+  // One person installs one server at a time: each new install starts after the last pending one.
+  let last = s.installing.length ? s.installing[s.installing.length - 1] : 0;
+  while (s.installing.length < want) {
+    last += MANUAL_INSTALL_SECONDS;
+    s.installing.push(last);
+  }
   return true;
 }
 

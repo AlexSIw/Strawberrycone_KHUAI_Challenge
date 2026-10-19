@@ -1,7 +1,14 @@
 import { duplicateIps, ping } from '../../sim/network';
 import type { Scenario } from '../../sim/scenario';
+import type { World } from '../../sim/types';
 import type { StageDef } from '../types';
 import { cabledWorld, emptyHealth, networkPath, SERVERS, serverStatus } from '../worlds';
+
+/** web asks for "db" by name and the DB machine itself answers (not just any box that owns that address). */
+function webReachesDb(w: World): { ok: boolean; loss: number } {
+  const p = ping(w, 'web', 'db');
+  return { ok: p.ok && p.targetId === 'db', loss: p.loss };
+}
 
 const scenarios: Scenario[] = [
   {
@@ -13,13 +20,15 @@ const scenarios: Scenario[] = [
     room: 'noc',
     trigger: { type: 'objective', objective: 'dhcp', delay: 3 },
     inject: (w) => {
+      // Someone tidied up the name book and dropped db's line.
       delete w.net!.dns.db;
     },
-    check: (w) => ping(w, 'web', 'db').ok,
+    // The name has to lead to the DB machine itself: a guessed address that some other box answers doesn't count.
+    check: (w) => webReachesDb(w).ok,
     hints: [
-      'ping을 이름(db)으로 해보고, 숫자 주소로도 해볼래? 결과가 다르면 큰 힌트야.',
+      'ping을 이름(db)으로 해보고, db의 숫자 주소로도 해볼래? 숫자 주소는 주소를 나눠준 안내데스크(DHCP)가 알고 있어. 결과가 다르면 큰 힌트야.',
       '숫자로는 되는데 이름으로는 안 된다면 길은 멀쩡한 거야. 이름을 숫자로 바꿔주는 "전화번호부"가 누구였지?',
-      '그 전화번호부 장부를 열어서 db가 적혀 있는지 확인해봐. (dns 관련 명령어를 help에서 찾아봐)',
+      '그 전화번호부 장부(dns 명령어)를 열어서 db가 있는지 봐. db의 진짜 주소는 안내데스크가 나눠준 주소 목록(dhcp status)이나 db 서버의 ip addr 에서 확인할 수 있어.',
     ],
     bannedPhrases: ['dns add db', '10.0.1.20'],
     solution: 'DNS 장부에 db를 등록한다: dns add db 10.0.1.20',
@@ -43,17 +52,24 @@ const scenarios: Scenario[] = [
       l3.ip = '10.0.1.20';
       l3.gw = '10.0.1.1';
     },
-    check: (w) => duplicateIps(w).length === 0 && ping(w, 'web', 'db').loss === 0,
+    // No live duplicate, and "db" leads to the DB machine itself. Switching the copycat off also counts
+    // (a real stop-gap); moving the DB's own address away does not, because then "db" reaches the wrong box.
+    check: (w) => {
+      const r = webReachesDb(w);
+      return duplicateIps(w).length === 0 && r.ok && r.loss === 0;
+    },
     hints: [
       'ping db를 여러 번 해봐. 응답이 들쭉날쭉하지? 왜 어떤 건 오고 어떤 건 안 올까?',
       '같은 도로명 주소를 두 집이 쓰면 택배가 어디로 갈까? 서버들의 주소를 하나씩 확인해봐.',
-      '주소를 손으로 박아둔 서버가 있는지 찾아봐. 그 서버는 안내데스크에서 자동으로 받게 바꾸는 게 좋아.',
+      '주소를 손으로 박아둔 서버가 있는지 찾아봐. 네트워크로 안 들어가지는 서버는 랙 앞에 가서 콘솔로 직접 열 수 있어. 그 서버는 안내데스크에서 자동으로 받게 바꾸는 게 좋아.',
     ],
-    bannedPhrases: ['ip set dhcp', 'spare'],
-    solution: 'spare 서버가 DB와 같은 IP(10.0.1.20)를 고정으로 쓰고 있다. ssh spare → ip set dhcp',
+    // The culprit's name in English and Korean, and where it sits (rack 2).
+    bannedPhrases: ['ip set dhcp', 'spare', '예비 서버', '예비서버', 'rack2', '랙2', '랙 2', '2번 랙'],
+    solution:
+      'spare 서버가 DB와 같은 IP(10.0.1.20)를 고정으로 쓰고 있다. spare는 DNS 주소(10.0.1.30)로는 닿지 않으니 rack2 콘솔로 spare에 접속 → ip set dhcp. (급한 불은 spare 전원을 내려서 끌 수도 있지만, 다시 켜기 전에 주소를 고쳐야 한다)',
     solutionSteps: [{ cmd: 'ip set dhcp', host: 'spare' }],
     concept: 'ip',
-    lesson: '한 IP는 한 장비만! 손으로 박은 주소는 사고의 씨앗이에요. DHCP에 맡기세요.',
+    lesson: '한 IP는 한 장비만! 이미 누가 쓰는 주소를 손으로 박으면 충돌해요. 손으로 정할 땐 비어 있는 주소인지 꼭 확인하고, 헷갈리면 DHCP에 맡기세요. (겹친 장비를 끄기만 했다면, 다시 켜기 전에 주소부터!)',
     courseRef: ['풀서네 Lec02'],
   },
   {
@@ -76,11 +92,12 @@ const scenarios: Scenario[] = [
       'web 서버가 "밖으로 나가는 문"을 어디로 알고 있는지 확인해봐. 실제 라우터 주소랑 같아?',
       'web에 접속해서 주소 설정을 보고, 밖으로 나가는 문(gateway) 주소를 라우터 주소로 맞춰봐.',
     ],
-    bannedPhrases: ['ip set gw 10.0.1.1', '10.0.1.254'],
+    // Re-asking DHCP on web also restores the right gateway, so that command is a full answer too.
+    bannedPhrases: ['ip set gw 10.0.1.1', '10.0.1.254', 'ip set dhcp'],
     solution: 'web의 게이트웨이가 10.0.1.254로 잘못돼 있다. ssh web → ip set gw 10.0.1.1',
     solutionSteps: [{ cmd: 'ip set gw 10.0.1.1', host: 'web' }],
     concept: 'gateway',
-    lesson: '같은 네트워크 안은 스위치가, 밖(인터넷)은 게이트웨이(라우터)가 길을 열어줘요.',
+    lesson: '같은 네트워크 안은 스위치가, 밖(인터넷)은 게이트웨이(라우터)가 길을 열어줘요. 게이트웨이는 라우터의 진짜 주소여야 해요 (DHCP로 다시 받아도 맞춰져요).',
     courseRef: ['풀서네 Lec02'],
   },
 ];
