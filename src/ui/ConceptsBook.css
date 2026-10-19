@@ -1,0 +1,64 @@
+/* 개념 도감 (prefix: cbk-) */
+
+.cbk-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.cbk-todo { margin: 0; line-height: 1.6; flex: 1 1 320px; }
+
+.cbk-count { display: flex; flex-direction: column; gap: 6px; min-width: 180px; }
+.cbk-count-num { font-family: var(--pixel); font-size: 16px; color: var(--tan); text-align: right; }
+.cbk-bar { display: block; height: 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.cbk-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--red), var(--tan)); transition: width 0.4s; }
+
+.cbk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.cbk-card {
+  position: relative;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 14px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 190px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
+}
+.cbk-card:not(.locked) { border-color: var(--tan); }
+
+.cbk-no { position: absolute; top: 8px; right: 10px; font-family: var(--pixel); font-size: 11px; color: var(--muted); }
+
+.cbk-name { margin: 0; padding-right: 44px; font-family: var(--pixel); font-weight: 400; font-size: 16px; line-height: 1.4; }
+
+.cbk-analogy {
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(233, 183, 124, 0.1);
+  border: 1px dashed rgba(233, 183, 124, 0.5);
+}
+.cbk-label { display: block; font-size: 11px; color: var(--tan); margin-bottom: 2px; }
+
+.cbk-def { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--text); flex: 1; }
+.cbk-course { font-size: 12px; color: var(--muted); }
+
+.cbk-card.locked {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: repeating-linear-gradient(135deg, var(--panel-2), var(--panel-2) 10px, #282030 10px, #282030 20px);
+  opacity: 0.85;
+}
+.cbk-card.locked .cbk-name { padding-right: 0; font-size: 22px; color: var(--muted); }
+.cbk-lock { font-size: 30px; filter: grayscale(0.4); }
+.cbk-where { font-size: 12px; color: var(--muted); line-height: 1.5; }

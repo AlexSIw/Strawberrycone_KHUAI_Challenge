@@ -1,0 +1,194 @@
+/* CableGame (prefix cb-): servers on the left, switch faceplate on the right, SVG wires in between. */
+
+.cb-scroll { overflow-x: auto; }
+.cb-board {
+  position: relative;
+  display: grid;
+  /* wide device column so the tools + tester result fit on one line at 1280px; the gap is where wires curve */
+  grid-template-columns: minmax(400px, 2fr) minmax(110px, 0.75fr) 230px;
+  min-width: 760px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 2px solid var(--line);
+  background:
+    radial-gradient(circle at 50% 40%, rgba(106, 183, 255, 0.05), transparent 60%),
+    #17131c;
+}
+
+.cb-col { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 6px; }
+.cb-col-title {
+  font-family: var(--pixel);
+  font-size: 14px;
+  color: var(--tan);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- servers ---------- */
+.cb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0 7px 12px;
+  background: #241e2b;
+  border: 2px solid var(--line);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  min-height: 52px;
+}
+.cb-row.absent { opacity: 0.5; }
+.cb-dev { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.cb-dev-line { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: 12px; }
+.cb-dev-name { font-family: var(--pixel); font-size: 15px; margin-right: 2px; }
+.cb-id { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.cb-pwr { color: var(--muted); }
+.cb-pwr.on { color: var(--amber); }
+.cb-node.ready { color: var(--green); border-color: rgba(79, 209, 122, 0.5); }
+.cb-node.notready { color: var(--red-2); border-color: rgba(255, 90, 95, 0.5); }
+.cb-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.cb-tool { padding: 3px 10px; font-size: 12px; border-bottom-width: 3px; }
+.cb-result {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #120f16;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  animation: mg-note-in 0.25s ease-out both;
+}
+.cb-result.running { color: var(--muted); }
+.cb-result.ok { color: var(--green); }
+.cb-result.bad { color: var(--red-2); }
+.cb-result.warn { color: var(--amber); }
+
+/* A port: hole + name + LED. Shared by server jacks and switch ports. */
+.cb-jack,
+.cb-port {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 2px solid #0b0910;
+  background: #3a3342;
+  cursor: pointer;
+  font-family: var(--pixel);
+  font-size: 12px;
+}
+.cb-jack {
+  flex-shrink: 0;
+  flex-direction: row-reverse;
+  padding: 7px 8px 7px 10px;
+  border-radius: 6px 0 0 6px;
+  border-right: 0;
+  margin-right: -2px;
+  touch-action: none;
+}
+.cb-jack.free { cursor: grab; background: #4a3f55; }
+.cb-jack.free .cb-jack-hole { animation: cb-invite 1.4s ease-in-out infinite; }
+@keyframes cb-invite {
+  50% { box-shadow: inset 0 3px 0 #000, 0 0 0 3px rgba(255, 181, 71, 0.75); }
+}
+.cb-jack.free:hover { background: #574a63; }
+.cb-jack.free:active { cursor: grabbing; }
+.cb-jack.selected { outline: 3px solid var(--amber); outline-offset: 1px; }
+.cb-jack:disabled { cursor: not-allowed; }
+.cb-jack:focus-visible,
+.cb-port:focus-visible { outline: 3px solid var(--blue); }
+.cb-jack-name { color: #d7cfe0; }
+
+.cb-jack-hole {
+  width: 22px;
+  height: 18px;
+  border-radius: 3px;
+  background: #0b0910;
+  box-shadow: inset 0 3px 0 #000, inset 0 -2px 0 #2b2533;
+  position: relative;
+  flex-shrink: 0;
+}
+.cb-jack-hole::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 3px;
+  height: 3px;
+  background: repeating-linear-gradient(90deg, #c9a24a 0 1px, transparent 1px 2px);
+  opacity: 0.8;
+}
+
+/* ---------- switch ---------- */
+.cb-switch .cb-col-title { padding-left: 4px; }
+.cb-faceplate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 10px 0;
+  background: linear-gradient(180deg, #2b3446, #1f2635);
+  border: 3px solid #0b0e15;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+.cb-port {
+  padding: 5px 8px 5px 0;
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  background: #26303f;
+  text-align: left;
+}
+.cb-port.free { background: #303b4d; }
+.cb-port:hover { background: #3a475c; }
+.cb-port.target { box-shadow: inset 0 0 0 2px rgba(255, 181, 71, 0.7); }
+.cb-port.over-ok { box-shadow: inset 0 0 0 3px var(--green); background: rgba(79, 209, 122, 0.18); }
+.cb-port.over-bad { box-shadow: inset 0 0 0 3px var(--red-2); }
+.cb-port-name { width: 22px; color: #9fb4d4; }
+.cb-port-use {
+  flex: 1;
+  font-family: var(--body);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cb-port.used .cb-port-use { color: #dfe7f3; }
+
+/* ---------- wires ---------- */
+.cb-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  overflow: visible;
+}
+.cb-wire path { fill: none; stroke-linecap: round; }
+.cb-wire-outline { stroke: #0b0910; stroke-width: 11; }
+.cb-wire-core { stroke-width: 7; transition: stroke 0.3s; }
+.cb-wire-shine { stroke: rgba(255, 255, 255, 0.28); stroke-width: 2; transform: translateY(-2px); }
+.cb-plug { fill: #d8d2c8; stroke: #0b0910; stroke-width: 2; }
+
+.cb-wire.up .cb-wire-core { stroke: var(--green); }
+.cb-wire.down .cb-wire-core { stroke: var(--red-2); }
+.cb-wire.nopower .cb-wire-core { stroke: #8a8090; }
+.cb-wire.live .cb-wire-core { stroke: var(--blue); }
+.cb-wire.live .cb-wire-outline { stroke-dasharray: none; }
+.cb-wire.replacing { opacity: 0.45; }
+.cb-wire.replacing .cb-wire-core { stroke-dasharray: 10 8; animation: cb-dash 0.6s linear infinite; }
+@keyframes cb-dash { to { stroke-dashoffset: -18; } }
+
+.cb-swatch {
+  display: inline-block;
+  width: 22px;
+  height: 7px;
+  border-radius: 4px;
+  border: 2px solid #0b0910;
+  box-sizing: content-box;
+}
+.cb-swatch.up { background: var(--green); }
+.cb-swatch.down { background: var(--red-2); }
+.cb-swatch.nopower { background: #8a8090; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-wire.replacing .cb-wire-core, .cb-jack.free .cb-jack-hole { animation: none; }
+}

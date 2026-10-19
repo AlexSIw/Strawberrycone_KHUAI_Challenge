@@ -1,0 +1,206 @@
+/* PowerGame (prefix pw-): power path diagram + per-device A/B plug table. */
+
+.pw-diagram {
+  display: grid;
+  grid-template-columns: 150px minmax(24px, 1fr) 270px minmax(24px, 1fr) 190px;
+  grid-template-rows: auto auto;
+  align-items: center;
+  row-gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 2px solid var(--line);
+  background: #19141e;
+}
+.pw-mains { grid-column: 1; grid-row: 1 / span 2; align-self: stretch; justify-content: center; }
+.pw-l1 { grid-column: 2; grid-row: 1; }
+.pw-ups { grid-column: 3; grid-row: 1; }
+.pw-l2 { grid-column: 4; grid-row: 1; }
+.pw-pdu-a { grid-column: 5; grid-row: 1; }
+.pw-l3 { grid-column: 2 / span 3; grid-row: 2; }
+.pw-pdu-b { grid-column: 5; grid-row: 2; }
+
+.pw-node {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 3px solid #0e0b12;
+  background: #2a2331;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+}
+.pw-node-title { font-family: var(--pixel); font-size: 13px; color: var(--tan); }
+.pw-big { font-family: var(--pixel); font-size: 22px; }
+.pw-big.ok { color: var(--green); }
+.pw-big.bad { color: var(--red-2); animation: pw-alarm 0.8s steps(2, jump-none) infinite; }
+.pw-mains.dead { border-color: var(--red); }
+@keyframes pw-alarm {
+  50% { opacity: 0.35; }
+}
+
+/* live power lines: animated dashes flowing to the right */
+.pw-line {
+  height: 8px;
+  border-radius: 4px;
+  background: #3a3340;
+  border: 2px solid #0e0b12;
+  box-sizing: content-box;
+}
+.pw-line.live {
+  background: repeating-linear-gradient(90deg, var(--amber) 0 12px, #b77714 12px 20px);
+  background-size: 20px 100%;
+  animation: pw-flow 0.6s linear infinite;
+}
+@keyframes pw-flow { to { background-position: 20px 0; } }
+
+.pw-ups.on { border-color: #2f6b45; }
+.pw-ups-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.pw-ups-state { color: var(--muted); line-height: 1.35; }
+.pw-ups.on .pw-ups-state { color: var(--text); }
+
+.pw-battery {
+  display: inline-flex;
+  align-items: center;
+  flex-direction: row-reverse;
+}
+.pw-battery-cap { width: 4px; height: 10px; background: #0e0b12; border-radius: 0 2px 2px 0; }
+.pw-battery-cells {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 3px solid #0e0b12;
+  border-radius: 4px;
+  background: #15111a;
+}
+.pw-battery-cells i { width: 8px; height: 16px; background: #3a3340; }
+.pw-battery.full .pw-battery-cells i { background: var(--green); }
+.pw-battery.draining .pw-battery-cells i { background: var(--amber); }
+.pw-battery.draining .pw-battery-cells i:nth-child(4) { animation: pw-drain 1.2s steps(2, jump-none) infinite; }
+
+@keyframes pw-drain { 50% { opacity: 0.15; } }
+
+.pw-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 4px 6px;
+  border: 2px solid #0e0b12;
+  border-bottom-width: 4px;
+  border-radius: 8px;
+  background: #3a3342;
+  cursor: pointer;
+  font-family: var(--pixel);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.pw-switch:hover { background: #463e50; }
+.pw-switch:focus-visible { outline: 3px solid var(--blue); }
+.pw-switch-knob {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: #15111a;
+  border: 2px solid #0e0b12;
+}
+.pw-switch-knob::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: #8a8090;
+  transition: transform 0.15s, background 0.15s;
+}
+.pw-switch.on .pw-switch-knob::after { transform: translateX(18px); background: var(--green); }
+
+.pw-pdu { flex-direction: row; align-items: center; gap: 10px; }
+.pw-pdu.dead { opacity: 0.75; }
+.pw-pdu-row { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+.pw-pdu-count { color: var(--muted); }
+
+.pw-legend {
+  margin: 6px 2px 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.pw-legend b { font-family: var(--pixel); font-weight: 400; color: var(--tan); }
+
+/* ---------- table ---------- */
+.pw-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 4px;
+  font-size: 14px;
+}
+.pw-table th {
+  text-align: left;
+  font-family: var(--pixel);
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 10px;
+}
+.pw-table td {
+  padding: 2px 10px;
+  background: #241e2b;
+  border-top: 2px solid var(--line);
+  border-bottom: 2px solid var(--line);
+  vertical-align: middle;
+}
+.pw-table td:first-child { border-left: 2px solid var(--line); border-radius: 8px 0 0 8px; }
+.pw-table td:last-child { border-right: 2px solid var(--line); border-radius: 0 8px 8px 0; }
+.pw-table tr.off td { background: #201a26; }
+.pw-dev { font-family: var(--pixel); font-size: 14px; white-space: nowrap; }
+.pw-id { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.pw-feeds { font-family: var(--pixel); font-size: 13px; }
+
+.pw-plug {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 10px 2px 6px;
+  border-radius: 8px;
+  border: 2px solid #0e0b12;
+  border-bottom-width: 4px;
+  background: #2f2836;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--pixel);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pw-plug:hover { background: #3b3343; }
+.pw-plug:active { transform: translateY(2px); border-bottom-width: 2px; }
+.pw-plug:focus-visible { outline: 3px solid var(--blue); }
+.pw-plug.in { background: #3a3020; color: var(--amber); border-color: #5a4318; }
+.pw-socket {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px 5px;
+  border-radius: 50%;
+  background: #e8e1d6;
+  border: 2px solid #0e0b12;
+}
+.pw-socket i { width: 3px; height: 8px; background: #0e0b12; border-radius: 1px; }
+.pw-plug.in .pw-socket { background: #4a4150; }
+
+.pw-onoff { display: inline-flex; align-items: center; gap: 6px; font-family: var(--pixel); font-size: 14px; }
+.pw-onoff.on { color: var(--green); }
+.pw-onoff.off { color: var(--muted); }
+
+.pw-note { margin: 8px 2px 0; font-size: 13px; line-height: 1.6; }
+
+@media (max-width: 860px) {
+  .pw-diagram { grid-template-columns: 1fr; }
+  .pw-diagram > * { grid-column: 1 !important; grid-row: auto !important; }
+  .pw-line { height: 6px; width: 60%; justify-self: center; }
+  .pw-table { display: block; overflow-x: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-line.live, .pw-big.bad, .pw-battery.draining .pw-battery-cells i:nth-child(4) { animation: none; }
+}

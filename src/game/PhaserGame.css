@@ -1,0 +1,14 @@
+/* Phaser canvas layer: fills the game root underneath every React overlay. */
+.pg-root {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #120f16;
+}
+
+.pg-root canvas {
+  display: block;
+  image-rendering: pixelated;
+  outline: none;
+}

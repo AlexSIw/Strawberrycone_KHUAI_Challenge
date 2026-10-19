@@ -1,0 +1,148 @@
+/* Left objective / incident column (z 10). Prefix: obj- */
+.obj-panel {
+  position: absolute;
+  top: 64px;
+  left: 8px;
+  width: 300px;
+  max-height: calc(100% - 76px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(34, 28, 40, 0.94);
+  pointer-events: auto;
+}
+.obj-panel.has-incident { border-color: var(--red-2); }
+
+.obj-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid var(--line);
+  background: var(--panel-2);
+  font-family: var(--pixel);
+  font-size: 15px;
+  cursor: pointer;
+  text-align: left;
+}
+.obj-panel.collapsed .obj-head { border-bottom: 0; }
+.obj-head-title { flex: 1; }
+.obj-head-count { font-size: 13px; color: var(--muted); }
+.obj-head-alert {
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--red);
+  animation: obj-blink 1s steps(2) infinite;
+}
+.obj-head-caret { color: var(--muted); }
+
+@keyframes obj-blink {
+  50% { background: #7a1215; }
+}
+
+.obj-body {
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.obj-next {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(106, 183, 255, 0.12);
+  border: 1px solid rgba(106, 183, 255, 0.45);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.obj-panel.has-incident .obj-next { background: rgba(215, 38, 43, 0.15); border-color: rgba(255, 90, 95, 0.55); }
+
+.obj-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.obj-item { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.45; }
+.obj-check {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--bg);
+}
+.obj-item.current .obj-check { border-color: var(--tan); animation: obj-nudge 1.2s ease-in-out infinite; }
+.obj-item.current .obj-text { color: var(--tan); }
+.obj-item.done { opacity: 0.55; }
+.obj-item.done .obj-check { background: var(--green); border-color: var(--green); }
+.obj-item.done .obj-text { text-decoration: line-through; text-decoration-color: rgba(244, 236, 228, 0.5); }
+
+@keyframes obj-nudge {
+  50% { box-shadow: 0 0 0 3px rgba(233, 183, 124, 0.3); }
+}
+
+.obj-incidents h3 { margin: 4px 0 6px; font-family: var(--pixel); font-weight: 400; font-size: 14px; color: var(--red-2); }
+.obj-calm { margin: 0; font-size: 13px; color: var(--muted); }
+
+.obj-incident {
+  border: 2px solid var(--amber);
+  border-left-width: 6px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: rgba(255, 181, 71, 0.08);
+  animation: obj-in 0.3s ease-out;
+}
+.obj-incident.critical { border-color: var(--red-2); background: rgba(215, 38, 43, 0.12); }
+.obj-incident-top { display: flex; gap: 6px; align-items: flex-start; justify-content: space-between; }
+.obj-incident-top strong { font-size: 14px; line-height: 1.4; }
+.obj-room { flex-shrink: 0; color: var(--text); }
+.obj-alert {
+  margin: 4px 0 6px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.obj-incident-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.obj-elapsed, .obj-hintlv { font-size: 12px; color: var(--muted); }
+.obj-hintlv { color: var(--amber); }
+.obj-ask { margin-left: auto; padding: 4px 8px; font-size: 12px; }
+
+@keyframes obj-in {
+  from { transform: translateX(-12px); opacity: 0; }
+}
+
+.obj-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.obj-controls kbd { font-size: 10px; }
+
+.obj-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .obj-panel { width: min(300px, calc(100% - 16px)); max-height: calc(100% - 140px); }
+}

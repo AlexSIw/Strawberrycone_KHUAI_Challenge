@@ -1,0 +1,127 @@
+/* Shared look for the hands-on mini-games (prefix mg-). Pixel-ish: hard borders, chunky shadows. */
+
+.mg-task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  border: 2px solid var(--line);
+  border-left: 6px solid var(--amber);
+  border-radius: 8px;
+  background: #2a2131;
+  font-family: var(--pixel);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.mg-task.done {
+  border-left-color: var(--green);
+  background: #1d2a22;
+}
+.mg-task-icon { font-size: 18px; flex-shrink: 0; }
+.mg-task-text { flex: 1; }
+
+/* Wraps ModalFrame without adding a box (the backdrop stays positioned against the game root). */
+.mg-root { display: contents; }
+
+/* "완료!" lives in the window footer so it is visible even when the body scrolls (1280×720). */
+.mg-done,
+.mg-foot-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  margin-right: auto;
+}
+.mg-done-stamp {
+  font-family: var(--pixel);
+  font-size: 20px;
+  color: var(--green);
+  padding: 2px 12px;
+  border: 3px solid var(--green);
+  border-radius: 8px;
+  transform: rotate(-4deg);
+  animation: mg-stamp 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  flex-shrink: 0;
+}
+.mg-done-text { line-height: 1.5; font-size: 14px; }
+.mg-foot-info { font-size: 13px; line-height: 1.5; color: var(--muted); }
+@keyframes mg-stamp {
+  from { transform: scale(2.2) rotate(-12deg); opacity: 0; }
+  to { transform: scale(1) rotate(-4deg); opacity: 1; }
+}
+
+.mg-note {
+  min-height: 24px;
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  animation: mg-note-in 0.25s ease-out both;
+}
+.mg-note.idle { color: var(--muted); animation: none; }
+.mg-note.ok { color: var(--green); }
+.mg-note.bad { color: var(--red-2); }
+.mg-note.info { color: var(--blue); }
+@keyframes mg-note-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* LEDs */
+.mg-led {
+  display: inline-block;
+  border-radius: 2px;
+  background: #3a3340;
+  border: 1px solid #120e15;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.mg-led.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.mg-led.blink { background: var(--green); box-shadow: 0 0 6px var(--green); animation: mg-blink 0.9s linear infinite; }
+.mg-led.bad { background: var(--red-2); box-shadow: 0 0 6px var(--red-2); }
+.mg-led.warn { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+@keyframes mg-blink {
+  0%, 60% { opacity: 1; }
+  61%, 100% { opacity: 0.25; }
+}
+
+/* Something being dragged (rendered into <body>) */
+.mg-ghost {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-3deg);
+  filter: drop-shadow(0 8px 0 rgba(0, 0, 0, 0.35));
+}
+
+.mg-shake { animation: mg-shake 0.42s ease-in-out; }
+@keyframes mg-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+.mg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.mg-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.mg-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mg-led.blink, .mg-shake, .mg-done-stamp, .mg-note { animation: none; }
+}

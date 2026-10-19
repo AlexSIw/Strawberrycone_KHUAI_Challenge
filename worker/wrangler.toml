@@ -1,0 +1,23 @@
+# KHU 데이터센터 게임: 정적 파일(../dist) + /api/hint (ChatKHU 힌트 프록시)
+name = "khu-dc-game"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# /api/* 만 Worker 코드가 먼저 받고, 나머지는 정적 파일로 바로 서빙
+run_worker_first = ["/api/*"]
+
+# 운영 매뉴얼(src/content/manual/*.md)을 문자열로 번들에 포함
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
+[vars]
+HINT_MODEL = "claude-haiku-5-5"
+
+# 비밀 값(CHATKHU_API_KEY)은 여기에 적지 마세요.
+#   로컬: worker/.dev.vars   배포: npx wrangler secret put CHATKHU_API_KEY

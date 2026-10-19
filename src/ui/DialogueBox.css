@@ -1,0 +1,106 @@
+/* Story dialogue (z 50). Prefix: dlg- */
+.dlg-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 16px 24px;
+  background: linear-gradient(180deg, rgba(10, 6, 12, 0.25) 0%, rgba(10, 6, 12, 0.6) 100%);
+  cursor: pointer;
+  animation: dlg-fade 0.2s ease-out;
+}
+
+.dlg-box {
+  position: relative;
+  width: min(880px, 100%);
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px 18px 14px;
+  background: var(--panel);
+  border: 3px solid var(--tan);
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px var(--outline), 0 8px 0 rgba(0, 0, 0, 0.45);
+  animation: dlg-rise 0.22s ease-out;
+}
+.dlg-box.dlg-mentor { border-color: var(--blue); }
+.dlg-box.dlg-boss { border-color: var(--red-2); }
+/* The lion (the player) talks from the right side */
+.dlg-box.dlg-lion { flex-direction: row-reverse; border-color: var(--tan); }
+.dlg-box.dlg-tip {
+  border-color: var(--amber);
+  border-style: dashed;
+  background: #2b2418;
+}
+.dlg-box.dlg-tip .dlg-name { color: var(--amber); }
+.dlg-box.dlg-tip .dlg-text { color: #ffe7c2; }
+
+.dlg-portrait { flex-shrink: 0; }
+.dlg-main { flex: 1; min-width: 0; }
+
+.dlg-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--pixel);
+  font-size: 16px;
+  color: var(--tan);
+  margin-bottom: 6px;
+}
+.dlg-mentor .dlg-name { color: var(--blue); }
+.dlg-boss .dlg-name { color: var(--red-2); }
+.dlg-count { font-size: 11px; color: var(--muted); }
+
+.dlg-text {
+  margin: 0;
+  min-height: 3.4em;
+  font-size: 18px;
+  line-height: 1.7;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+/* Unrevealed text keeps the box from changing height while typing */
+.dlg-ghost { visibility: hidden; }
+.dlg-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.dlg-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.dlg-help { font-size: 12px; color: var(--muted); }
+.dlg-next {
+  font-size: 14px;
+  color: var(--tan);
+  animation: dlg-bob 0.8s steps(2) infinite;
+}
+
+.dlg-skip {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: rgba(21, 18, 26, 0.85);
+}
+
+@keyframes dlg-fade {
+  from { opacity: 0; }
+}
+@keyframes dlg-rise {
+  from { transform: translateY(16px); opacity: 0; }
+}
+@keyframes dlg-bob {
+  50% { transform: translateY(3px); opacity: 0.4; }
+}
+
+@media (max-width: 640px) {
+  .dlg-box { gap: 10px; padding: 12px; }
+  .dlg-portrait { transform: scale(0.7); transform-origin: top center; margin: -6px -14px -28px; }
+  .dlg-text { font-size: 16px; }
+}

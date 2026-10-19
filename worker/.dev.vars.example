@@ -1,0 +1,11 @@
+# ChatKHU API 키 (로컬 개발용)
+#
+# 키 만드는 법: ChatKHU 로그인 → 왼쪽 아래 "API Gateway" → "API 키 생성"
+# 이 파일을 worker/.dev.vars 로 복사한 뒤 아래에 키를 붙여 넣으세요.
+#   cp .dev.vars.example .dev.vars
+# .dev.vars 는 .gitignore 에 들어 있어요. 절대 커밋하지 마세요!
+# 배포할 때는 파일 대신: npx wrangler secret put CHATKHU_API_KEY
+#
+# 키를 비워 두면 /api/hint 가 {fallback:true} 를 돌려주고,
+# 게임은 시나리오에 적힌 기본 힌트를 대신 보여줘요.
+CHATKHU_API_KEY=
