@@ -83,6 +83,11 @@ button { font: inherit; color: inherit; }
   z-index: 30;
   padding: 16px;
 }
+/* ModalHost's windows leave the HUD (56 px) uncovered, so its buttons work with a window open. */
+.modal-layer { display: contents; }
+.modal-layer .modal-backdrop { top: 56px; }
+/* A question from the HUD itself (e.g. "나가기") goes over the windows and the HUD. */
+.modal-backdrop.modal-over { z-index: 35; }
 .modal {
   width: min(960px, 100%);
   max-height: calc(100% - 32px);

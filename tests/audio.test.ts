@@ -1,28 +1,67 @@
-// Pure audio rules (src/audio/logic.ts): Hangul → animalese letters, voice pitches, which music plays,
-// the 4-beep alarm cycle, the win-jingle cues and loop-point trimming.
-import { describe, expect, it } from 'vitest';
+// Pure audio rules (src/audio/logic.ts): Hangul → animalese letters, voice pitches, which music plays
+// where, crossfade lengths and their equal-power curve, loudness matching, the 4-beep alarm cycle, the
+// coin and win-jingle cues (driven by the real store too) and loop-point trimming.
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The store reads localStorage when it is created: give it one (node has none) before it loads.
+const storage = vi.hoisted(() => {
+  const data = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (k: string) => data.get(k) ?? null,
+    setItem: (k: string, v: string) => void data.set(k, String(v)),
+    removeItem: (k: string) => void data.delete(k),
+    clear: () => data.clear(),
+  };
+  return data;
+});
+
 import {
   ALARM,
   activeIncidents,
   alarmTimes,
   blipLetter,
+  COIN_GAP,
+  coinCue,
   createAlarm,
+  createCueTracker,
+  crossfade,
+  envelopeAt,
+  envelopePoints,
+  equalPower,
+  FADES,
   hangulToLetter,
+  JINGLE_AFTER_COIN,
   jingleAllowed,
   jingleCue,
   letterOffset,
+  loudness,
+  loudnessGains,
+  MUSIC_LUFS,
   musicFor,
+  newCards,
   newlyActive,
+  newObjectives,
   parseAudioPref,
+  planCues,
+  RESUME,
   sameRun,
   towardIsabelle,
   trimSilence,
   visibleCard,
   VOICE_PITCH,
   type AudioView,
+  type CuePlay,
+  type Envelope,
+  type MusicTrack,
 } from '../src/audio/logic';
 import { STAGES } from '../src/content/stages';
 import { startStage, tickRun, type StageRun } from '../src/sim/engine';
+import { gameStore } from '../src/store/game';
 
 describe('hangulToLetter / blipLetter', () => {
   it('uses the initial consonant', () => {
@@ -113,29 +152,37 @@ describe('voice pitch', () => {
   });
 });
 
+
 // ---------- music ----------
 
 type Sc = { id: string; state: 'waiting' | 'active' | 'resolved' };
 const view = (screen: string, scenarios: Sc[] | null, extra: Partial<AudioView> = {}): AudioView => ({
   screen,
-  run: scenarios ? { stage: 2, ctx: { stageTime: 10 }, scenarios } : null,
+  run: scenarios ? { stage: 2, ctx: { stageTime: 10 }, scenarios, objectivesDone: {} } : null,
   dialogue: null,
   concepts: [],
+  save: { cards: [] },
   ...extra,
 });
 
 describe('musicFor', () => {
-  it('normal loop on every screen without an incident', () => {
-    for (const screen of ['title', 'select', 'results', 'ending']) expect(musicFor(view(screen, null))).toBe('normal');
-    expect(musicFor(view('playing', [{ id: 'a', state: 'waiting' }]))).toBe('normal');
-    expect(musicFor(view('playing', [{ id: 'a', state: 'resolved' }]))).toBe('normal');
+  it('the lobby tune outside the stages: title, stage select, ending', () => {
+    for (const screen of ['title', 'select', 'ending']) expect(musicFor(view(screen, null)), screen).toBe('lobby');
+    // stale run data doesn't drag the stage music into the lobby
+    expect(musicFor(view('select', [{ id: 'b', state: 'active' }]))).toBe('lobby');
+    expect(musicFor(view('ending', [{ id: 'b', state: 'resolved' }]))).toBe('lobby');
   });
 
-  it('incident loop while any incident is active', () => {
-    expect(musicFor(view('playing', [{ id: 'a', state: 'resolved' }, { id: 'b', state: 'active' }]))).toBe('incident');
-    // leaving the stage (or the results screen) goes back to normal even with stale run data
-    expect(musicFor(view('select', [{ id: 'b', state: 'active' }]))).toBe('normal');
+  it('the normal loop in a stage (playing, and its clear popup) while no incident is on', () => {
+    expect(musicFor(view('playing', [{ id: 'a', state: 'waiting' }]))).toBe('normal');
+    expect(musicFor(view('playing', [{ id: 'a', state: 'resolved' }]))).toBe('normal');
+    expect(musicFor(view('playing', null))).toBe('normal');
+    expect(musicFor(view('results', [{ id: 'a', state: 'resolved' }]))).toBe('normal');
     expect(musicFor(view('results', [{ id: 'b', state: 'active' }]))).toBe('normal');
+  });
+
+  it('the incident loop while any incident is active', () => {
+    expect(musicFor(view('playing', [{ id: 'a', state: 'resolved' }, { id: 'b', state: 'active' }]))).toBe('incident');
   });
 
   it('follows a real stage run', () => {
@@ -155,13 +202,217 @@ describe('musicFor', () => {
   it('newlyActive / sameRun', () => {
     expect(newlyActive(['a'], ['a', 'b'])).toEqual(['b']);
     expect(newlyActive(['a', 'b'], ['b'])).toEqual([]);
-    const r = (stage: number, t: number) => ({ screen: 'playing', run: { stage, ctx: { stageTime: t }, scenarios: [] } });
+    const r = (stage: number, t: number) => ({ screen: 'playing', run: { stage, ctx: { stageTime: t }, scenarios: [], objectivesDone: {} } });
     expect(sameRun(r(3, 5), r(3, 6))).toBe(true);
     expect(sameRun(r(3, 50), r(3, 0))).toBe(false); // retry
     expect(sameRun(r(3, 5), r(4, 6))).toBe(false);
     expect(sameRun({ screen: 'title', run: null }, r(3, 0))).toBe(false);
   });
 });
+
+// ---------- crossfades ----------
+
+describe('crossfade lengths', () => {
+  it('lobby ↔ stage: a long, smooth crossfade (2.5–3 s) both ways', () => {
+    for (const [a, b] of [['lobby', 'normal'], ['normal', 'lobby'], ['incident', 'lobby']] as [MusicTrack, MusicTrack][]) {
+      const f = crossfade(a, b);
+      expect(f.fadeIn, `${a}→${b}`).toBeGreaterThanOrEqual(2.5);
+      expect(f.fadeIn, `${a}→${b}`).toBeLessThanOrEqual(3);
+      expect(f.fadeOut).toBe(f.fadeIn);
+    }
+  });
+
+  it('an incident starts: short (~0.3 s), so it still feels urgent', () => {
+    expect(crossfade('normal', 'incident')).toEqual({ fadeIn: FADES.short, fadeOut: FADES.short });
+    expect(FADES.short).toBeGreaterThanOrEqual(0.2);
+    expect(FADES.short).toBeLessThanOrEqual(0.4);
+    expect(crossfade('lobby', 'incident').fadeIn).toBe(FADES.short);
+  });
+
+  it('the last incident solved: long fade back to the normal loop', () => {
+    expect(crossfade('incident', 'normal')).toEqual({ fadeIn: FADES.long, fadeOut: FADES.long });
+  });
+
+  it('first music after the unlock fades in; switching music off fades out; no change, no fade', () => {
+    expect(crossfade(null, 'lobby')).toEqual({ fadeIn: FADES.first, fadeOut: 0 });
+    expect(crossfade('lobby', null)).toEqual({ fadeIn: 0, fadeOut: FADES.stop });
+    expect(crossfade('normal', 'normal')).toEqual({ fadeIn: 0, fadeOut: 0 });
+  });
+
+  it('the normal loop and the lobby resume where they left off, the incident loop restarts from its top', () => {
+    expect(RESUME).toEqual({ lobby: true, normal: true, incident: false });
+  });
+});
+
+describe('equal-power curve', () => {
+  const xs = Array.from({ length: 21 }, (_, i) => i / 20);
+
+  it('a crossfade keeps the power constant (no dip in the middle, unlike a linear one)', () => {
+    for (const x of xs) {
+      const fin = equalPower(0, 1, 1, x);
+      const fout = equalPower(1, 0, 1, x);
+      expect(fin * fin + fout * fout, `x=${x}`).toBeCloseTo(1, 9);
+    }
+    expect(equalPower(0, 1, 1, 0.5)).toBeCloseTo(Math.SQRT1_2, 9); // −3 dB each at the midpoint
+    const linear = 0.5 * 0.5 + 0.5 * 0.5;
+    expect(10 * Math.log10(linear)).toBeCloseTo(-3.01, 2); // what a linear crossfade would sag
+  });
+
+  it('hits its ends exactly, scales with the track level and moves one way only', () => {
+    expect(equalPower(0, 0.4, 0.4, 0)).toBe(0);
+    expect(equalPower(0, 0.4, 0.4, 1)).toBeCloseTo(0.4, 12);
+    expect(equalPower(0.4, 0, 0.4, 1)).toBeCloseTo(0, 12);
+    expect(equalPower(0, 0.4, 0.4, 0.5)).toBeCloseTo(0.4 * Math.SQRT1_2, 9);
+    for (let i = 1; i < xs.length; i++) {
+      expect(equalPower(0, 1, 1, xs[i])).toBeGreaterThan(equalPower(0, 1, 1, xs[i - 1]));
+      expect(equalPower(1, 0, 1, xs[i])).toBeLessThan(equalPower(1, 0, 1, xs[i - 1]));
+    }
+    expect(equalPower(0, 1, 0, 0.5)).toBe(0);
+  });
+
+  it('an interrupted fade carries on from where it was: the gain never jumps', () => {
+    const up: Envelope = { from: 0, to: 0.7, full: 0.7, start: 10, duration: FADES.long };
+    const at = 11.2;
+    const g = envelopeAt(up, at);
+    expect(g).toBeGreaterThan(0);
+    expect(g).toBeLessThan(0.7);
+    const down: Envelope = { from: g, to: 0, full: 0.7, start: at, duration: FADES.short };
+    expect(envelopeAt(down, at)).toBeCloseTo(g, 12);
+    expect(envelopeAt(down, at + 0.001)).toBeCloseTo(g, 2);
+    expect(envelopeAt(down, at + FADES.short)).toBe(0);
+    // and back up again from there
+    const again: Envelope = { from: envelopeAt(down, at + 0.1), to: 0.7, full: 0.7, start: at + 0.1, duration: FADES.long };
+    expect(envelopeAt(again, at + 0.1)).toBeCloseTo(envelopeAt(down, at + 0.1), 12);
+  });
+
+  it('envelopeAt before, during and after', () => {
+    const e: Envelope = { from: 0, to: 1, full: 1, start: 5, duration: 2 };
+    expect(envelopeAt(e, 0)).toBe(0);
+    expect(envelopeAt(e, 6)).toBeCloseTo(Math.SQRT1_2, 9);
+    expect(envelopeAt(e, 9)).toBe(1);
+    expect(envelopeAt({ ...e, duration: 0 }, 5)).toBe(1);
+  });
+
+  it('ramp breakpoints trace the curve closely (Web Audio has no sine ramp)', () => {
+    const e: Envelope = { from: 0, to: 0.68, full: 0.68, start: 3, duration: FADES.long };
+    const pts = envelopePoints(e);
+    expect(pts.length).toBeGreaterThanOrEqual(8);
+    expect(pts.length).toBeLessThanOrEqual(64);
+    expect(pts[pts.length - 1].t).toBeCloseTo(3 + FADES.long, 9);
+    expect(pts[pts.length - 1].v).toBeCloseTo(0.68, 9);
+    for (let i = 1; i < pts.length; i++) expect(pts[i].t).toBeGreaterThan(pts[i - 1].t);
+    // straight lines between the points stay within 0.5 % of full level of the true curve
+    let prev = { t: e.start, v: e.from };
+    for (const p of pts) {
+      const mid = (prev.t + p.t) / 2;
+      expect(Math.abs((prev.v + p.v) / 2 - envelopeAt(e, mid))).toBeLessThan(0.005 * e.full);
+      prev = p;
+    }
+    expect(envelopePoints({ ...e, duration: 0 })).toEqual([]);
+    expect(envelopePoints({ ...e, duration: FADES.short }).length).toBe(8);
+  });
+});
+
+// ---------- loudness ----------
+
+const sine = (freq: number, amp: number, seconds: number, rate: number) => Float32Array.from({ length: Math.round(seconds * rate) }, (_, i) => amp * Math.sin((2 * Math.PI * freq * i) / rate));
+
+/** Reads a 32-bit float WAV (what `afconvert -d LEF32` writes). */
+function readFloatWav(path: string): { channels: Float32Array[]; rate: number } {
+  const buf = readFileSync(path);
+  let off = 12;
+  let ch = 0;
+  let rate = 0;
+  while (off + 8 <= buf.length) {
+    const id = buf.toString('ascii', off, off + 4);
+    const size = buf.readUInt32LE(off + 4);
+    if (id === 'fmt ') {
+      ch = buf.readUInt16LE(off + 10);
+      rate = buf.readUInt32LE(off + 12);
+    }
+    if (id === 'data') {
+      const all = new Float32Array(buf.buffer.slice(buf.byteOffset + off + 8, buf.byteOffset + off + 8 + size));
+      const n = Math.floor(all.length / ch);
+      const channels = Array.from({ length: ch }, () => new Float32Array(n));
+      for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) channels[c][i] = all[i * ch + c];
+      return { channels, rate };
+    }
+    off += 8 + size + (size & 1);
+  }
+  throw new Error(`no audio data in ${path}`);
+}
+
+describe('loudness (BS.1770)', () => {
+  it('reference tone: a full-scale 997 Hz sine on both channels is 0 LUFS, on one channel −3 LUFS', () => {
+    for (const rate of [44100, 48000]) {
+      const s = sine(997, 1, 3, rate);
+      expect(loudness([s, s], rate)).toBeCloseTo(0, 1);
+      expect(loudness([s, new Float32Array(s.length)], rate)).toBeCloseTo(-3.01, 1);
+    }
+  });
+
+  it('20 dB quieter reads 20 LU lower', () => {
+    const s = sine(997, 0.1, 3, 48000);
+    expect(loudness([s, s], 48000)).toBeCloseTo(-20, 1);
+  });
+
+  it('K-weighting: bass counts less, presence (≈ 2–5 kHz) a little more', () => {
+    const at = (f: number) => {
+      const s = sine(f, 0.5, 3, 48000);
+      return loudness([s, s], 48000);
+    };
+    const ref = at(997);
+    expect(at(40) - ref).toBeLessThan(-2);
+    expect(at(4000) - ref).toBeGreaterThan(2.5);
+    expect(at(4000) - ref).toBeLessThan(4.5);
+  });
+
+  it('gated: silence in between does not make music read quieter; silence alone is −Infinity', () => {
+    const rate = 44100;
+    const tone = sine(997, 0.25, 6, rate);
+    const gappy = new Float32Array(tone.length * 2);
+    gappy.set(tone.subarray(0, tone.length / 2), 0);
+    gappy.set(tone.subarray(tone.length / 2), tone.length * 1.5);
+    expect(loudness([gappy, gappy], rate)).toBeCloseTo(loudness([tone, tone], rate), 0);
+    expect(loudness([new Float32Array(rate * 2)], rate)).toBe(-Infinity);
+    expect(loudness([new Float32Array(100)], rate)).toBe(-Infinity);
+  });
+
+  it('per-track gains bring all three loops to the normal loop’s loudness', () => {
+    const gains = loudnessGains();
+    expect(gains.normal).toBe(1);
+    for (const t of ['lobby', 'normal', 'incident'] as MusicTrack[]) {
+      expect(MUSIC_LUFS[t] + 20 * Math.log10(gains[t]), t).toBeCloseTo(MUSIC_LUFS.normal, 1);
+    }
+    // the incident loop is mastered far hotter than the others
+    expect(gains.incident).toBeLessThan(0.4);
+    // a quiet track is boosted at most ×2 (+6 dB)
+    expect(loudnessGains({ lobby: -40, normal: -18, incident: -18 }).lobby).toBe(2);
+    expect(loudnessGains({ lobby: -Infinity, normal: -18, incident: -18 }).lobby).toBe(1); // silent: left alone
+  });
+
+  // The constants are only worth something if they match the files: measure them again (macOS has a
+  // decoder built in; other systems skip this).
+  const afconvert = '/usr/bin/afconvert';
+  it.skipIf(process.platform !== 'darwin' || !existsSync(afconvert))(
+    'MUSIC_LUFS matches the music files as they are now',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'khu-loudness-'));
+      try {
+        for (const track of ['lobby', 'normal', 'incident'] as MusicTrack[]) {
+          const wav = join(dir, `${track}.wav`);
+          execFileSync(afconvert, ['-f', 'WAVE', '-d', 'LEF32', fileURLToPath(new URL(`../public/assets/audio/bgm_${track}.m4a`, import.meta.url)), wav]);
+          const { channels, rate } = readFloatWav(wav);
+          expect(Math.abs(loudness(channels, rate) - MUSIC_LUFS[track]), `bgm_${track}.m4a: update MUSIC_LUFS`).toBeLessThan(0.3);
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+});
+
 
 describe('trimSilence (loop points)', () => {
   const sr = 1000;
@@ -272,9 +523,10 @@ describe('alarm cycle', () => {
   });
 });
 
-// ---------- win jingle ----------
 
-describe('win jingle', () => {
+// ---------- win jingle & coin ----------
+
+describe('win jingle cue', () => {
   const card = (scenarioId: string) => ({ scenarioId });
   const playing = (concepts: { scenarioId: string }[], dialogue: { then: string } | null = null) => view('playing', [], { concepts, dialogue });
 
@@ -300,9 +552,11 @@ describe('win jingle', () => {
     expect(visibleCard(view('results', null, { concepts: [a] }))).toBeNull();
   });
 
-  it('plays when the results screen appears', () => {
+  it('plays when the stage clear popup appears, and when the ending certificate appears', () => {
     expect(jingleCue(playing([]), view('results', []))).toBe('results');
     expect(jingleCue(view('results', []), view('results', []))).toBeNull();
+    expect(jingleCue(view('results', []), view('ending', null))).toBe('ending');
+    expect(jingleCue(view('ending', null), view('ending', null))).toBeNull();
     expect(jingleCue(view('select', null), view('title', null))).toBeNull();
   });
 
@@ -312,6 +566,190 @@ describe('win jingle', () => {
     expect(jingleAllowed(5, 5.99)).toBe(false);
     expect(jingleAllowed(5, 6)).toBe(true);
     expect(jingleAllowed(5, 30)).toBe(true);
+  });
+});
+
+describe('coin cue', () => {
+  const at = (t: number, done: Record<string, number>, cards: string[] = [], screen = 'playing', stage = 3): AudioView => ({
+    ...view(screen, []),
+    run: { stage, ctx: { stageTime: t }, scenarios: [], objectivesDone: done },
+    save: { cards },
+  });
+
+  it('an objective done in this run', () => {
+    expect(newObjectives(at(5, {}), at(5, { start: 5 }))).toEqual(['start']);
+    expect(coinCue(at(5, {}), at(5, { start: 5 }))).toBe(true);
+    expect(coinCue(at(5, { start: 5 }), at(6, { start: 5 }))).toBe(false); // nothing new
+  });
+
+  it('not for a new run (retry, next stage) or off the play screen', () => {
+    expect(coinCue(at(50, {}), at(0, { start: 0 }))).toBe(false); // a retry starts at 0
+    expect(coinCue(at(5, {}, [], 'playing', 3), at(5, { start: 5 }, [], 'playing', 4))).toBe(false);
+    expect(coinCue(at(5, {}), at(5, { start: 5 }, [], 'results'))).toBe(false);
+  });
+
+  it('a card new to the collection; one already collected (a replay) stays quiet', () => {
+    expect(newCards(at(5, {}, ['port']), at(5, {}, ['port', 'tcp']))).toEqual(['tcp']);
+    expect(coinCue(at(5, {}, ['port']), at(5, {}, ['port', 'tcp']))).toBe(true);
+    expect(coinCue(at(5, {}, ['port']), at(5, {}, ['port']))).toBe(false);
+    expect(coinCue(at(5, {}, []), at(5, {}, ['port'], 'title'))).toBe(false); // e.g. a save loaded elsewhere
+  });
+});
+
+describe('planCues: one coin per moment, jingle after the coin', () => {
+  const none = { lastCoin: null, lastJingle: null };
+
+  it('a coin alone, a jingle alone: right away', () => {
+    expect(planCues({ coin: true, jingle: null }, 10, none).plays).toEqual([{ sfx: 'coin', delay: 0 }]);
+    expect(planCues({ coin: false, jingle: 'card' }, 10, none).plays).toEqual([{ sfx: 'win', delay: 0 }]);
+    expect(planCues({ coin: false, jingle: null }, 10, none).plays).toEqual([]);
+  });
+
+  it('an incident fixed with a new card: the coin first, the jingle ~0.5 s later', () => {
+    const { plays, clock } = planCues({ coin: true, jingle: 'card' }, 10, none);
+    expect(plays).toEqual([
+      { sfx: 'coin', delay: 0 },
+      { sfx: 'win', delay: JINGLE_AFTER_COIN },
+    ]);
+    expect(JINGLE_AFTER_COIN).toBeGreaterThanOrEqual(0.4);
+    expect(JINGLE_AFTER_COIN).toBeLessThanOrEqual(0.6);
+    expect(clock).toEqual({ lastCoin: 10, lastJingle: 10 + JINGLE_AFTER_COIN });
+  });
+
+  it('a jingle right after a coin (separate moments) still waits for the rest of the 0.5 s', () => {
+    const c = planCues({ coin: true, jingle: null }, 10, none).clock;
+    expect(planCues({ coin: false, jingle: 'results' }, 10.2, c).plays).toEqual([{ sfx: 'win', delay: 0.3 }]);
+    expect(planCues({ coin: false, jingle: 'results' }, 11, c).plays).toEqual([{ sfx: 'win', delay: 0 }]);
+  });
+
+  it('no pile-up: coins in the same instant play once, a coin waits out a jingle about to start, jingles 1 s apart', () => {
+    let clock = planCues({ coin: true, jingle: null }, 10, none).clock;
+    expect(planCues({ coin: true, jingle: null }, 10 + COIN_GAP / 2, clock).plays).toEqual([]);
+    expect(planCues({ coin: true, jingle: null }, 10.4, clock).plays).toEqual([{ sfx: 'coin', delay: 0 }]);
+    clock = planCues({ coin: true, jingle: 'card' }, 20, none).clock; // jingle due at 20.5
+    expect(planCues({ coin: true, jingle: null }, 20.3, clock).plays).toEqual([]);
+    expect(planCues({ coin: false, jingle: 'card' }, 21, clock).plays).toEqual([]); // 0.5 s after the last jingle
+    expect(planCues({ coin: true, jingle: 'card' }, 22, clock).plays.map((p) => p.sfx)).toEqual(['coin', 'win']);
+  });
+});
+
+describe('cue tracker on the real store', () => {
+  const S = () => gameStore.getState();
+  let now = 100;
+  let queue: (() => void)[] = [];
+  let plays: { sfx: CuePlay['sfx']; at: number }[] = [];
+  let unsubscribe = () => {};
+
+  /** One player action or tick, then the end-of-action flush (the game's microtask). Returns its plays. */
+  const act = (fn: () => void, wait = 3) => {
+    now += wait;
+    const before = plays.length;
+    fn();
+    queue.splice(0).forEach((f) => f());
+    return plays.slice(before);
+  };
+  const drainIntro = () => {
+    for (let i = 0; i < 50 && S().dialogue; i++) S().nextDialogue();
+  };
+  /** Runs a terminal line on `host` in a throwaway session. */
+  const cmd = (host: string, line: string) => {
+    gameStore.setState({ terminal: { host, log: [] } });
+    S().command(line);
+  };
+
+  beforeEach(() => {
+    storage.clear();
+    gameStore.setState({ save: { unlocked: 7, best: {}, cards: [] }, screen: 'select', run: null, dialogue: null, concepts: [] });
+    now = 100;
+    queue = [];
+    plays = [];
+    const tracker = createCueTracker({
+      now: () => now,
+      defer: (fn) => queue.push(fn),
+      play: (p) => plays.push({ sfx: p.sfx, at: Math.round((now + p.delay) * 1000) / 1000 }),
+    });
+    let prev = S();
+    unsubscribe = gameStore.subscribe((s) => {
+      tracker.observe(prev, s);
+      prev = s;
+    });
+  });
+  afterEach(() => unsubscribe());
+
+  it('stage 0: a coin per objective, one for an objective and its new card together, the jingle on the clear popup', () => {
+    expect(act(() => (S().play(0), drainIntro()))).toEqual([]);
+    expect(act(() => S().event('open:dashboard'))).toEqual([{ sfx: 'coin', at: now }]);
+    expect(act(() => S().event('open:mentor'))).toEqual([{ sfx: 'coin', at: now }]);
+    expect(act(() => S().event('room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc'))).toEqual([{ sfx: 'coin', at: now }]);
+    // The quiz objective gives the 'datacenter' card (new) and clears the stage: still one coin.
+    expect(S().save.cards).not.toContain('datacenter');
+    expect(act(() => S().event('quiz:correct'))).toEqual([{ sfx: 'coin', at: now }]);
+    expect(S().save.cards).toContain('datacenter');
+    expect(S().dialogue?.then).toBe('results');
+    // Objective cards don't jingle; the clear popup does, after the outro.
+    expect(act(() => S().dismissConcept())).toEqual([]);
+    const outro: { sfx: string; at: number }[] = [];
+    for (let i = 0; i < 50 && S().dialogue; i++) outro.push(...act(() => S().nextDialogue(), 1));
+    expect(S().screen).toBe('results');
+    expect(outro).toEqual([{ sfx: 'win', at: now }]);
+
+    // A replay: objectives still ring, the card is not new any more — one coin either way.
+    act(() => (S().finishResults('retry'), drainIntro()));
+    act(() => S().event('room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc'));
+    expect(act(() => S().event('quiz:correct'))).toEqual([{ sfx: 'coin', at: now }]);
+  });
+
+  it('stage 3: fixing an incident with a new card plays the coin, then the jingle 0.5 s later; on a replay only the jingle', () => {
+    const fixPort = () => {
+      act(() => (S().play(3), drainIntro()));
+      expect(act(() => cmd('web', 'server start'))).toEqual([{ sfx: 'coin', at: now }]);
+      for (let i = 0; i < 30 && !S().run?.scenarios.some((x) => x.id === 's3-port' && x.state === 'active'); i++) act(() => S().tick(), 1);
+      expect(S().run?.scenarios.find((x) => x.id === 's3-port')?.state).toBe('active');
+      act(() => cmd('web', 'server set port 80'));
+      const out: { sfx: string; at: number }[] = [];
+      for (let i = 0; i < 5 && S().run?.scenarios.find((x) => x.id === 's3-port')?.state !== 'resolved'; i++) out.push(...act(() => S().tick(), 1));
+      expect(S().concepts[0]?.scenarioId).toBe('s3-port');
+      return out;
+    };
+    expect(fixPort()).toEqual([
+      { sfx: 'coin', at: now },
+      { sfx: 'win', at: now + JINGLE_AFTER_COIN },
+    ]);
+    expect(S().save.cards).toContain('port');
+    expect(fixPort()).toEqual([{ sfx: 'win', at: now }]);
+  });
+
+  it('the jingle once more on the ending certificate', () => {
+    act(() => (S().play(7), drainIntro()));
+    expect(act(() => gameStore.setState({ screen: 'results', dialogue: null, concepts: [] }))).toEqual([{ sfx: 'win', at: now }]);
+    expect(act(() => S().finishResults('next'), 10)).toEqual([{ sfx: 'win', at: now }]);
+    expect(S().screen).toBe('ending');
+    expect(act(() => S().goTitle())).toEqual([]);
+  });
+
+  it('music along the way: lobby, long fade into the stage, short into an incident, long back, long out', () => {
+    const fades: string[] = [];
+    let track = musicFor(S());
+    const off = gameStore.subscribe((s) => {
+      const next = musicFor(s);
+      if (next === track) return;
+      const f = crossfade(track, next);
+      fades.push(`${track}→${next} ${f.fadeIn}s`);
+      track = next;
+    });
+    try {
+      expect(track).toBe('lobby');
+      S().play(3);
+      drainIntro();
+      cmd('web', 'server start');
+      for (let i = 0; i < 30 && musicFor(S()) !== 'incident'; i++) S().tick();
+      cmd('web', 'server set port 80');
+      for (let i = 0; i < 5 && musicFor(S()) === 'incident'; i++) S().tick();
+      S().goSelect();
+    } finally {
+      off();
+    }
+    expect(fades).toEqual([`lobby→normal ${FADES.long}s`, `normal→incident ${FADES.short}s`, `incident→normal ${FADES.long}s`, `normal→lobby ${FADES.long}s`]);
   });
 });
 

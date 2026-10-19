@@ -21,24 +21,34 @@ function useTicker() {
   }, []);
 }
 
-/** Global hotkeys: Tab = dashboard, H = AI 사수 무전기 (radio), C = 개념 도감. */
+/**
+ * Global hotkeys: Tab = dashboard, H = AI 사수 무전기 (radio), C = 개념 도감.
+ * Each toggles its window: it opens on top of whatever window is open (closing it goes back there), and
+ * pressing the key again while it is the open window closes it. Keys typed into a text box or the terminal,
+ * and Tab inside other windows (moving focus), are left alone. Esc (closing) belongs to ModalFrame.
+ */
 function useHotkeys() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = gameStore.getState();
       if (s.screen !== 'playing' || s.dialogue) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
       const target = e.target instanceof Element ? e.target : null;
-      if (target?.closest('input, textarea, select, .xterm')) return;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], .xterm')) return;
+      const toggle = (type: 'dashboard' | 'hint' | 'concepts') => {
+        if (e.repeat) return;
+        if (s.modal?.type === type) s.closeModal();
+        else s.openModal({ type });
+      };
       if (e.key === 'Tab') {
         // Only steal Tab to toggle the dashboard; inside other windows it moves focus as usual.
         if (s.modal && s.modal.type !== 'dashboard') return;
         e.preventDefault();
-        if (s.modal) s.closeModal();
-        else s.openModal({ type: 'dashboard' });
-      } else if ((e.key === 'h' || e.key === 'H') && !s.modal) {
-        s.openModal({ type: 'hint' });
-      } else if ((e.key === 'c' || e.key === 'C') && !s.modal) {
-        s.openModal({ type: 'concepts' });
+        toggle('dashboard');
+      } else if (e.code === 'KeyH' || e.key === 'h' || e.key === 'H') {
+        toggle('hint');
+      } else if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C') {
+        toggle('concepts');
       }
     };
     window.addEventListener('keydown', onKey);

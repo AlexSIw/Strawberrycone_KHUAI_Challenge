@@ -1,8 +1,8 @@
-// Decides what to play from game state changes: the music loop, the incident alarm and the win jingle.
-// Also owns the M (mute) hotkey. Started once from App.
+// Decides what to play from game state changes: the music (lobby / in-stage / incident), the incident
+// alarm, the coin and the win jingle. Also owns the M (mute) hotkey. Started once from App.
 import { gameStore } from '../store/game';
 import { audio } from './engine';
-import { activeIncidents, createAlarm, jingleAllowed, jingleCue, musicFor, newlyActive, sameRun } from './logic';
+import { activeIncidents, createAlarm, createCueTracker, musicFor, newlyActive, sameRun } from './logic';
 
 const seconds = () => performance.now() / 1000;
 
@@ -18,9 +18,16 @@ export function startAudioDirector(): () => void {
     clearTimer: (id) => window.clearTimeout(id),
   });
 
+  // Coin: an objective done or a card new to the collection. Win jingle: an incident's card pops up, the
+  // stage clear popup or the certificate appears. Each action's cues play together once it's done.
+  const cues = createCueTracker({
+    now: seconds,
+    defer: (fn) => queueMicrotask(fn),
+    play: (p) => audio.playSfx(p.sfx, p.delay),
+  });
+
   let prev = gameStore.getState();
   let prevActive = activeIncidents(prev);
-  let lastJingle: number | null = null;
   audio.setMusic(musicFor(prev));
 
   const unsubscribe = gameStore.subscribe((s) => {
@@ -33,14 +40,7 @@ export function startAudioDirector(): () => void {
     if (!run || s.screen !== prev.screen || active.length === 0) alarm.stop();
     if (newlyActive(run ? prevActive : [], active).length > 0) alarm.start();
 
-    // Win jingle: an incident's concept card pops up, or the results screen appears (once per ~1 s).
-    if (jingleCue(prev, s)) {
-      const now = seconds();
-      if (jingleAllowed(lastJingle, now)) {
-        lastJingle = now;
-        audio.playSfx('win');
-      }
-    }
+    cues.observe(prev, s);
 
     prev = s;
     prevActive = active;
@@ -58,7 +58,11 @@ export function startAudioDirector(): () => void {
 
   return () => {
     unsubscribe();
+    cues.stop();
     window.removeEventListener('keydown', onKey);
     alarm.stop();
   };
 }
+
+// Dev: a hot update can't swap a running director (its subscription and alarm live on); reload instead.
+if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());

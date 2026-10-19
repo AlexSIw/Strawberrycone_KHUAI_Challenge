@@ -50,11 +50,12 @@ Worker의 `npm run dev` 는 `dist/` 가 없으면 빈 폴더를 먼저 만들어
 | WASD / 방향키 | 이동 |
 | E | 앞에 있는 장비와 상호작용 (랙, 스위치, PDU, 관리 PC, 화이트보드 …) |
 | Tab | 대시보드(관제 화면) 열기/닫기 |
-| H | 쿠사수 무전기 (힌트) |
-| C | 개념 도감 |
-| Esc | 열린 창 닫기 |
+| H | 쿠사수 무전기 (힌트) 열기/닫기 |
+| C | 개념 도감 열기/닫기 |
+| Esc | 열린 창 닫기 (창 위에서 연 창이면 원래 창으로 돌아가요. 터미널은 하던 그대로) |
 | Enter / 클릭 | 대화 넘기기 |
 | M | 소리 켜기/끄기 (HUD와 타이틀 화면의 🔊 버튼과 같아요. 설정은 저장돼요) |
+| 🏃 버튼 | 이동 속도 1x → 1.5x → 2x (설정은 저장돼요) |
 
 터미널에서는 `help` 로 그 단계에서 쓸 수 있는 명령어를 볼 수 있고, `hint` 로 쿠사수를 부를 수 있어요.
 힌트는 1단계(관찰 질문) → 2단계(방향) → 3단계(도구/명령 종류) 순서로 나와요. 힌트와 "정답 보기"는 점수(★)가 조금씩 깎여요.
@@ -90,14 +91,14 @@ src/
     manual/         AI 사수가 읽는 운영 매뉴얼 stage0.md … stage7.md
   store/game.ts   Zustand 스토어 (화면, 모달, 대화, 힌트, 저장)
   ui/             React UI (HUD, 대시보드, 터미널, 미니게임, 보드, 힌트 채팅)
-  audio/          소리: engine.ts (Web Audio) · director.ts (게임 상태 → 음악/경보/효과음) · logic.ts (테스트하는 순수 규칙)
+  audio/          소리: engine.ts (Web Audio, 크로스페이드) · director.ts (게임 상태 → 음악/경보/코인/징글) · logic.ts (테스트하는 순수 규칙: 곡 선택, 음량 맞춤, 효과음 규칙)
   game/           Phaser 3 맵과 사자 캐릭터
   ai/client.ts    /api/hint 호출 + 실패 시 기본 힌트
 worker/           Cloudflare Worker: dist 정적 서빙 + POST /api/hint (ChatKHU 프록시)
 tests/            vitest: 스테이지 전체 자동 플레이 테스트
 e2e/              Playwright 스모크 테스트
 art/              사자 원본 그림 · scripts/prepare-sprites.mjs 로 변환
-public/assets/audio/  배경음악 · 효과음 · 대화 소리 (출처와 라이선스: docs/ASSETS.md)
+public/assets/audio/  배경음악(로비 · 스테이지 · 장애) · 효과음(경보 · 코인 · 징글) · 대화 소리 (출처와 라이선스: docs/ASSETS.md)
 ```
 
 ## 장애 시나리오 추가하기

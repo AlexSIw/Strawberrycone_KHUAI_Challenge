@@ -118,14 +118,18 @@ test('창 상태 기억: 장소별 터미널 세션, 설계 보드', async ({ pa
   await page.keyboard.press('ArrowDown');
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
 
-  // `hint` swaps in the radio; the session (still on web) is there when the desk terminal opens again.
+  // `hint` opens the radio on top of the terminal; closing it comes back to the same session (still on web).
   await typeLine(page, 'hint');
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
-  await closeWindow(page);
-  await interact(page, 'desk');
+  await page.keyboard.press('Escape');
   await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hint');
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
+  await closeWindow(page);
+  // …and it is still there the next time the desk terminal opens.
+  await interact(page, 'desk');
+  await expect(title(page)).toHaveText(/터미널 — web/);
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hint');
   await closeWindow(page);
 
   // ---- The web rack console is a session of its own ----

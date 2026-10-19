@@ -1,11 +1,13 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
 import { useEffect, useRef } from 'react';
+import { getStage } from '../content/stages';
 import { available, promptFor } from '../sim/commands';
-import { activeScenarios } from '../sim/engine';
+import { activeScenarios, type StageRun } from '../sim/engine';
 import type { StageId } from '../sim/types';
 import { gameStore, useGame } from '../store/game';
 import { ModalFrame } from './ModalFrame';
+import { lockedText, objectiveStatus, waitingText, type ObjectiveStatus } from './objectiveStatus';
 import './Terminal.css';
 
 // Dark palette that matches theme.css (warm ops-room colors).
@@ -432,6 +434,26 @@ const TERM_FONT = "'Nanum Gothic Coding', D2Coding, Menlo, monospace";
 /** Commands every stage has: listed after the ones this stage is about. */
 const BASIC_COMMANDS = new Set(['help', 'clear', 'hint']);
 
+/** The open objectives (the one to do now highlighted), for the side box: the objective panel is behind this window. */
+function GoalList({ goals, run }: { goals: ObjectiveStatus; run: StageRun }) {
+  return (
+    <ul className="term-goal-list">
+      {goals.open.map((o) => {
+        const progress = o.progress?.(run.world, run.ctx);
+        return (
+          <li key={o.id} className={o === goals.next ? 'current' : ''}>
+            <span className="term-goal-check" aria-hidden />
+            <span className="term-goal-text">
+              {o.text}
+              {progress && <span className="term-goal-progress"> ({progress})</span>}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function Terminal({ host }: { host: string }) {
   const storeHost = useGame((s) => s.terminal.host);
   const run = useGame((s) => s.run);
@@ -542,6 +564,8 @@ export function Terminal({ host }: { host: string }) {
   const rank = (c: { name: string; minStage: number }) => (c.minStage === stage ? 0 : BASIC_COMMANDS.has(c.name) ? 2 : 1);
   const commands = [...available(stage)].sort((a, b) => rank(a) - rank(b));
   const incidents = run ? activeScenarios(run) : [];
+  // The objective panel is behind this window: with no incident going on, the box shows the objectives instead.
+  const goals = run ? objectiveStatus(getStage(run.stage), run) : null;
 
   const typeUsage = (usage: string) => {
     editorRef.current?.setLine(usageStub(usage));
@@ -573,11 +597,9 @@ export function Terminal({ host }: { host: string }) {
               ))}
             </ul>
           </section>
-          <section className={`term-incidents ${incidents.length ? 'has' : ''}`}>
-            <h3>지금 장애</h3>
-            {incidents.length === 0 ? (
-              <p className="muted term-calm">지금은 조용해요 ✨</p>
-            ) : (
+          {incidents.length > 0 ? (
+            <section className="term-incidents has" aria-label="지금 장애">
+              <h3>지금 장애</h3>
               <ul>
                 {incidents.map(({ rt, def }) => (
                   <li key={rt.id}>
@@ -587,6 +609,7 @@ export function Terminal({ host }: { host: string }) {
                     <button
                       type="button"
                       className="btn term-hint-btn"
+                      // The radio opens on top of this window: closing it comes back to this session.
                       onClick={() => gameStore.getState().openModal({ type: 'hint', scenarioId: rt.id })}
                     >
                       쿠사수 힌트
@@ -594,8 +617,27 @@ export function Terminal({ host }: { host: string }) {
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
+              {run && goals?.objectivesFixIncident && goals.open.length > 0 && (
+                // Stage 5: the objectives are the steps that solve the incident, so they stay in view here.
+                <>
+                  <p className="term-fix-steps">아래 목표를 차례로 하면 해결돼요</p>
+                  <GoalList goals={goals} run={run} />
+                </>
+              )}
+            </section>
+          ) : (
+            <section className="term-incidents term-goals" aria-label="지금 목표">
+              <h3>지금 목표</h3>
+              {run && goals?.open.length ? (
+                <GoalList goals={goals} run={run} />
+              ) : (
+                <>
+                  <p className="muted term-calm">{(goals && waitingText(goals)) ?? '지금은 조용해요 ✨'}</p>
+                  {goals && lockedText(goals) && <p className="term-goal-locked">🔒 {lockedText(goals)}</p>}
+                </>
+              )}
+            </section>
+          )}
         </aside>
       </div>
     </ModalFrame>

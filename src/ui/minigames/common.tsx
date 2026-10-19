@@ -67,7 +67,8 @@ export function MiniGameFrame({ onEscape, ...props }: FrameProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = gameStore.getState();
-      if (s.dialogue || s.concepts.length > 0) return;
+      // Something is on top of this window (dialogue, concept card, the HUD's exit question): its keys, not ours.
+      if (s.dialogue || s.concepts.length > 0 || s.paused) return;
       if (e.key === 'Escape') {
         if (escRef.current?.()) {
           e.preventDefault();

@@ -70,6 +70,10 @@ export interface SaveData {
 
 export type Screen = 'title' | 'select' | 'playing' | 'results' | 'ending';
 
+/** Lion walking speed multiplier (the HUD's 🏃 button). */
+export type MoveSpeed = 1 | 1.5 | 2;
+export const MOVE_SPEEDS: readonly MoveSpeed[] = [1, 1.5, 2];
+
 /** One terminal place's session (the 관리 PC desk, or one rack console), kept while the window is closed. */
 export interface TerminalSession {
   /** Host the session is on now: starts at the place's own host, then follows ssh / exit */
@@ -92,7 +96,17 @@ export interface GameState {
   screen: Screen;
   run: StageRun | null;
   save: SaveData;
+  /** The window that is open (on top) */
   modal: Modal | null;
+  /**
+   * Windows waiting under `modal`, oldest first. A window opened while another is open goes on top of it;
+   * closing it brings back the one underneath, as it was (see openModal / closeModal).
+   */
+  modalStack: Modal[];
+  /** Lion walking speed (kept in localStorage) */
+  moveSpeed: MoveSpeed;
+  /** 1x → 1.5x → 2x → 1x */
+  cycleMoveSpeed(): void;
   dialogue: { lines: DialogueLine[]; index: number; then: 'play' | 'results' } | null;
   concepts: ConceptPopup[];
   toasts: Toast[];
@@ -140,7 +154,15 @@ export interface GameState {
   /** The active terminal session's half-typed line */
   setTerminalDraft(text: string): void;
   setWindowState(key: string, value: unknown): void;
+  /**
+   * Opens a window. With none open it just opens. With one open, the new one goes on top and the open one
+   * waits underneath (closeModal brings it back), except:
+   *  - the same window again (e.g. the radio for another incident) is updated in place;
+   *  - a window already waiting underneath is brought back (the ones above it close), never duplicated;
+   *  - a chooser (consolePick) is replaced by the window it leads to (a terminal).
+   */
   openModal(m: Modal): void;
+  /** Closes the open window and brings back the one underneath, if any. */
   closeModal(): void;
   nextDialogue(): void;
   dismissConcept(): void;
@@ -170,6 +192,29 @@ function writeSave(s: SaveData): void {
   } catch {
     /* private mode etc. — progress just won't persist */
   }
+}
+
+export const SPEED_KEY = 'khu-dc-speed';
+
+function loadSpeed(): MoveSpeed {
+  try {
+    const v = Number(localStorage.getItem(SPEED_KEY));
+    return MOVE_SPEEDS.find((x) => x === v) ?? 1;
+  } catch {
+    return 1;
+  }
+}
+
+function writeSpeed(v: MoveSpeed): void {
+  try {
+    localStorage.setItem(SPEED_KEY, String(v));
+  } catch {
+    /* storage blocked: the speed just resets next visit */
+  }
+}
+
+export function nextMoveSpeed(v: MoveSpeed): MoveSpeed {
+  return MOVE_SPEEDS[(MOVE_SPEEDS.indexOf(v) + 1) % MOVE_SPEEDS.length];
 }
 
 // ---------- helpers ----------
@@ -209,6 +254,50 @@ function openEvent(m: Modal): string {
 }
 
 const FIXING_MODALS: Modal['type'][] = ['terminal', 'rack', 'cable', 'power', 'repair', 'board'];
+
+const isFixing = (m: Modal | null) => !!m && FIXING_MODALS.includes(m.type);
+
+/**
+ * Which window a Modal is. Two Modals with the same key are the same window: the radio stays one window
+ * whichever incident it was opened for, while each place's terminal is a window of its own.
+ */
+export function windowKey(m: Modal): string {
+  switch (m.type) {
+    case 'terminal':
+      return `terminal:${m.host}`;
+    case 'board':
+      return `board:${m.board}`;
+    case 'cable':
+      return `cable:${m.mode}`;
+    case 'repair':
+      return `repair:${m.target}`;
+    default:
+      return m.type;
+  }
+}
+
+/** Choosers that only lead to another window: the window they lead to takes their place instead of stacking. */
+const CHOOSER_LEADS_TO: Partial<Record<Modal['type'], Modal['type']>> = { consolePick: 'terminal' };
+
+/** The window stack after opening `m` (pure; see GameState.openModal). */
+export function pushWindow(open: Modal | null, stack: Modal[], m: Modal): Modal[] {
+  if (!open) return [];
+  const key = windowKey(m);
+  if (windowKey(open) === key) return stack;
+  const i = stack.findIndex((w) => windowKey(w) === key);
+  if (i >= 0) return stack.slice(0, i);
+  return CHOOSER_LEADS_TO[open.type] === m.type ? stack : [...stack, open];
+}
+
+/** No window open, none waiting. */
+const NO_WINDOWS = { modal: null, modalStack: [] as Modal[], fixing: false };
+
+/** Opening `m`: a terminal of another place parks the active session and brings back (or starts) its own. */
+function sessionFor(s: GameState, m: Modal): Partial<GameState> {
+  if (m.type !== 'terminal' || m.host === s.terminalOrigin) return {};
+  const { [m.host]: session, ...others } = s.terminals;
+  return { terminals: { ...others, [s.terminalOrigin]: s.terminal }, terminal: session ?? freshSession(m.host), terminalOrigin: m.host };
+}
 
 // ---------- store ----------
 
@@ -253,8 +342,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
       save,
       lastScore: score,
       lastPrevBest: prev?.points ?? null,
-      modal: null,
-      fixing: false,
+      ...NO_WINDOWS,
       toasts: [],
       dialogue: { lines: def.outro, index: 0, then: 'results' },
     });
@@ -265,6 +353,13 @@ export const gameStore = createStore<GameState>()((set, get) => {
     run: null,
     save: loadSave(),
     modal: null,
+    modalStack: [],
+    moveSpeed: loadSpeed(),
+    cycleMoveSpeed: () => {
+      const moveSpeed = nextMoveSpeed(get().moveSpeed);
+      writeSpeed(moveSpeed);
+      set({ moveSpeed });
+    },
     dialogue: null,
     concepts: [],
     toasts: [],
@@ -281,15 +376,15 @@ export const gameStore = createStore<GameState>()((set, get) => {
     paused: false,
     setPaused: (paused) => set({ paused }),
 
-    goTitle: () => set({ screen: 'title', run: null, modal: null, dialogue: null, toasts: [] }),
-    goSelect: () => set({ screen: 'select', run: null, modal: null, dialogue: null, toasts: [] }),
+    goTitle: () => set({ screen: 'title', run: null, ...NO_WINDOWS, dialogue: null, toasts: [] }),
+    goSelect: () => set({ screen: 'select', run: null, ...NO_WINDOWS, dialogue: null, toasts: [] }),
 
     play: (stage) => {
       const def = getStage(stage);
       set({
         screen: 'playing',
         run: startStage(stage),
-        modal: null,
+        ...NO_WINDOWS,
         concepts: [],
         toasts: [],
         hints: {},
@@ -302,7 +397,6 @@ export const gameStore = createStore<GameState>()((set, get) => {
         stageEpoch: get().stageEpoch + 1,
         lastScore: null,
         lastPrevBest: null,
-        fixing: false,
         paused: false,
         dialogue: { lines: def.intro, index: 0, then: 'play' },
       });
@@ -313,7 +407,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
       if (!run) return get().goSelect();
       if (next === 'retry') return get().play(run.stage);
       if (next === 'next') {
-        if (run.stage === 7) return set({ screen: 'ending', modal: null });
+        if (run.stage === 7) return set({ screen: 'ending', ...NO_WINDOWS });
         return get().play((run.stage + 1) as StageId);
       }
       get().goSelect();
@@ -405,20 +499,19 @@ export const gameStore = createStore<GameState>()((set, get) => {
     setWindowState: (key, value) => set((s) => ({ windowState: { ...s.windowState, [key]: { v: value } } })),
 
     openModal: (m) => {
-      const patch: Partial<GameState> = { modal: m, fixing: FIXING_MODALS.includes(m.type) };
       const s = get();
-      if (m.type === 'terminal' && m.host !== s.terminalOrigin) {
-        // Park the session that was active and bring back (or start) this place's own one.
-        const { [m.host]: session, ...others } = s.terminals;
-        patch.terminals = { ...others, [s.terminalOrigin]: s.terminal };
-        patch.terminal = session ?? freshSession(m.host);
-        patch.terminalOrigin = m.host;
-      }
-      set(patch);
+      set({ modal: m, modalStack: pushWindow(s.modal, s.modalStack, m), fixing: isFixing(m), ...sessionFor(s, m) });
       get().event(openEvent(m));
     },
 
-    closeModal: () => set({ modal: null, fixing: false }),
+    closeModal: () => {
+      const s = get();
+      const back = s.modalStack[s.modalStack.length - 1] ?? null;
+      if (!back) return set(NO_WINDOWS);
+      // The terminal underneath gets its own place's session back (it is still the active one unless
+      // another place's terminal was opened on top meanwhile).
+      set({ modal: back, modalStack: s.modalStack.slice(0, -1), fixing: isFixing(back), ...sessionFor(s, back) });
+    },
 
     nextDialogue: () => {
       const d = get().dialogue;

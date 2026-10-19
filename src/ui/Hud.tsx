@@ -34,6 +34,7 @@ export function Hud() {
   const run = useGame((s) => s.run);
   const screen = useGame((s) => s.screen);
   const modal = useGame((s) => s.modal?.type);
+  const speed = useGame((s) => s.moveSpeed);
   const busy = useGame((s) => s.screen !== 'playing' || !!s.dialogue);
   const [confirmExit, setConfirmExit] = useState(false);
 
@@ -88,11 +89,12 @@ export function Hud() {
     e.currentTarget.blur();
     fn();
   };
-  const toggleDashboard = () => (modal === 'dashboard' ? store.closeModal() : store.openModal({ type: 'dashboard' }));
+  /** Opens the window (on top of an open one: closing it goes back there), or closes it when it is the open one. */
+  const toggle = (type: 'dashboard' | 'hint' | 'concepts') => () => (modal === type ? store.closeModal() : store.openModal({ type }));
 
   return (
     <>
-      <header className="hud" aria-label="게임 상태">
+      <header className={`hud${def.survive ? ' hud--survive' : ''}`} aria-label="게임 상태">
         <div className="hud-stage">
           <span className="hud-stage-no">
             <span className="hud-stage-word">Stage </span>
@@ -159,17 +161,32 @@ export function Hud() {
         </div>
 
         <nav className="hud-buttons" aria-label="메뉴">
-          <button className={`btn hud-btn ${modal === 'dashboard' ? 'on' : ''}`} onClick={press(toggleDashboard)} title="관제 대시보드 열기 (Tab)">
+          <button
+            className={`btn hud-btn ${modal === 'dashboard' ? 'on' : ''}`}
+            onClick={press(toggle('dashboard'))}
+            title="관제 대시보드 열기 (Tab)"
+            aria-pressed={modal === 'dashboard'}
+          >
             <span aria-hidden>📊</span>
             <span className="hud-btn-label">대시보드</span>
             <kbd>Tab</kbd>
           </button>
-          <button className="btn hud-btn" onClick={press(() => store.openModal({ type: 'hint' }))} title="쿠사수에게 힌트 받기 (H)">
+          <button
+            className={`btn hud-btn ${modal === 'hint' ? 'on' : ''}`}
+            onClick={press(toggle('hint'))}
+            title="쿠사수에게 힌트 받기 (H)"
+            aria-pressed={modal === 'hint'}
+          >
             <span aria-hidden>📻</span>
             <span className="hud-btn-label">쿠사수</span>
             <kbd>H</kbd>
           </button>
-          <button className="btn hud-btn" onClick={press(() => store.openModal({ type: 'concepts' }))} title="모은 개념 카드 보기 (C)">
+          <button
+            className={`btn hud-btn ${modal === 'concepts' ? 'on' : ''}`}
+            onClick={press(toggle('concepts'))}
+            title="모은 개념 카드 보기 (C)"
+            aria-pressed={modal === 'concepts'}
+          >
             <span aria-hidden>📖</span>
             <span className="hud-btn-label">도감</span>
             <kbd>C</kbd>
@@ -177,6 +194,10 @@ export function Hud() {
           <SoundToggle className="hud-btn hud-sound">
             <kbd>M</kbd>
           </SoundToggle>
+          <button className="btn hud-btn hud-speed" onClick={press(() => store.cycleMoveSpeed())} title="이동 속도" aria-label={`이동 속도 ${speed}x`}>
+            <span aria-hidden>🏃</span>
+            <span className="hud-speed-value">{speed}x</span>
+          </button>
           <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="스테이지 선택 화면으로 나가기">
             <span aria-hidden>🚪</span>
             <span className="hud-btn-label">나가기</span>
@@ -189,6 +210,7 @@ export function Hud() {
           title="스테이지에서 나갈까요?"
           icon="🚪"
           size="narrow"
+          className="modal-over"
           onClose={() => setConfirmExit(false)}
           footer={
             <>

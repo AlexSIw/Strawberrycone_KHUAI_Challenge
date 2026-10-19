@@ -59,6 +59,7 @@ import {
   type LedState,
 } from '../worldView';
 
+/** Walking speed (px/s) at 1x; the HUD's 🏃 setting (store.moveSpeed) multiplies it. */
 const SPEED = 210;
 /** Max distance from the lion's feet to a device's footprint for the [E] prompt */
 const INTERACT_RANGE = TILE * 1.1;
@@ -956,9 +957,11 @@ export class DataCenter extends Phaser.Scene {
       if (k.down.isDown || k.s.isDown) vy += 1;
     }
     const moving = vx !== 0 || vy !== 0;
+    // Read every frame, so a new speed applies at once, also mid-walk.
+    const mul = s.moveSpeed;
     if (moving) {
       const len = Math.hypot(vx, vy);
-      this.player.setVelocity((vx / len) * SPEED, (vy / len) * SPEED);
+      this.player.setVelocity((vx / len) * SPEED * mul, (vy / len) * SPEED * mul);
       this.facing = facingFor(vx, vy, this.facing);
     } else {
       this.player.setVelocity(0, 0);
@@ -967,6 +970,8 @@ export class DataCenter extends Phaser.Scene {
     // animation
     const fixing = s.fixing && !!s.modal;
     const look = lionLook({ moving, facing: this.facing, angry: this.angry, fixing });
+    // The walk cycle speeds up with the walk, so the paws keep pace with the floor instead of sliding.
+    this.player.anims.timeScale = moving ? mul : 1;
     if ('anim' in look) {
       // a sheet that failed to load has no animation: don't warn "Missing animation" every frame
       if (this.anims.exists(look.anim)) this.player.play(look.anim, true);

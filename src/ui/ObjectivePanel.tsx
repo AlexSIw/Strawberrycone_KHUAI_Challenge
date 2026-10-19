@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { getStage } from '../content/stages';
-import { activeScenarios, visibleObjectives } from '../sim/engine';
+import { activeScenarios } from '../sim/engine';
 import type { RoomId } from '../sim/types';
 import { gameStore, useGame } from '../store/game';
+import { lockedText, nextStepText, objectiveStatus } from './objectiveStatus';
 import './ObjectivePanel.css';
 
 const ROOM_LABEL: Record<RoomId, string> = {
@@ -37,29 +38,24 @@ export function ObjectivePanel() {
   if (!run || screen !== 'playing') return null;
 
   const def = getStage(run.stage);
-  const objectives = visibleObjectives(def, run);
+  const st = objectiveStatus(def, run);
   const incidents = activeScenarios(run);
   const now = run.ctx.stageTime;
   const isDone = (id: string) => id in run.objectivesDone;
-  const nextObjective = objectives.find((o) => !isDone(o.id));
-  // Count against every objective of the stage, so the total doesn't grow as later ones unlock.
-  const doneCount = def.objectives.filter((o) => isDone(o.id)).length;
-  const lockedCount = def.objectives.length - objectives.length;
-  const doneList = objectives.filter((o) => isDone(o.id));
-  const openList = objectives.filter((o) => !isDone(o.id));
+  const nextObjective = st.next;
+  const doneList = st.done;
+  const openList = st.open;
+  const locked = lockedText(st);
   // Finished tasks fold into one row so the panel doesn't grow over the map.
   const foldDone = doneList.length > 1 && !showDone;
   // Nothing has gone wrong yet and the service isn't fully up: the player is still building it.
   const preparing = run.scenarios.every((s) => s.activatedAt === null) && run.health.availability < 0.99;
 
-  // The highlighted objective already says what to do; the box is only for incidents and the all-done state.
-  const nextStep = incidents.length
-    ? '🚨 장애부터 해결하세요! 막히면 쿠사수에게 물어봐요.'
-    : nextObjective
-      ? null
-      : '목표 완료! 다음 상황을 기다리는 중이에요…';
+  // The highlighted objective already says what to do; the box is only for incidents and the waiting states
+  // (which say what unlocks next, never "목표 완료!" while objectives are still locked).
+  const nextStep = nextStepText(st);
 
-  const item = (o: (typeof objectives)[number]) => {
+  const item = (o: (typeof st.visible)[number]) => {
     const done = isDone(o.id);
     const progress = !done && o.progress ? o.progress(run.world, run.ctx) : '';
     return (
@@ -89,7 +85,7 @@ export function ObjectivePanel() {
       >
         <span className="obj-head-title">🎯 목표</span>
         <span className="obj-head-count">
-          {doneCount}/{def.objectives.length}
+          {st.doneCount}/{st.total}
         </span>
         {incidents.length > 0 && <span className="obj-head-alert">🚨 {incidents.length}</span>}
         <span className="obj-head-caret" aria-hidden>
@@ -136,12 +132,12 @@ export function ObjectivePanel() {
               </li>
             )}
             {openList.map(item)}
-            {lockedCount > 0 && (
+            {locked && (
               <li className="obj-item locked">
                 <span className="obj-check" aria-hidden>
                   🔒
                 </span>
-                <span className="obj-text">이어지는 목표 {lockedCount}개 (앞 목표를 끝내면 열려요)</span>
+                <span className="obj-text">{locked}</span>
               </li>
             )}
           </ul>
@@ -150,7 +146,9 @@ export function ObjectivePanel() {
             {incidents.length === 0 ? (
               <>
                 <h3 className="calm">✅ 장애 없음</h3>
-                <p className="obj-calm">{preparing ? '아직 서비스 준비 중이에요. 위 목표부터 끝내봐요.' : '지금은 조용해요. 대시보드를 가끔 확인하세요.'}</p>
+                <p className="obj-calm">
+                  {preparing && openList.length ? '아직 서비스 준비 중이에요. 위 목표부터 끝내봐요.' : '지금은 조용해요. 대시보드를 가끔 확인하세요.'}
+                </p>
               </>
             ) : (
               <h3>🚨 지금 장애</h3>

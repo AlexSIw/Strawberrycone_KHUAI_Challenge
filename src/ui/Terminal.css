@@ -153,6 +153,51 @@
   font-size: 13px;
 }
 
+/* No incident: the box lists the objectives (the objective panel is behind this window). */
+.term-goals h3 {
+  color: var(--tan);
+}
+.term-incidents .term-goal-list {
+  gap: 5px;
+}
+.term-incidents .term-goal-list li {
+  justify-content: flex-start;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.term-goal-check {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 2px solid var(--line);
+  border-radius: 3px;
+}
+.term-goal-list li.current .term-goal-check {
+  border-color: var(--tan);
+}
+.term-goal-list li.current .term-goal-text {
+  color: var(--tan);
+}
+/* During an incident whose fix is the objective list (stage 5) */
+.term-fix-steps {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  color: var(--muted);
+}
+.term-goal-progress {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.term-goal-locked {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 @media (max-width: 760px) {
   .term-wrap {
     grid-template-columns: 1fr;

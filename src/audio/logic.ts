@@ -4,15 +4,26 @@ import type { Speaker } from '../content/types';
 
 // ---------- music ----------
 
-export type MusicTrack = 'normal' | 'incident';
+/** lobby: title, stage select, ending · normal: in a stage · incident: while an incident is going on */
+export type MusicTrack = 'lobby' | 'normal' | 'incident';
 
 /** The bits of game state the audio rules look at (GameState fits it). */
 export interface AudioView {
   screen: string;
-  run: { stage: number; ctx: { stageTime: number }; scenarios: readonly { id: string; state: string }[] } | null;
+  run: {
+    stage: number;
+    ctx: { stageTime: number };
+    scenarios: readonly { id: string; state: string }[];
+    /** objective id → stage time it was done */
+    objectivesDone: Readonly<Record<string, number>>;
+  } | null;
   dialogue: { then: string } | null;
   concepts: readonly { scenarioId: string }[];
+  save: { cards: readonly string[] };
 }
+
+/** Screens that belong to a stage (the map with its HUD, and the clear popup on top of it). */
+const IN_STAGE: readonly string[] = ['playing', 'results'];
 
 /** Ids of the incidents going on right now (only while a stage is being played). */
 export function activeIncidents(s: Pick<AudioView, 'screen' | 'run'>): string[] {
@@ -20,8 +31,12 @@ export function activeIncidents(s: Pick<AudioView, 'screen' | 'run'>): string[] 
   return s.run.scenarios.filter((x) => x.state === 'active').map((x) => x.id);
 }
 
-/** Incident music while any incident is on, the normal loop everywhere else (title, select, results, ending). */
+/**
+ * The lobby tune outside the stages (title, stage select, ending), the normal loop inside one (playing,
+ * results), and the incident loop while any incident is on.
+ */
 export function musicFor(s: Pick<AudioView, 'screen' | 'run'>): MusicTrack {
+  if (!IN_STAGE.includes(s.screen)) return 'lobby';
   return activeIncidents(s).length > 0 ? 'incident' : 'normal';
 }
 
@@ -34,6 +49,174 @@ export function newlyActive(prev: readonly string[], next: readonly string[]): s
 export function sameRun(prev: Pick<AudioView, 'screen' | 'run'>, next: Pick<AudioView, 'screen' | 'run'>): boolean {
   if (!prev.run || !next.run) return false;
   return prev.run.stage === next.run.stage && next.run.ctx.stageTime >= prev.run.ctx.stageTime;
+}
+
+// ---------- crossfades ----------
+
+/** Crossfade lengths (seconds). */
+export const FADES = {
+  /** Lobby ↔ stage, and back to the normal loop once the last incident is solved: slow, no jolt */
+  long: 2.8,
+  /** An incident starts: quick, so it still feels urgent */
+  short: 0.3,
+  /** The very first music, right after the click that unlocks sound */
+  first: 1.5,
+  /** Music switched off */
+  stop: 1,
+};
+
+export interface Crossfade {
+  /** Seconds the new track takes to come in */
+  fadeIn: number;
+  /** Seconds the old one takes to go */
+  fadeOut: number;
+}
+
+/** How to get from the track that is playing to the one wanted (null: silence). */
+export function crossfade(from: MusicTrack | null, to: MusicTrack | null): Crossfade {
+  if (from === to) return { fadeIn: 0, fadeOut: 0 };
+  if (to === null) return { fadeIn: 0, fadeOut: FADES.stop };
+  if (from === null) return { fadeIn: FADES.first, fadeOut: 0 };
+  if (to === 'incident') return { fadeIn: FADES.short, fadeOut: FADES.short };
+  return { fadeIn: FADES.long, fadeOut: FADES.long };
+}
+
+/** Tracks that pick up where they left off; the incident loop always starts from its top. */
+export const RESUME: Record<MusicTrack, boolean> = { lobby: true, normal: true, incident: false };
+
+/**
+ * Equal-power fade at `x` (0…1) from gain `from` to `to`, for a track whose full level is `full`:
+ * full·sin(θ) with θ moving evenly between asin(from/full) and asin(to/full). A whole fade-in is
+ * full·sin(πx/2) and a whole fade-out full·cos(πx/2), so during a crossfade in² + out² stays full²:
+ * no dip in the middle (a linear crossfade sags 3 dB there) and no bump. A fade that starts halfway
+ * (one that was interrupted) continues on the same curve, so the gain never jumps.
+ */
+export function equalPower(from: number, to: number, full: number, x: number): number {
+  if (full <= 0) return 0;
+  const angle = (g: number) => Math.asin(Math.min(1, Math.max(0, g / full)));
+  const t = Math.min(1, Math.max(0, x));
+  const a = angle(from);
+  return full * Math.sin(a + (angle(to) - a) * t);
+}
+
+/** A gain change in progress: equal-power from `from` to `to`, starting at `start` (seconds) for `duration`. */
+export interface Envelope {
+  from: number;
+  to: number;
+  full: number;
+  start: number;
+  duration: number;
+}
+
+/** The gain at time `t`. */
+export function envelopeAt(e: Envelope, t: number): number {
+  if (e.duration <= 0 || t >= e.start + e.duration) return e.to;
+  if (t <= e.start) return e.from;
+  return equalPower(e.from, e.to, e.full, (t - e.start) / e.duration);
+}
+
+/**
+ * Breakpoints (absolute times) for linear ramps that trace the curve: Web Audio has no sine ramp, and
+ * value curves can't be cut short cleanly in every browser. One every ~50 ms (8–64 of them) is
+ * closer to the curve than anyone can hear. Empty for an instant change.
+ */
+export function envelopePoints(e: Envelope): { t: number; v: number }[] {
+  if (e.duration <= 0) return [];
+  const n = Math.min(64, Math.max(8, Math.ceil(e.duration / 0.05)));
+  return Array.from({ length: n }, (_, i) => {
+    const x = (i + 1) / n;
+    return { t: e.start + x * e.duration, v: equalPower(e.from, e.to, e.full, x) };
+  });
+}
+
+// ---------- loudness ----------
+
+type Biquad = { b: [number, number, number]; a: [number, number] };
+
+/**
+ * The two K-weighting biquads (a0 = 1) for any sample rate, designed as libebur128 does: at 48 kHz they
+ * are exactly the coefficients printed in BS.1770.
+ */
+function kWeighting(sampleRate: number): Biquad[] {
+  const shelf = (() => {
+    const [f0, gainDb, q] = [1681.974450955533, 3.999843853973347, 0.7071752369554196];
+    const k = Math.tan((Math.PI * f0) / sampleRate);
+    const vh = Math.pow(10, gainDb / 20);
+    const vb = Math.pow(vh, 0.4996667741545416);
+    const a0 = 1 + k / q + k * k;
+    return {
+      b: [(vh + (vb * k) / q + k * k) / a0, (2 * (k * k - vh)) / a0, (vh - (vb * k) / q + k * k) / a0],
+      a: [(2 * (k * k - 1)) / a0, (1 - k / q + k * k) / a0],
+    } as Biquad;
+  })();
+  const highpass = (() => {
+    const [f0, q] = [38.13547087602444, 0.5003270373238773];
+    const k = Math.tan((Math.PI * f0) / sampleRate);
+    const a0 = 1 + k / q + k * k;
+    return { b: [1, -2, 1], a: [(2 * (k * k - 1)) / a0, (1 - k / q + k * k) / a0] } as Biquad;
+  })();
+  return [shelf, highpass];
+}
+
+/**
+ * Integrated loudness (LUFS) as in ITU-R BS.1770-4: each channel K-weighted (a +4 dB shelf above
+ * ~1.7 kHz, then a high-pass at ~38 Hz: roughly how the ear weighs frequencies), mean square over
+ * 400 ms blocks every 100 ms, blocks below −70 LUFS and then those 10 LU under the average left out.
+ * This measures how loud music sounds, which peaks or plain RMS don't. −Infinity for silence.
+ */
+export function loudness(channels: readonly ArrayLike<number>[], sampleRate: number): number {
+  const length = channels[0]?.length ?? 0;
+  const step = Math.round(sampleRate / 10);
+  const segments = Math.floor(length / step);
+  if (segments < 4) return -Infinity;
+  // Sum of squares of the K-weighted signal per 100 ms, all channels together (L/R weigh 1).
+  const energy = new Float64Array(segments);
+  const filters = kWeighting(sampleRate);
+  for (const ch of channels) {
+    const state = filters.map(() => [0, 0]); // transposed direct form II
+    for (let i = 0; i < segments * step; i++) {
+      let y = ch[i];
+      for (let f = 0; f < filters.length; f++) {
+        const { b, a } = filters[f];
+        const s = state[f];
+        const x = y;
+        y = b[0] * x + s[0];
+        s[0] = b[1] * x - a[0] * y + s[1];
+        s[1] = b[2] * x - a[1] * y;
+      }
+      energy[Math.floor(i / step)] += y * y;
+    }
+  }
+  const lufs = (meanSquare: number) => -0.691 + 10 * Math.log10(meanSquare);
+  const blocks: number[] = [];
+  for (let j = 0; j + 4 <= segments; j++) blocks.push((energy[j] + energy[j + 1] + energy[j + 2] + energy[j + 3]) / (4 * step));
+  const mean = (xs: number[]) => xs.reduce((a, x) => a + x, 0) / xs.length;
+  const loudEnough = blocks.filter((ms) => lufs(ms) > -70);
+  if (!loudEnough.length) return -Infinity;
+  const gate = lufs(mean(loudEnough)) - 10;
+  return lufs(mean(loudEnough.filter((ms) => lufs(ms) > gate)));
+}
+
+/**
+ * Loudness of each music file (LUFS), measured with loudness() on the decoded files (tests/audio.test.ts
+ * measures them again on a Mac and fails if a file changed without updating this).
+ */
+export const MUSIC_LUFS: Record<MusicTrack, number> = { lobby: -14.6, normal: -18.0, incident: -6.0 };
+
+/** Never boost a quiet track by more than this (×2 = +6 dB), so it can't clip. */
+const MAX_BOOST = 2;
+
+/**
+ * Gain per track so all three sound as loud as the reference (the normal loop the mix was set up
+ * with), and switching tracks never jumps in volume.
+ */
+export function loudnessGains(lufs: Record<MusicTrack, number> = MUSIC_LUFS, ref: MusicTrack = 'normal'): Record<MusicTrack, number> {
+  const gain = (t: MusicTrack) => {
+    const g = Math.pow(10, (lufs[ref] - lufs[t]) / 20);
+    if (!Number.isFinite(g) || g <= 0) return 1; // a silent or unmeasured track: left alone
+    return Math.round(Math.min(MAX_BOOST, g) * 1000) / 1000;
+  };
+  return { lobby: gain('lobby'), normal: gain('normal'), incident: gain('incident') };
 }
 
 /** Sample-accurate loop points: leading/trailing near-silence (AAC/MP3 encoder padding) is cut off. */
@@ -138,10 +321,14 @@ export function createAlarm(deps: AlarmDeps, o = ALARM): AlarmCycle {
   };
 }
 
-// ---------- win jingle ----------
+// ---------- coin & win jingle ----------
 
 /** Two jingle cues closer than this (seconds) play once. */
 export const JINGLE_GAP = 1;
+/** Coin cues closer than this (seconds) play once. */
+export const COIN_GAP = 0.15;
+/** A jingle due right after a coin waits this long after it (seconds), so the two don't pile up. */
+export const JINGLE_AFTER_COIN = 0.5;
 
 export function jingleAllowed(lastAt: number | null, now: number, gap = JINGLE_GAP): boolean {
   return lastAt === null || now - lastAt >= gap;
@@ -156,15 +343,127 @@ export function visibleCard<T extends { scenarioId: string }>(s: { screen: strin
   return blocked ? null : (s.concepts[0] ?? null);
 }
 
+/** Why the win jingle plays: an incident's card, the stage clear popup, or the final certificate. */
+export type Jingle = 'card' | 'results' | 'ending';
+
+type CueState = Pick<AudioView, 'screen' | 'dialogue' | 'concepts'>;
+
 /**
- * Should the win jingle play for this state change? Yes when an incident's card pops up
- * (not an objective's "objective:<id>" card) and when the stage results screen appears.
+ * Should the win jingle play for this state change? Yes when an incident's card pops up (not an
+ * objective's "objective:<id>" card), when the stage results popup appears, and when the ending
+ * (certificate) screen appears.
  */
-export function jingleCue(prev: Omit<AudioView, 'run'>, next: Omit<AudioView, 'run'>): 'card' | 'results' | null {
+export function jingleCue(prev: CueState, next: CueState): Jingle | null {
   if (next.screen === 'results' && prev.screen !== 'results') return 'results';
+  if (next.screen === 'ending' && prev.screen !== 'ending') return 'ending';
   const card = visibleCard(next);
   if (card && card !== visibleCard(prev) && !card.scenarioId.startsWith('objective:')) return 'card';
   return null;
+}
+
+/** Objectives done by this state change (same stage run, while playing). */
+export function newObjectives(prev: Pick<AudioView, 'screen' | 'run'>, next: Pick<AudioView, 'screen' | 'run'>): string[] {
+  if (next.screen !== 'playing' || !prev.run || !next.run || !sameRun(prev, next)) return [];
+  const before = prev.run.objectivesDone;
+  if (before === next.run.objectivesDone) return []; // most updates (a keystroke, a window) don't touch them
+  return Object.keys(next.run.objectivesDone).filter((id) => !(id in before));
+}
+
+/** Cards that just joined the collection. One earned again on a replay is not new. */
+export function newCards(prev: Pick<AudioView, 'save'>, next: Pick<AudioView, 'screen' | 'save'>): string[] {
+  if (next.screen !== 'playing' || prev.save.cards === next.save.cards) return [];
+  return next.save.cards.filter((c) => !prev.save.cards.includes(c));
+}
+
+/** Should the coin sound for this state change? An objective was done, or a card is new to the collection. */
+export function coinCue(prev: Pick<AudioView, 'screen' | 'run' | 'save'>, next: Pick<AudioView, 'screen' | 'run' | 'save'>): boolean {
+  return newObjectives(prev, next).length > 0 || newCards(prev, next).length > 0;
+}
+
+/** The cues gathered from one moment's state changes (one player action or game tick). */
+export interface Cues {
+  coin: boolean;
+  jingle: Jingle | null;
+}
+
+/** When the coin and the jingle last played (seconds; a jingle can be set for a moment ahead). */
+export interface CueClock {
+  lastCoin: number | null;
+  lastJingle: number | null;
+}
+
+export interface CuePlay {
+  sfx: 'coin' | 'win';
+  /** Seconds from now */
+  delay: number;
+}
+
+/**
+ * What to play for one moment's cues. Everything in the same moment (an objective, its card, an incident
+ * fixed in the same tick) is one coin. A jingle never starts on top of a coin: it begins ~0.5 s after it.
+ * Repeats are dropped: a coin within 0.15 s of the last one or while a jingle is about to start, and a
+ * jingle within 1 s of the last one.
+ */
+export function planCues(cues: Cues, now: number, clock: CueClock): { plays: CuePlay[]; clock: CueClock } {
+  const plays: CuePlay[] = [];
+  let { lastCoin, lastJingle } = clock;
+  const jinglePending = lastJingle !== null && lastJingle > now;
+  if (cues.coin && !jinglePending && (lastCoin === null || now - lastCoin >= COIN_GAP)) {
+    plays.push({ sfx: 'coin', delay: 0 });
+    lastCoin = now;
+  }
+  if (cues.jingle && jingleAllowed(lastJingle, now)) {
+    const delay = lastCoin !== null && now - lastCoin < JINGLE_AFTER_COIN ? Math.round((lastCoin + JINGLE_AFTER_COIN - now) * 1000) / 1000 : 0;
+    plays.push({ sfx: 'win', delay });
+    lastJingle = now + delay;
+  }
+  return { plays, clock: { lastCoin, lastJingle } };
+}
+
+type CueView = Pick<AudioView, 'screen' | 'run' | 'save' | 'dialogue' | 'concepts'>;
+
+export interface CueTracker {
+  /** A state change happened (prev → next). */
+  observe(prev: CueView, next: CueView): void;
+  /** Drop anything still pending. */
+  stop(): void;
+}
+
+/**
+ * Turns state changes into coin/jingle plays. One player action or game tick changes the store several
+ * times in a row (the objective, then its card…), so cues are gathered and planned together once that
+ * burst is over: `defer` runs the plan afterwards (queueMicrotask in the game).
+ */
+export function createCueTracker(deps: { now(): number; defer(fn: () => void): void; play(p: CuePlay): void }): CueTracker {
+  let pending: Cues | null = null;
+  let clock: CueClock = { lastCoin: null, lastJingle: null };
+  let stopped = false;
+  const flush = () => {
+    const cues = pending;
+    pending = null;
+    if (!cues || stopped) return;
+    const plan = planCues(cues, deps.now(), clock);
+    clock = plan.clock;
+    plan.plays.forEach(deps.play);
+  };
+  return {
+    observe(prev, next) {
+      if (stopped) return;
+      const coin = coinCue(prev, next);
+      const jingle = jingleCue(prev, next);
+      if (!coin && !jingle) return;
+      if (!pending) {
+        pending = { coin: false, jingle: null };
+        deps.defer(flush);
+      }
+      pending.coin ||= coin;
+      pending.jingle ??= jingle;
+    },
+    stop() {
+      stopped = true;
+      pending = null;
+    },
+  };
 }
 
 // ---------- dialogue blabber (animalese) ----------

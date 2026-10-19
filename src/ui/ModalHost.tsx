@@ -1,4 +1,4 @@
-import { useGame } from '../store/game';
+import { gameStore, useGame, type Modal } from '../store/game';
 import { ConceptsBook } from './ConceptsBook';
 import { Dashboard } from './Dashboard';
 import { HintChat } from './HintChat';
@@ -13,12 +13,19 @@ import { CableGame } from './minigames/CableGame';
 import { PowerGame } from './minigames/PowerGame';
 import { RackGame } from './minigames/RackGame';
 import { RepairGame } from './minigames/RepairGame';
-import { gameStore } from '../store/game';
 
-/** Renders whichever window is open. Each window closes itself via gameStore.closeModal(). */
+/**
+ * Renders the open window (the top of the store's window stack). Each window closes itself via
+ * gameStore.closeModal(), which brings back the window underneath, if any.
+ * The layer starts below the HUD, so its buttons (dashboard, radio, 도감…) still work with a window open.
+ */
 export function ModalHost() {
   const modal = useGame((s) => s.modal);
   if (!modal) return null;
+  return <div className="modal-layer">{renderWindow(modal)}</div>;
+}
+
+function renderWindow(modal: Modal) {
   switch (modal.type) {
     case 'terminal':
       // Each place has its own session: a new place means a new window, not the old one's screen.

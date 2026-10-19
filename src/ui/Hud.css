@@ -132,6 +132,9 @@
 }
 .hud-btn kbd { font-size: 10px; padding: 0 4px; color: var(--muted); }
 .hud-btn.on { background: var(--navy); border-color: var(--blue); }
+.hud-speed { justify-content: center; gap: 4px; font-variant-numeric: tabular-nums; }
+/* As wide as "1.5x", so the bar doesn't shift as 1x → 1.5x → 2x */
+.hud-speed-value { display: inline-block; min-width: 31px; text-align: center; }
 
 .hud-confirm-text { margin: 0; line-height: 1.6; }
 
@@ -145,13 +148,19 @@
   .hud-stage-title { display: none; }
   .hud-kpi { min-width: 0; padding: 2px 7px; }
   .hud-survive-label { display: none; }
+  /* Just "1x" (like the other buttons, icon-sized): its tooltip and label still say 이동 속도 */
+  .hud-speed > [aria-hidden] { display: none; }
+}
+@media (max-width: 720px) {
+  .hud-stage-word { display: none; }
+}
+@media (max-width: 660px) {
+  .hud-kpi:nth-child(2) { display: none; }
 }
 @media (max-width: 600px) {
   .hud { gap: 6px; }
   .hud-stage { flex-shrink: 0; overflow: visible; }
-  .hud-stage-word { display: none; }
   .hud-time { display: none; }
-  .hud-kpi:nth-child(2) { display: none; }
   .hud-kpi { height: 38px; padding: 1px 6px; }
   .hud-kpi-label { font-size: 10px; }
   .hud-kpi-value { font-size: 14px; }
@@ -159,7 +168,30 @@
   .hud-survive-time { font-size: 15px; }
   .hud-buttons { gap: 4px; }
   .hud-btn { padding: 4px 6px; }
+  .hud-speed { gap: 2px; }
 }
 @media (max-width: 440px) {
   .hud-kpi:nth-child(3) { display: none; }
+  .hud { gap: 4px; padding: 0 6px; }
+  .hud-buttons { gap: 3px; }
+  .hud-btn { padding: 4px 5px; }
+}
+
+/* Stage 7 also shows the survive countdown: the other chips make room for it earlier. */
+@media (max-width: 1240px) {
+  .hud--survive .hud-btn-label { display: none; }
+}
+@media (max-width: 1100px) {
+  .hud--survive .hud-btn kbd { display: none; }
+}
+@media (max-width: 960px) {
+  .hud--survive .hud-survive-label { display: none; }
+  .hud--survive .hud-survive { column-gap: 0; }
+}
+@media (max-width: 600px) {
+  .hud--survive .hud-kpi:nth-child(3) { display: none; }
+}
+@media (max-width: 385px) {
+  /* The countdown already says which stage this is. */
+  .hud--survive .hud-stage { display: none; }
 }

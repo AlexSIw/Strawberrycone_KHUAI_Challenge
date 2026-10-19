@@ -5,6 +5,7 @@ import type { Scenario } from '../sim/scenario';
 import type { RoomId } from '../sim/types';
 import { gameStore, useGame, type HintMessage } from '../store/game';
 import { ModalFrame } from './ModalFrame';
+import { objectiveStatus, waitingText } from './objectiveStatus';
 import { Portrait } from './Portrait';
 import { useStageState } from './useStageState';
 import './HintChat.css';
@@ -357,6 +358,9 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
   ];
   const selected = tabs.find((t) => t.sc.id === picked) ?? tabs[0];
   const selectedId = selected?.sc.id;
+  // Nothing on fire: point at the remaining objectives, or say what the player is waiting for when none is open.
+  const goals = run ? objectiveStatus(getStage(run.stage), run) : null;
+  const calmLine = (goals && waitingText(goals)) ?? '지금은 장애가 없어요. 남은 목표를 해볼까요?';
 
   // Remember the tab that is showing, so it stays (as "해결됨") if that incident gets solved meanwhile,
   // and so it is the one shown when the radio opens again.
@@ -370,7 +374,7 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
   return (
     <ModalFrame title="쿠사수 무전기 📻" size="narrow">
       <p className="hc-next muted">
-        {tabs.length ? '막히면 힌트를 받아봐요. 궁금한 걸 직접 물어봐도 돼요.' : '지금은 장애가 없어요. 남은 목표를 해볼까요?'}
+        {tabs.length ? '막히면 힌트를 받아봐요. 궁금한 걸 직접 물어봐도 돼요.' : calmLine}
       </p>
       {tabs.length > 0 && (
         <div className="hc-tabs" role="tablist">

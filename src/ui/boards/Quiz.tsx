@@ -24,8 +24,10 @@ export function Quiz() {
   // Wrong guesses stay crossed out for the stage.
   const [wrong, setWrong] = useStageState<number[]>('quiz:wrong', []);
   const [last, setLast] = useState<number | null>(null);
-  const [correct, setCorrect] = useState(solvedBefore);
-  const [recorded, setRecorded] = useState(solvedBefore);
+  // Answered right, but kept for when this window closes (see choose). Kept for the stage, so a window
+  // opened on top of the quiz (도감 with C, the radio with H) goes back to the explanation, not the question.
+  const [pending, setPending] = useStageState('quiz:pending', false);
+  const correct = solvedBefore || pending;
 
   const quiz = stage === undefined ? undefined : getStage(stage).quiz;
   if (stage === undefined || !quiz) {
@@ -43,14 +45,11 @@ export function Quiz() {
     if (correct) return;
     setLast(i);
     if (i === quiz.answer) {
-      setCorrect(true);
       // Record it now (objective toast right away) unless it is the stage's last objective:
       // the stage would end and close this window before the explanation could be read.
       const s = gameStore.getState();
-      if (s.run && !isCleared(recordEvents(s.run, ['quiz:correct']).run)) {
-        s.event('quiz:correct');
-        setRecorded(true);
-      }
+      if (s.run && !isCleared(recordEvents(s.run, ['quiz:correct']).run)) s.event('quiz:correct');
+      else setPending(true);
     } else if (!wrong.includes(i)) {
       setWrong((w) => [...w, i]);
     }
@@ -58,13 +57,14 @@ export function Quiz() {
 
   // After reopening (nothing picked yet this time) the nudge stays up if there were wrong guesses.
   const showNudge = !correct && (last !== null ? last !== quiz.answer : wrong.length > 0);
-  const again = correct && last === null;
+  // Reopened after it was solved (an answer still to be recorded is "just solved", not "solved before").
+  const again = solvedBefore && last === null;
 
   // Closing (button, Esc or backdrop) records a deferred answer, which may finish the stage.
   const close = () => {
     const s = gameStore.getState();
     s.closeModal();
-    if (correct && !recorded) s.event('quiz:correct');
+    if (pending && !s.run?.ctx.events.includes('quiz:correct')) s.event('quiz:correct');
   };
 
   return (
