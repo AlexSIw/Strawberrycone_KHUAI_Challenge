@@ -14,8 +14,10 @@
     "sprites": "node scripts/prepare-sprites.mjs"
   },
   "dependencies": {
+    "@fontsource/noto-sans-kr": "5.3.1",
     "@xterm/addon-fit": "0.10.0",
     "@xterm/xterm": "5.5.0",
+    "galmuri": "2.40.3",
     "phaser": "3.90.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
