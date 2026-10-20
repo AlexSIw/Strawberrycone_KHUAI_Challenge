@@ -24,6 +24,7 @@
 ```bash
 npm install
 npm run dev          # → http://localhost:5173
+npx playwright install chromium # 브라우저에서 실행하고싶다면
 ```
 
 AI 없이도 끝까지 플레이할 수 있어요. 힌트는 각 장애에 미리 적어둔 3단계 힌트로 나와요.
