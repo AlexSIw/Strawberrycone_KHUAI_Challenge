@@ -41,12 +41,12 @@ describe('IOS scripts: the guard tracks the mode each line is typed in', () => {
       'user:enable',
       'exec:configure terminal',
       'config:vlan 20',
-      'config-vlan:name staff',
+      'config-vlan:name STAFF',
       'config-vlan:exit',
       'config:interface Gi1/0/5',
       'config-if:exit',
       'config:exit',
-      'exec:write',
+      'exec:write memory',
     ]);
   });
 });
@@ -77,9 +77,19 @@ describe('IOS answers are caught', () => {
     expect(vlan('VLAN 200은 상관없어')).toBe(false);
     expect(svi('10.10.30.10 은 다른 서버야')).toBe(false);
   });
-  // Needs WP2's real iosVariantsRegex (today a stub that only matches the exact canonical line).
-  it.todo('abbreviated forms of a banned line: "sw acc vl 20", "switchport acc vlan 20", "ip add 10.10.30.2 255.255.255.0"');
-  it.todo('bannedIos lines are caught in every abbreviated form ("no sh" for "no shutdown")');
+  it('abbreviated forms of a banned line', () => {
+    expect(vlan('sw acc vl 20 해봐')).toBe(true);
+    expect(vlan('switchport acc vlan 20')).toBe(true);
+    expect(vlan('SWITCHP ACCESS VLAN 20')).toBe(true);
+    expect(svi('ip add 10.10.30.2 255.255.255.0')).toBe(true);
+    expect(svi('stand 1 ip 10.10.30.1')).toBe(true);
+  });
+  it('bannedIos lines are caught in every abbreviated form', () => {
+    const errFix = guard({ bannedPhrases: [], bannedIos: ['no shutdown'], solutionSteps: [{ ios: ['enable', 'configure terminal', 'interface gi1/0/9', 'shutdown', 'no shutdown', 'end'], host: 'TOR-01' }] });
+    expect(errFix('no sh 하면 돼')).toBe(true);
+    expect(errFix('no shutdown 해봐')).toBe(true);
+    expect(errFix('NO SHUT')).toBe(true);
+  });
 });
 
 describe('generic hints pass', () => {
