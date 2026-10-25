@@ -65,6 +65,8 @@ export interface Iface {
   ip?: { addr: string; mask: number };
   /** `channel-group N mode active`: member of Port-channel N (key `Po${N}` in `ifs`) */
   group?: number;
+  /** `channel-group N mode …` (undefined = active). active/passive negotiate LACP; on = static bundle. */
+  chMode?: 'active' | 'passive' | 'on';
   /** Mbps: Gi 1000, Te 10000, Hu 100000 */
   speed: 1000 | 10000 | 100000;
   /** Input CRC error counter (`show interfaces counters errors`) */
@@ -134,6 +136,8 @@ export interface IosMode {
   ifs?: string[];
   /** VLAN being configured (config-vlan), or the SVI's VLAN when `ifs` is ['VlanN'] */
   vlan?: number;
+  /** Config changed since entering config mode (leaving it logs %SYS-5-CONFIG_I). Set by runIos. */
+  changed?: boolean;
 }
 
 /**
