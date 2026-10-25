@@ -51,6 +51,9 @@ function NmsTab({ run, selected, onSelect }: { run: StageRun; selected: string |
             <span>
               <i className="sw dashed" /> 예비 길 (STP 차단)
             </span>
+            <span>
+              <i className="sw spare" /> 꺼 둔 예비 길
+            </span>
           </div>
         </section>
         <section className="nms-detail" aria-label="장비 상세">

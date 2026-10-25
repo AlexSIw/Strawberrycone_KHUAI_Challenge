@@ -17,6 +17,7 @@ VLAN 10(WEB)·40(K8S) 게이트웨이는 아직 CORE-01 혼자 맡고 있어(sho
 - 노드: K8S-01·02 (n1·n2, 2번 랙, TOR-01에 연결) · K8S-03·04 (n3·n4, 3번 랙, TOR-02에 연결). 모두 VLAN 40(K8S), 주소 10.10.40.11~14, 게이트웨이 10.10.40.1.
 - 항온항습기(CRAC)는 1·2번 랙을 식혀. 2번 랙에 K8S-01·02가 있어.
 - 앱(Deployment): login, course, enroll, notify. 대표 번호(Service): login-svc, course-svc, enroll-svc, notify-svc.
+- 신청 pod는 신청 기록을 DB-01(10.10.20.11)에 저장해.
 - 신청 pod 하나가 1초에 약 1,000건을 처리해. 노드 하나에 pod는 최대 6개.
 - 학생 길: 인터넷 → 방화벽 → 코어 → L4(대표 주소 sugang) → 노드 4대의 30080번 문(NodePort: 어느 노드로 와도 신청 pod로 이어 주는 문) → 신청 pod.
 - 네트워크실 1번 랙(net1): BR-01 · FW-01 · CORE-01 · L4-01. 2번 랙(net2): BR-02 · FW-02 · CORE-02 · L4-02. 짝끼리 다른 랙에 있어.

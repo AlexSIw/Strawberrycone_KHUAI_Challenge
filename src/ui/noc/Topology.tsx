@@ -7,18 +7,25 @@ import { cableAt, cablePeer, carries, logicalLinks, operState, powered, utilizat
 import type { World } from '../../sim/types';
 import { BOX, POS, SERVER_ROW, VIEW } from './layout';
 
-export type LinkTone = 'down' | 'red' | 'yellow' | 'green';
+export type LinkTone = 'spare' | 'down' | 'red' | 'yellow' | 'green';
 
-/** grey = down, red = over 90% or a broadcast storm, yellow = over 70%, green otherwise. */
+/**
+ * dotted grey = a spare link switched off in the config (`shutdown`: nothing is broken), grey = down,
+ * red = over 90% or a broadcast storm, yellow = over 70%, green otherwise.
+ */
 export function linkTone(w: World, l: LLink): LinkTone {
-  if (!l.up) return 'down';
+  if (!l.up) {
+    // A bundle member someone shut is a fault (the bundle lost a lane), not a spare.
+    const member = [l.a, l.b].some((p) => w.devices[p.dev]?.nd?.ifs[p.ifn]?.group !== undefined);
+    return !member && [l.a, l.b].some((p) => operState(w, p.dev, p.ifn) === 'admin-down') ? 'spare' : 'down';
+  }
   const storm = w.net?.storm ?? [];
   if (storm.some((v) => carries(w, l.a, v) || carries(w, l.b, v))) return 'red';
   const u = utilization(w, l.key);
   return u > 0.9 ? 'red' : u > 0.7 ? 'yellow' : 'green';
 }
 
-export const TONE_TEXT: Record<LinkTone, string> = { down: '끊김', red: '포화', yellow: '혼잡', green: '정상' };
+export const TONE_TEXT: Record<LinkTone, string> = { spare: '꺼 둔 예비 길', down: '끊김', red: '포화', yellow: '혼잡', green: '정상' };
 
 /** Worst open alarm on a device: 'bad' (critical/major) or 'warn' (minor/warning). */
 function badgeOf(alarms: Alarm[]): { n: number; tone: 'bad' | 'warn'; unacked: boolean } | null {

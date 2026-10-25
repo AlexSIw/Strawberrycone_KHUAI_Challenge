@@ -177,7 +177,7 @@ describe('window stack', () => {
     expect(S().fixing).toBe(false);
   });
 
-  it('restarting the day, leaving it and the day ending close every window', () => {
+  it('restarting the day and leaving it close every window', () => {
     const stack = () => {
       S().openModal({ type: 'terminal', host: 'ops' });
       S().openModal({ type: 'hint' });
@@ -194,17 +194,74 @@ describe('window stack', () => {
     stack();
     S().goTitle();
     expect(windows()).toEqual([]);
+  });
 
-    // The day ends when its last mission is done, with windows open.
-    play(0);
+  it('the last mission done with windows open: they stay, the clock stops, the outro waits for the last one to close', () => {
     S().event('t:a');
     S().openModal({ type: 'noc' });
     S().openModal({ type: 'hint' });
-    expect(windows()).toEqual(['hint', 'noc']);
     S().event('t:b');
+    expect(S().dayDone).toBe(true);
+    expect(S().dialogue).toBeNull();
+    expect(windows()).toEqual(['hint', 'noc']);
+    // The player is told how to go home (over the window).
+    expect(S().toasts.some((t) => t.kind === 'info' && t.text.includes('퇴근'))).toBe(true);
+    const t = S().run!.ctx.stageTime;
+    for (let i = 0; i < 5; i++) {
+      S().dismissConcept();
+      S().tick();
+    }
+    expect(S().run!.ctx.stageTime).toBe(t);
+    S().closeModal();
+    expect(S().dialogue).toBeNull();
+    S().closeModal();
+    expect(S().dialogue?.then).toBe('results');
+    expect(windows()).toEqual([]);
+  });
+
+  it('퇴근하기 ends a finished day at once, closing every window; before that it does nothing', () => {
+    S().openModal({ type: 'terminal', host: 'ops' });
+    S().leaveWork();
+    expect(S().dialogue).toBeNull();
+    expect(windows()).toEqual(['terminal:ops']);
+    S().event('t:a', 't:b');
+    expect(S().dayDone).toBe(true);
+    S().leaveWork();
     expect(S().dialogue?.then).toBe('results');
     expect(windows()).toEqual([]);
     expect(S().fixing).toBe(false);
+  });
+
+  it('the last mission done with no window open ends the day right away', () => {
+    S().event('t:a', 't:b');
+    expect(S().dialogue?.then).toBe('results');
+  });
+
+  it("a card earned with a terminal open waits until it closes (it never takes the keyboard mid-command)", () => {
+    gameStore.setState({ save: { ...S().save, cards: [] } });
+    S().openModal({ type: 'terminal', host: 'ops' });
+    S().event('t:b');
+    expect(S().concepts).toEqual([]);
+    expect(S().heldConcepts.map((c) => c.concept)).toEqual(['datacenter']);
+    // The card is in the collection already; only its popup waits.
+    expect(S().save.cards).toContain('datacenter');
+    // The game keeps running meanwhile (a card on screen would pause it).
+    expect(S().isPaused()).toBe(false);
+    // The radio on top of the terminal: the card comes up there.
+    S().openModal({ type: 'hint' });
+    expect(S().concepts.map((c) => c.concept)).toEqual(['datacenter']);
+    expect(S().heldConcepts).toEqual([]);
+  });
+
+  it('a card already in the collection comes back as a review', () => {
+    gameStore.setState({ save: { ...S().save, cards: ['datacenter'] } });
+    S().event('t:b');
+    expect(S().concepts[0]).toMatchObject({ concept: 'datacenter', review: true });
+    S().dismissConcept();
+    gameStore.setState({ save: { ...S().save, cards: [] } });
+    play(0);
+    S().event('t:b');
+    expect(S().concepts[0].review).toBeUndefined();
   });
 
   it('pushWindow on its own', () => {

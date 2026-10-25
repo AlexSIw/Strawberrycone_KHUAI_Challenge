@@ -154,7 +154,7 @@ const showNode: CNode = {
         const d = c.w.devices[c.host];
         const ports = Object.keys(c.nd.ifs).filter((k) => !isPoKey(k));
         c.out.push(
-          'KHU IOS-XE Software, Version 17.9.4',
+          'KHU NOS Software, Version 17.9.4',
           'Copyright (c) KHU Data Center Lab (fictional device for training)',
           '',
           `${d.label} uptime is 23 weeks, 4 days, 7 hours, 12 minutes`,
@@ -203,11 +203,20 @@ const showNode: CNode = {
   ],
 };
 
+/** A switch with no address of its own in the service network (no SVI, no routed port): only its OOB management one. */
+const mgmtOnly = (c: Ctx): boolean =>
+  !Object.values(c.nd.svis).some((s) => s.ip) && !Object.values(c.nd.ifs).some((f) => f.mode === 'routed' && f.ip);
+
+/** Why a ping from such a switch fails even when the server is fine, and where to check from instead. */
+const MGMT_ONLY_NOTE = dim('(이 스위치는 관리망(10.10.250.x) 주소만 있어서 서버 쪽으로는 ping이 안 가요. 서버가 응답하는지는 관리 PC(ops)에서 ping 하세요.)');
+
 function ping(c: Ctx): void {
   const target = str(c, 'host');
   const ip = isIp(target) ? target : resolve(c.w, target, c.host).ip;
   if (!ip) {
     c.out.push(red('% Unrecognized host or address, or protocol not running.'));
+    // A TOR can't reach the DNS server either: a server's name fails here, not because the server is gone.
+    if (mgmtOnly(c)) c.out.push(MGMT_ONLY_NOTE);
     return;
   }
   const r = reach(c.w, c.host, ip);
@@ -217,6 +226,7 @@ function ping(c: Ctx): void {
   c.out.push('Type escape sequence to abort.', `Sending 5, 100-byte ICMP Echos to ${ip}, timeout is 2 seconds:`);
   c.out.push(okN === 5 ? green(marks) : okN === 0 ? yellow(marks) : marks);
   c.out.push(`Success rate is ${okN * 20} percent (${okN}/5)${okN ? ', round-trip min/avg/max = 1/1/2 ms' : ''}`);
+  if (okN === 0 && mgmtOnly(c) && !ip.startsWith('10.10.250.')) c.out.push(MGMT_ONLY_NOTE);
 }
 
 function clearCounters(c: Ctx): void {

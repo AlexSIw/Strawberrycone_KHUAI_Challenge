@@ -106,8 +106,12 @@ export const day2: DaySpec = {
   label: 'D-3',
   date: '02-07',
   clock: WEEKDAY_CLOCK,
-  fixed: [{ template: 'd3-l4health', trigger: { type: 'gate', objectives: ['curl'] } }],
-  extras: [1, 2],
+  fixed: [
+    { template: 'd3-l4health', trigger: { type: 'gate', objectives: ['curl'] } },
+    // The 담당팀 이관 lesson every save meets once, on the lightest day (it is only an extra elsewhere).
+    { template: 'd3-campus', trigger: { type: 'gate', objectives: ['msa'] } },
+  ],
+  extras: [0, 1],
   mapSwitch: 'TOR-01',
   mapDevices: ['web', 'web2', 'db'],
   title: '서비스 오픈',
@@ -116,7 +120,7 @@ export const day2: DaySpec = {
   intro: [
     { who: 'boss', text: 'D-3! 오늘 수강신청 웹 서비스를 연다. 우선 먼저 써보기로 한 학생들(베타 테스터)만 들어와. 1초에 20건 정도야.' },
     { who: 'mentor', text: 'WEB-01(이름은 web)에 접속해서 앱을 켜고, L4(입구 안내원)에 등록해. 학생들은 대표 이름 sugang 하나로 들어오고, L4가 뒤의 서버로 나눠 보내.' },
-    { who: 'boss', text: '그리고 어제 리허설 때 알림 메일 기능 버그 하나로 앱 전체가 멈췄어. 기능별로 쪼개는 설계도 오늘 끝내자.' },
+    { who: 'boss', text: '그리고 개발팀이 미리 돌려 봤더니, 알림 메일 기능 버그 하나로 앱 전체가 멈췄대. 기능별로 쪼개는 설계도 오늘 끝내자.' },
     { who: 'lion', text: '앱 켜고, 안내원 세우고, 쪼개기! 가보자!', mood: 'happy' },
   ],
   outro: [
@@ -186,7 +190,7 @@ export const day2: DaySpec = {
     rack4: { kind: 'inspect', text: '4번 랙: DHCP·DNS 서버.' },
     switch: { kind: 'cable', mode: 'repair' },
     router: { kind: 'consolePick', hosts: ['TOR-01', 'CORE-01'] },
-    patch: { kind: 'inspect', text: '패치 패널: 케이블이 모이는 곳. TOR-01에 꽂힌 케이블(서버·코어로 가는 업링크)은 바로 위 스위치 자리에서 검사하고 바꿔요.' },
+    patch: { kind: 'inspect', text: '패치 패널: 케이블이 모이는 곳. TOR-01에 꽂힌 케이블(서버·코어로 가는 업링크)은 옆의 TOR 배선판에서 검사하고 바꿔요.' },
     pdu: { kind: 'gauge', target: 'pdu' },
     board: { kind: 'board', board: 'decompose' },
   },

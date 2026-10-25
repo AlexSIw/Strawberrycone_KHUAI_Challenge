@@ -39,8 +39,8 @@ export interface PlanInput {
   pool: { template: string; variants: number; weight: number; sameDay: boolean }[];
 }
 
-/** Seconds of calm before an extra fires, after whatever it waits for: 20–59 s. */
-const EXTRA_DELAY = (r: number) => 20 + Math.floor(r * 40);
+/** Seconds of calm before an extra fires, after whatever it waits for: 12–31 s (long enough to breathe, short enough not to idle). */
+const EXTRA_DELAY = (r: number) => 12 + Math.floor(r * 20);
 
 export function planDay(input: PlanInput, seed: number): PlannedIncident[] {
   const rng = mulberry32(daySeed(seed, input.day));

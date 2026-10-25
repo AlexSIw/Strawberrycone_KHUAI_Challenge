@@ -5,7 +5,11 @@ import './ConceptCardPopup.css';
 
 const CONCEPT_IDS = Object.keys(CONCEPTS);
 
-/** "새 개념 카드 획득!" — shown after an incident is fixed. The game is paused until it's dismissed. */
+/**
+ * "새 개념 카드 획득!" — shown after an incident is fixed or a mission is done (a card already collected
+ * comes back as "개념 카드 복습"). The game is paused until it's dismissed. Cards earned with a terminal
+ * open wait until it closes (store.heldConcepts), so a card never lands in the middle of a command.
+ */
 export function ConceptCardPopup() {
   const popup = useGame((s) => s.concepts[0]);
   const queued = useGame((s) => s.concepts.length);
@@ -30,17 +34,26 @@ export function ConceptCardPopup() {
 
   useEffect(() => {
     if (!visible) return;
+    const shownAt = performance.now();
     const onKey = (e: KeyboardEvent) => {
       // The card sits on top of everything: hotkeys, the game and any open window wait until it's closed.
+      // Typed letters go nowhere, and Space never "clicks" 계속하기: only Enter, Esc or a click close it.
       e.stopPropagation();
-      if (e.key === 'Tab') return e.preventDefault(); // keep focus on the only button
+      if (e.key === 'Tab' || e.key === ' ') return e.preventDefault();
       if (e.key !== 'Enter' && e.key !== 'Escape') return;
       e.preventDefault();
-      if (!e.repeat) gameStore.getState().dismissConcept();
+      if (e.type !== 'keydown' || e.repeat) return;
+      // A key already on its way when the card appeared (the end of a typed line) doesn't close it unseen.
+      if (performance.now() - shownAt < 300) return;
+      gameStore.getState().dismissConcept();
     };
     window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [visible]);
+    window.addEventListener('keyup', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('keyup', onKey, true);
+    };
+  }, [visible, cardKey]);
 
   if (!visible || !popup) return null;
   // Never render nothing here: the game stays paused until this card is dismissed.
@@ -48,9 +61,9 @@ export function ConceptCardPopup() {
   const no = CONCEPT_IDS.indexOf(c.id) + 1;
 
   return (
-    <div className="ccard-backdrop" role="dialog" aria-modal="true" aria-label={`새 개념 카드: ${c.name}`}>
+    <div className="ccard-backdrop" role="dialog" aria-modal="true" aria-label={`${popup.review ? '개념 카드 복습' : '새 개념 카드'}: ${c.name}`}>
       <div className="ccard-wrap" key={popup.scenarioId}>
-        <div className="ccard-banner">✨ 새 개념 카드 획득! ✨</div>
+        <div className="ccard-banner">{popup.review ? '📖 개념 카드 복습' : '✨ 새 개념 카드 획득! ✨'}</div>
         <article className="ccard">
           <div className="ccard-shine" aria-hidden />
           <header className="ccard-head">

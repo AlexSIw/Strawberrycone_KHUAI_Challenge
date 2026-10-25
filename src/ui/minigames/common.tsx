@@ -27,11 +27,13 @@ export function useDay(): StageDef | undefined {
   return stage === undefined ? undefined : getStage(stage);
 }
 
-/** "rack1" → "랙 1" */
+/** "rack1" → "랙 1", "net1" → "네트워크실 1번 랙" */
 export function rackName(rack: string | undefined): string {
   if (!rack) return '랙 밖';
   const m = /^rack(\d+)$/.exec(rack);
-  return m ? `랙 ${m[1]}` : rack;
+  if (m) return `랙 ${m[1]}`;
+  const net = /^net(\d+)$/.exec(rack);
+  return net ? `네트워크실 ${net[1]}번 랙` : rack;
 }
 
 export function prefersReducedMotion(): boolean {

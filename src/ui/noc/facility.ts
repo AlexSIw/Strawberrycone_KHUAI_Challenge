@@ -2,6 +2,7 @@
 // all derived from the power and cooling state: nothing here changes the world.
 import { feedLive, linkUp, powered } from '../../sim/network';
 import type { DeviceKind, World } from '../../sim/types';
+import { own } from '../../sim/util';
 
 /** Rough draw per device (W). */
 const WATTS: Record<DeviceKind, number> = { server: 400, switch: 300, router: 350, firewall: 300, lb: 250, internet: 0 };
@@ -68,9 +69,23 @@ export function facilityView(w: World): FacilityView {
 /** Alarm sources that are facilities (racks, UPS, PDU, CRAC): the facility team's, not ours. */
 export const isFacilityDevice = (id: string): boolean => /^rack\d+$/.test(id) || ['ups', 'pdu', 'pdu-a', 'pdu-b', 'crac', 'generator', 'mains'].includes(id.toLowerCase());
 
-/** "rack1" → "랙 1", facility ids → Korean names; anything else unchanged. */
+/** "rack1" → "랙 1", "net1" → "네트워크실 1번 랙", facility ids → Korean names; anything else unchanged. */
 export function placeName(id: string): string {
   const m = /^rack(\d+)$/.exec(id);
   if (m) return `랙 ${m[1]}`;
+  const net = /^net(\d+)$/.exec(id);
+  if (net) return `네트워크실 ${net[1]}번 랙`;
   return { ups: 'UPS', pdu: 'PDU', crac: '항온항습기', generator: '발전기', mains: '한전 수전' }[id.toLowerCase()] ?? id;
+}
+
+/** What an alarm source is called: a device's label, a campus service's name (KHU 도서관 …), or a place. */
+export function sourceName(w: World, id: string): string {
+  return own(w.devices, id)?.label ?? own(w.campus, id)?.label ?? placeName(id);
+}
+
+/** Network gear whose running-config has changes not saved with `write memory` (labels). */
+export function unsavedGear(w: World): string[] {
+  return Object.values(w.devices)
+    .filter((d) => d.nd?.dirty)
+    .map((d) => d.label);
 }

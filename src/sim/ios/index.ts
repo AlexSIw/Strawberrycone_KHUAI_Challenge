@@ -157,7 +157,7 @@ const IF_KINDS: { short: string; long: string; help: string }[] = [
   { short: 'Te', long: 'TenGigabitEthernet', help: 'Ten Gigabit Ethernet' },
   { short: 'Hu', long: 'HundredGigE', help: 'Hundred GigabitEthernet' },
   { short: 'Po', long: 'Port-channel', help: 'Ethernet Channel of interfaces' },
-  { short: 'Vlan', long: 'Vlan', help: 'Catalyst Vlans' },
+  { short: 'Vlan', long: 'Vlan', help: 'VLAN interface (SVI)' },
 ];
 
 /** Interface kinds this device has (plus Po/Vlan, which can be created). */

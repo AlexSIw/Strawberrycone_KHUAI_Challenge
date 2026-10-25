@@ -38,15 +38,21 @@ const farName = (w: World, ep: string) => (w.devices[devOf(ep)]?.nd ? `${labelOf
 
 /** Either end of the cable sits in a port the configuration keeps switched off (a spare link). */
 const shutEnd = (w: World, c: Cable) => [c.a, c.b].some((ep) => operState(w, devOf(ep), portOf(ep)) === 'admin-down');
+/** Either end was blocked by the switch itself (err-disabled, e.g. bpduguard saw a loop or a stray switch). */
+const guardEnd = (w: World, c: Cable) => [c.a, c.b].some((ep) => operState(w, devOf(ep), portOf(ep)) === 'err-disabled');
+/** A cable between two switches (a loop someone plugged in): the switch blocking it is the protection working. */
+const switchToSwitch = (w: World, c: Cable) => !!w.devices[devOf(c.a)]?.nd && !!w.devices[devOf(c.b)]?.nd;
 
 function sigOf(w: World, c: Cable): string {
-  return `${c.broken}|${!!c.degraded}|${powered(w, devOf(c.a))}|${powered(w, devOf(c.b))}|${shutEnd(w, c)}`;
+  return `${c.broken}|${!!c.degraded}|${powered(w, devOf(c.a))}|${powered(w, devOf(c.b))}|${shutEnd(w, c)}|${guardEnd(w, c)}`;
 }
 
 function wireState(w: World, c: Cable): WireState {
   if (linkUp(w, devOf(c.a), portOf(c.a))) return c.degraded ? 'degraded' : 'up';
   if (!powered(w, devOf(c.a)) || !powered(w, devOf(c.b))) return 'nopower';
-  return !c.broken && shutEnd(w, c) ? 'shut' : 'down';
+  if (c.broken) return 'down';
+  // Kept off on purpose: a spare switched off in the config, or a switch-to-switch loop cable the switch blocked.
+  return shutEnd(w, c) || (guardEnd(w, c) && switchToSwitch(w, c)) ? 'shut' : 'down';
 }
 
 /** The NMS / map port-LED rules, drawn with the mini-game LEDs. */
@@ -69,6 +75,11 @@ function testOf(w: World, c: Cable): TestResult {
     return { kind: 'warn', text: `한쪽 장비 전원 꺼짐 ⚡ (${off.map((id) => labelOf(w, id)).join(', ')}) · 케이블은 정상`, sig };
   }
   if (shutEnd(w, c)) return { kind: 'ok', text: '케이블 정상 ✅ · 포트를 설정으로 꺼 둔 예비 연결이에요', sig };
+  if (guardEnd(w, c)) {
+    return switchToSwitch(w, c)
+      ? { kind: 'ok', text: '케이블 정상 ✅ · 스위치끼리 고리(루프)를 만드는 선이라 스위치가 포트를 막아 뒀어요 (err-disabled)', sig }
+      : { kind: 'warn', text: '케이블 정상 ✅ · 그런데 스위치가 이 포트를 스스로 막았어요 (err-disabled). 케이블 말고 스위치 쪽을 확인하세요', sig };
+  }
   return { kind: 'ok', text: '신호 정상 ✅', sig };
 }
 
@@ -257,6 +268,8 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   if (installed.length === 0) task = '먼저 서버실 랙에 서버를 장착하세요. 그다음 여기서 케이블을 꽂아요.';
   else if (mode === 'build' && !allConnected)
     task = holding ? '이제 오른쪽 스위치의 빈 포트를 클릭하거나, 끌어다 놓으세요.' : '왼쪽 서버의 포트(eth0)를 끌어서 오른쪽 스위치의 빈 포트에 꽂으세요.';
+  // Repairing, an orange (error-ridden) link is the one to look at first: a dark one may be a port the switch keeps off.
+  else if (anyDegraded && mode === 'repair') task = '신호가 불안정한(주황) 링크가 있어요. 🔍 테스트로 어느 선인지 찾아보세요.';
   else if (anyDown) task = 'LED가 꺼진 링크가 있어요. 🔍 테스트로 원인부터 확인해 보세요.';
   else if (anyDegraded) task = '신호가 불안정한 링크가 있어요. 🔍 테스트로 어느 선인지 찾아보세요.';
   else if (mode === 'build' && notMounted > 0) task = `아직 랙에 없는 서버가 ${notMounted}대 있어요. 서버실에서 장착한 뒤 여기서 연결하세요.`;
@@ -462,7 +475,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
         </span>
         {otherStates.some((s) => s.state === 'shut') && (
           <span>
-            <i className="cb-swatch shut" /> 설정으로 꺼 둔 예비 연결
+            <i className="cb-swatch shut" /> 일부러 막아 둔 연결 (꺼 둔 예비 · 스위치가 막은 고리)
           </span>
         )}
         <span>

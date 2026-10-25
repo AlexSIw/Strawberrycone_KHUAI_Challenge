@@ -4,7 +4,7 @@ import { ModalFrame } from '../ModalFrame';
 import { CoolingGauges, PowerGauges } from './Fms';
 import './Noc.css';
 
-const TITLE = { ups: 'UPS (무정전 전원장치)', pdu: '분전반 · PDU A/B', crac: '항온항습기 (CRAC)' } as const;
+const TITLE = { ups: 'UPS (무정전 전원장치)', pdu: 'PDU A/B (랙 멀티탭)', crac: '항온항습기 (CRAC)' } as const;
 const ICON = { ups: '🔋', pdu: '⚡', crac: '❄️' } as const;
 
 export function GaugeModal({ target }: { target: 'ups' | 'pdu' | 'crac' }) {

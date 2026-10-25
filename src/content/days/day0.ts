@@ -86,7 +86,7 @@ export const day0: DaySpec = {
     },
     {
       id: 'cable',
-      text: '네트워크실 스위치(TOR-01)에 서버 케이블 연결하기 (배선표: 1·2·3번 포트)',
+      text: '네트워크실 TOR 배선판에서 서버 케이블을 TOR-01 포트에 연결하기 (배선표: 1·2·3번 포트)',
       spot: 'switch',
       done: (w) => cabled(w).length === D5_SERVERS.length,
       progress: (w) => `${cabled(w).length}/${D5_SERVERS.length}`,

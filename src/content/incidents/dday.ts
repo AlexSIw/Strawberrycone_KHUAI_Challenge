@@ -137,7 +137,7 @@ export const templates: IncidentTemplate[] = [
       bannedPhrases: ['scale enroll', 'scale deploy', '--replicas', 'replicas=', `${v.pods}개`, `${v.pods}으로`, `${v.pods} 으로`, `${v.pods}개로`],
       solution: `오픈 순간 접속이 평소의 수십 배(약 1만 1천 rps)로 뛰었는데 신청(enroll) pod는 4개(1초에 4천 건)뿐이었다. deploys · pods 로 확인 → scale enroll ${v.pods} (10시 5분 신청 집중의 1만 4천여 rps까지 대비. scale 은 앱 하나당 최대 16개). 오픈 피크를 받을 만큼 늘려야 풀린다: 10시 20분 넘어 접속이 줄어도 pod 수가 그대로면 안 풀린다.`,
       solutionSteps: [{ cmd: `scale enroll ${v.pods}`, host: 'ops' }],
-      concept: 'peak',
+      concept: 'scaleOut',
       lesson: '평소의 서른 배 넘는 손님이 1분 만에 몰렸어요(피크). 원하는 pod 개수만 바꾸자 쿠버네티스가 바로 늘려줬어요. 다음엔 피크 전에 미리 늘려 두기!',
     }),
   },

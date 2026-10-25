@@ -19,7 +19,7 @@
 |---|---|
 | 데이터센터 VLAN | 10 WEB · 20 DB · 30 L4 · 40 K8S · 50 INFRA(DNS·DHCP) · 100 NOC(관리 PC) |
 | 주소 모양 | 10.10.(VLAN 번호).x /24 — 예: VLAN 10 = 10.10.10.0/24 |
-| 게이트웨이 | 각 VLAN의 .1 = 가상 주소(HSRP). CORE-01 자기 주소 .2, CORE-02 자기 주소 .3 (다른 VLAN은 이미 짝이 있고, VLAN 10·20은 D-1에) |
+| 게이트웨이 | 각 VLAN의 .1 = 가상 주소(HSRP). CORE-01 자기 주소 .2, CORE-02 자기 주소 .3 (VLAN 30·50·100은 이미 짝이 있고, 10·20·40은 아직 CORE-01 혼자. 짝은 D-1까지) |
 | 서버 | WEB-01 10.10.10.11 · WEB-02 10.10.10.12 · DB-01 10.10.20.11 |
 | TOR-01 포트 | Gi1/0/1 WEB-01 · Gi1/0/2 WEB-02 · Gi1/0/3 DB-01 (Gi1/0/4~8은 선배들 서버) |
 | 인프라 | ns1 10.10.50.11 · ns2 10.10.50.12 · dhcp01 10.10.50.21 · 관리 PC 10.10.100.11 |
@@ -30,7 +30,7 @@
 - 사설 IP · CIDR (비유: 아파트 단지 안에서만 쓰는 동·호수) — 10.x.x.x, 172.16~31.x.x, 192.168.x.x는 건물 안에서만 쓰는 주소(RFC 1918). /24는 앞 세 칸이 같은 주소끼리 한 동네(256개). 옛날엔 A·B·C 클래스로 나눴지만 지금은 / 숫자로 잘라(CIDR).
 - VLAN (비유: 한 건물 안, 층마다 다른 회사) — 스위치 한 대를 여러 논리 네트워크로 나눠. 같은 VLAN끼리만 바로 대화하고, 다른 VLAN으로 가려면 게이트웨이를 거쳐야 해. 서버 포트는 access 포트로, 포트마다 VLAN 하나를 정해줘.
 - L2 vs L3 스위치 (비유: 층 안의 배달원 vs 층과 층을 잇는 안내원) — TOR-01(L2)은 같은 VLAN 안에서 배달하고, CORE-01(L3)은 VLAN과 VLAN 사이 길을 찾아줘. 코어의 "VLAN 인터페이스"(SVI, interface vlan 10)가 그 VLAN의 문이야.
-- HSRP · 가상 게이트웨이 (비유: 대표 전화번호 하나를 두 직원이 이어 받기) — 서버들은 게이트웨이를 .1로 알고 있어. .1은 코어 한 대에 박힌 주소가 아니라 standby로 만든 가상 주소야. 다른 VLAN은 CORE-02가 이미 짝(Standby)이지만, 오늘 만든 VLAN 10·20은 CORE-01 혼자 맡아서 show standby brief의 그 두 줄에 짝(Standby)이 unknown으로 나와. 단일 장애점이고, D-1에 CORE-02를 짝으로 붙여.
+- HSRP · 가상 게이트웨이 (비유: 대표 전화번호 하나를 두 직원이 이어 받기) — 서버들은 게이트웨이를 .1로 알고 있어. .1은 코어 한 대에 박힌 주소가 아니라 standby로 만든 가상 주소야. VLAN 30·50·100은 CORE-02가 이미 짝(Standby)이지만, 오늘 만든 VLAN 10·20과 K8S용 VLAN 40은 CORE-01 혼자 맡아서 show standby brief의 그 줄들에 짝(Standby)이 unknown으로 나와. 단일 장애점이고, D-1까지 CORE-02를 짝으로 붙여.
 - IOS 명령 모드 (비유: 구경 → 직원 출입증 → 공사 모드) — 장비명> (보기만) → enable → 장비명# (관리자, show 가능) → configure terminal → 장비명(config)# (설정) → interface ... → (config-if)# (그 포트 설정). end 로 # 로 돌아와.
 - running-config vs startup-config — 바꾼 설정은 지금 돌아가는 설정에만 있어. write memory(줄여서 wr)로 저장해야 재부팅 후에도 남아.
 - syslog (비유: 장비의 일기장) — 포트 up/down, 설정 변경, 포트 자동 차단 같은 일이 시각과 함께 남아. show logging 으로 봐.
@@ -92,7 +92,7 @@
 
 ## 결과 읽는 법
 - show vlan brief: VLAN 번호 · 이름 · 상태 · 그 VLAN에 속한 포트들. 포트가 엉뚱한 VLAN 줄에 있으면 배정이 틀린 것.
-- show interfaces status: connected = 연결됨, notconnect = 케이블 없음/상대 꺼짐, disabled = 관리자가 끔(shutdown), err-disabled = 스위치가 위험을 보고 스스로 막음.
+- show interfaces status: connected = 연결됨, notconnect = 케이블 없음/상대 꺼짐, disabled = 관리자가 끔(shutdown), err-disabled = 스위치가 위험을 보고 스스로 막음, inactive = 포트에 정한 VLAN이 이 스위치에 아직 없음 (Gi1/0/4·5 선배 서버 자리: VLAN 10·20을 만들면 connected 로 바뀌어).
 - show ip interface brief: Status/Protocol 이 up/up 이면 정상, administratively down = 누가 shutdown 해둠, down = 연결이나 VLAN이 없어서 내려감.
 - show standby brief: State Active = 지금 게이트웨이를 맡음. Standby 칸이 unknown = 짝이 없음(단일 장애점).
 - show logging 에서 자주 보는 줄:

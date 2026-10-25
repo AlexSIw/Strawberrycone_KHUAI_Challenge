@@ -207,8 +207,11 @@ function Write({ run }: { run: StageRun }) {
     setComplete(true);
   };
 
+  // Filing the report is the day's last step: the board closes with it (the outro follows once no window is open).
   const submit = () => {
-    gameStore.getState().event('board:postmortem');
+    const s = gameStore.getState();
+    s.event('board:postmortem');
+    if (s.modal?.type === 'board') s.closeModal();
   };
 
   const extras = others.map((rt) => (
