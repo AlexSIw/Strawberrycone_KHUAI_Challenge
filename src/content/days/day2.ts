@@ -65,16 +65,18 @@ const healthyMembers = (w: World) => lbView(w).members.filter((m) => m.healthy);
 
 /**
  * The player's latest curl asked for sugang and got a 200 back: the last curl line typed names sugang,
- * and no other curl result (503, refused, a 200 from somewhere else earlier…) is newer than the latest 200.
+ * and no other curl result (503, refused, a 200 from somewhere else…) is newer than the latest 200 from
+ * sugang. Event times are whole game seconds, so a result in the same second as that 200 doesn't count
+ * against it (the 200 wins).
  */
 function curledSugang(c: PlayContext): boolean {
   const last = [...c.commands].reverse().find((x) => /^curl\b/.test(x));
   if (!last || !/sugang/i.test(last)) return false;
   const results = Object.entries(c.eventTimes).filter(([e]) => e.startsWith('curl:'));
-  const ok = results.filter(([e]) => e.startsWith('curl:200:')).map(([, t]) => t);
+  const ok = results.filter(([e]) => /^curl:200:[^/]*sugang/.test(e)).map(([, t]) => t);
   if (!ok.length) return false;
   const at = Math.max(...ok);
-  return results.every(([e, t]) => e.startsWith('curl:200:') || t < at);
+  return results.every(([, t]) => t <= at);
 }
 
 /**

@@ -10,7 +10,7 @@
 // and uplink checks hold the world to the day's peaks, not to the traffic of the moment: when the curve
 // drops at 10:20:30 an unfixed world doesn't fix itself.
 import { readyPods } from '../../sim/k8s';
-import { cidrSource, computeLoad, fwAllows, studentDelivery, utilization } from '../../sim/network';
+import { cidrSource, computeLoad, fwBlocksCidr, studentDelivery, studentFw, utilization } from '../../sim/network';
 import type { IncidentTemplate } from '../../sim/scenario';
 import type { World } from '../../sim/types';
 import { POD_RPS } from '../k8sWorld';
@@ -65,32 +65,24 @@ function carriesFocusPeak(w: World): boolean {
   return Object.values(load).every((l) => l.cap <= 0 || l.mbps / l.cap <= HOT_UTIL);
 }
 
-/** Macro sources the firewall still lets through to the 수강신청 address. */
+/**
+ * Macro sources the firewall still lets (some of) through to the 수강신청 address: a range counts as
+ * blocked only when the firewall drops all of it (judged like `fw top`'s FW column).
+ */
 export function botsAllowed(w: World): string[] {
   const lb = w.net?.lb;
   if (!lb) return [];
-  return (w.traffic.sources ?? []).filter((s) => s.kind === 'macro' && fwAllows(w, cidrSource(s.cidr), lb.publicIp, lb.port)).map((s) => s.cidr);
+  return (w.traffic.sources ?? []).filter((s) => s.kind === 'macro' && fwBlocksCidr(w, s.cidr, lb.publicIp, lb.port) < 1).map((s) => s.cidr);
 }
+
+/** Share of the students (STUDENT_BLOCKS, evenly) the firewall lets through to 수강신청. */
+export const studentFwShare = (w: World): number => studentFw(w).allowed;
 
 /**
- * The students' address blocks and their shares, as `fw top` lists them (STUDENT_BLOCKS in
- * sim/commands/infra.ts). The network core sends every student from one address in the first block.
+ * Students still get through at all (a fix that blocks everyone, or takes the service down, is no fix).
+ * studentDelivery already turns away the students a firewall rule catches.
  */
-const STUDENT_BLOCKS: [string, number][] = [
-  ['175.223.0.0/16', 0.4],
-  ['211.234.0.0/16', 0.35],
-  ['59.10.0.0/16', 0.25],
-];
-
-/** Share of the students whose block the firewall lets through to 수강신청 (judged like `fw top`'s FW column). */
-export function studentFwShare(w: World): number {
-  const lb = w.net?.lb;
-  if (!lb) return 0;
-  return STUDENT_BLOCKS.reduce((a, [cidr, share]) => a + (fwAllows(w, cidrSource(cidr), lb.publicIp, lb.port) ? share : 0), 0);
-}
-
-/** Students still get through at all (a fix that blocks everyone, or takes the service down, is no fix). */
-const studentsGetThrough = (w: World): boolean => studentDelivery(w).ok * studentFwShare(w) > 0.5;
+const studentsGetThrough = (w: World): boolean => studentDelivery(w).ok > 0.5;
 
 /** The macro bots' source as `fw top` lists it: an outside hosting block, same label in every variant. */
 export const BOT_LABEL = '해외 클라우드 서버';

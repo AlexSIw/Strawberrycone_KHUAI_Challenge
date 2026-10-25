@@ -3,7 +3,7 @@
 import { readyPods } from '../k8s';
 import type { Container, LbMember, World } from '../types';
 import { own } from '../util';
-import { addressOf, inCidr, powered } from './basics';
+import { addressOf, inCidr, intToIp, ipToInt, maskBits, powered } from './basics';
 import { hsrpActiveFor, sviUp } from './hsrp';
 import { reach, vlanOf } from './reach';
 import { l2Path } from './stp';
@@ -93,6 +93,108 @@ export function fwAllows(w: World, src: string, dst: string, port?: number): boo
   return true;
 }
 
+/** A CIDR ('any', '10.0.0.0/8', a bare address = /32) as an inclusive range of address numbers. */
+function cidrRange(cidr: string): [number, number] {
+  if (cidr === 'any') return [0, 2 ** 32 - 1];
+  const [net, len] = cidr.split('/');
+  const bits = len === undefined ? 32 : parseInt(len, 10);
+  const lo = (ipToInt(net) & maskBits(bits)) >>> 0;
+  return [lo, lo + 2 ** (32 - bits) - 1];
+}
+
+export interface FwSplit {
+  /** Share 0..1 of the range's addresses whose first matching rule is a deny */
+  blocked: number;
+  /** An address in the range that the firewall lets through (null: none) */
+  allowIp: string | null;
+  /** An address in the range that the firewall drops (null: none) */
+  denyIp: string | null;
+}
+
+/**
+ * How the firewall treats a whole source range, address by address as `fwAllows` would: the first rule
+ * that matches each address decides it, no match = permit. A deny on part of the range blocks only that
+ * part (a /32 on a /24's first address blocks 1/256 of it).
+ */
+export function fwSplit(w: World, cidr: string, dst: string, port?: number): FwSplit {
+  const [lo, hi] = cidrRange(cidr);
+  /** Addresses no rule has decided yet */
+  let open: [number, number][] = [[lo, hi]];
+  let blocked = 0;
+  let denied: number | null = null;
+  let permitted: number | null = null;
+  for (const r of w.net?.fw.rules ?? []) {
+    if (!open.length) break;
+    if (!inCidr(dst, r.dst) || (r.port !== undefined && r.port !== port)) continue;
+    const [a, b] = cidrRange(r.src);
+    const next: [number, number][] = [];
+    for (const [x, y] of open) {
+      const s = Math.max(x, a);
+      const e = Math.min(y, b);
+      if (s > e) {
+        next.push([x, y]);
+        continue;
+      }
+      if (r.action === 'deny') {
+        blocked += e - s + 1;
+        denied ??= s;
+      } else permitted ??= s;
+      if (x < s) next.push([x, s - 1]);
+      if (e < y) next.push([e + 1, y]);
+    }
+    open = next;
+  }
+  const allowed = permitted ?? open[0]?.[0] ?? null;
+  return {
+    blocked: blocked / (hi - lo + 1),
+    allowIp: allowed === null ? null : intToIp(allowed),
+    denyIp: denied === null ? null : intToIp(denied),
+  };
+}
+
+/**
+ * Share (0..1) of a source range the firewall blocks on its way to dst:port: 1 only when, over the whole
+ * range, the first matching rule is a deny; a deny that covers part of it blocks that fraction.
+ */
+export const fwBlocksCidr = (w: World, cidr: string, dst: string, port?: number): number => fwSplit(w, cidr, dst, port).blocked;
+
+// ---------- students on the internet ----------
+
+/** The students' ISP blocks (`fw top` lists them). Students are split evenly over them. */
+export const STUDENT_BLOCKS: readonly { cidr: string; label: string }[] = [
+  { cidr: '175.223.0.0/16', label: '학생 (모바일)' },
+  { cidr: '211.234.0.0/16', label: '학생 (가정 인터넷)' },
+  { cidr: '59.10.0.0/16', label: '학생 (가정 인터넷)' },
+];
+
+/** Each block's share of the students. */
+export const STUDENT_SHARE = 1 / STUDENT_BLOCKS.length;
+
+export interface StudentFw {
+  /** Share 0..1 of the students the firewall lets through to 수강신청 */
+  allowed: number;
+  /** A student address that gets through (null: none) */
+  allowIp: string | null;
+  /** A student address that is dropped (null: none) */
+  denyIp: string | null;
+}
+
+/** The students as the firewall sees them on their way to the L4's public address. */
+export function studentFw(w: World): StudentFw {
+  const lb = w.net?.lb;
+  if (!lb) return { allowed: 0, allowIp: null, denyIp: null };
+  let blocked = 0;
+  let allowIp: string | null = null;
+  let denyIp: string | null = null;
+  for (const b of STUDENT_BLOCKS) {
+    const s = fwSplit(w, b.cidr, lb.publicIp, lb.port);
+    blocked += s.blocked;
+    allowIp ??= s.allowIp;
+    denyIp ??= s.denyIp;
+  }
+  return { allowed: 1 - blocked / STUDENT_BLOCKS.length, allowIp, denyIp };
+}
+
 // ---------- what listens where ----------
 
 type Listener = 'web' | 'container' | 'nodeport' | 'sshd';
@@ -154,12 +256,13 @@ function memberHealthy(w: World, active: string, m: LbMember): boolean {
   return reach(w, active, ip, { port: h.port }).ok;
 }
 
-/** Requests per second arriving at the L4: students plus macro bots that the firewall lets through. */
+/** Requests per second arriving at the L4: the students and macro bots that the firewall lets through. */
 export function lbOfferedRps(w: World): number {
   const lb = w.net?.lb;
   if (!lb) return 0;
-  const bots = (w.traffic.sources ?? []).filter((s) => s.kind === 'macro' && fwAllows(w, s.cidr.split('/')[0], lb.publicIp, lb.port));
-  return w.traffic.rps + bots.reduce((a, s) => a + s.rps, 0);
+  const bots = (w.traffic.sources ?? []).filter((s) => s.kind === 'macro');
+  const botRps = bots.reduce((a, s) => a + s.rps * (1 - fwBlocksCidr(w, s.cidr, lb.publicIp, lb.port)), 0);
+  return w.traffic.rps * studentFw(w).allowed + botRps;
 }
 
 export function lbView(w: World): LbView {
@@ -168,7 +271,8 @@ export function lbView(w: World): LbView {
     if (!lb) return { active: null, members: [], sessions: 0, demand: 0, over: false };
     const active = lbActive(w);
     const members = lb.members.map((m) => ({ ...m, healthy: !!active && memberHealthy(w, active, m) }));
-    const demand = lbOfferedRps(w) * SESSION_SECONDS;
+    // Whole sessions (a partly blocked source sends a fraction of its rate).
+    const demand = Math.round(lbOfferedRps(w) * SESSION_SECONDS);
     return { active, members, sessions: active ? Math.min(demand, lb.maxConn) : 0, demand, over: !!active && demand > lb.maxConn };
   });
 }

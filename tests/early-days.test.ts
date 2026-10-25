@@ -110,6 +110,28 @@ describe('missions count only what they ask for', () => {
     run = applyCommand(run, 'curl http://sugang/enroll', 'ops').run;
     expect(o.done(run.world, run.ctx)).toBe(true);
   });
+
+  it('D-3 curl: a 503 and then a 200 from sugang in the same game second: the 200 wins', () => {
+    const o = objective(2, 'curl');
+    let run = missionsUpTo(2, 'l4');
+    run = applyCommand(run, 'curl http://sugang/enroll', 'ops').run;
+    expect(run.ctx.eventTimes['curl:503']).toBe(run.ctx.stageTime);
+    for (const st of AUTOPLAY[2].l4) run = apply(run, st, null);
+    run = applyCommand(run, 'curl http://sugang/enroll', 'ops').run;
+    expect(run.ctx.eventTimes['curl:200:sugang/enroll']).toBe(run.ctx.eventTimes['curl:503']);
+    expect(o.done(run.world, run.ctx)).toBe(true);
+  });
+
+  it("D-3 curl: in the same second, web's 200 next to sugang's 503 still isn't a 200 through sugang", () => {
+    const o = objective(2, 'curl');
+    let run = missionsUpTo(2, 'l4');
+    run = applyCommand(run, 'curl http://web/enroll', 'ops').run;
+    run = applyCommand(run, 'curl http://sugang/enroll', 'ops').run;
+    // The L4 is fixed afterwards, but nobody asked sugang again.
+    for (const st of AUTOPLAY[2].l4) run = apply(run, st, null);
+    expect(run.ctx.eventTimes['curl:200:web/enroll']).toBe(run.ctx.eventTimes['curl:503']);
+    expect(o.done(run.world, run.ctx)).toBe(false);
+  });
 });
 
 describe('D-3 monitoring sees web → db', () => {

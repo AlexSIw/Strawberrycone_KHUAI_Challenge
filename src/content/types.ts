@@ -113,6 +113,13 @@ export interface StageDef {
   rooms?: RoomId[];
   /** Called every tick before incidents (traffic curves, e.g. D-Day's open spike) */
   onTick?: (w: World, t: number) => void;
+  /**
+   * Day time (s) from which every second with traffic counts toward the day's availability (the daily
+   * report and the stars), whatever the incidents are doing. Unset: only the time between incidents counts.
+   */
+  scoreAvailabilityFrom?: number;
+  /** With scoreAvailabilityFrom: the objective whose completion ends the scored stretch (D-Day: `hold`). */
+  scoreAvailabilityUntil?: string;
 }
 
 export type DayDef = StageDef;

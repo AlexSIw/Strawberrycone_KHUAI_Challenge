@@ -15,7 +15,6 @@ import {
   LATE_RPS,
   macroPress,
   OPEN_RPS,
-  studentFwShare,
   WOBBLE,
 } from '../incidents/dday';
 import { k8sHealth } from '../k8sWorld';
@@ -96,29 +95,10 @@ const TIMELINE = FIXED.filter((f) => f.trigger.type === 'stageStart').map((f) =>
 const held = (w: World, c: PlayContext): boolean => TIMELINE.every((tpl) => c.resolved.some((id) => id.startsWith(`${tpl}:`))) && serviceOk(w);
 
 // ---------- 수강신청 availability from the open to the close ----------
-// The engine scores availability only between incidents, and on D-Day they overlap from 10:00:30 on.
-// So the day keeps its own average of every second from the 10:00 open until the service is fine again
-// after 10:30 (the postmortem board shows it).
-
-const AVAIL_SUM = 'dday:availSum';
-const AVAIL_SECS = 'dday:availSecs';
-const AVAIL_DONE = 'dday:availDone';
-
-/** Add the second that just ended (onTick runs before the students' rps moves on). */
-function scoreSecond(w: World, t: number): void {
-  const sec = t - 1;
-  if (sec < OPEN_AT || w.flags[AVAIL_DONE]) return;
-  const h = health(w);
-  w.flags[AVAIL_SUM] = Number(w.flags[AVAIL_SUM] ?? 0) + h.availability;
-  w.flags[AVAIL_SECS] = Number(w.flags[AVAIL_SECS] ?? 0) + 1;
-  if (sec >= HOLD_AT && serviceOk(w, h)) w.flags[AVAIL_DONE] = true;
-}
-
-/** Mean 수강신청 availability from the 10:00 open until the service was fine at/after 10:30 (null before the open). */
-export function ddayAvailability(w: World): number | null {
-  const secs = Number(w.flags[AVAIL_SECS] ?? 0);
-  return secs > 0 ? Number(w.flags[AVAIL_SUM] ?? 0) / secs : null;
-}
+// The engine normally scores availability only between incidents, and on D-Day they overlap from
+// 10:00:30 on. So D-Day sets scoreAvailabilityFrom / scoreAvailabilityUntil below: the engine averages
+// every second from the 10:00 open until `hold` is done. That one number is the daily report's, the
+// stars' and the postmortem board's.
 
 // ---------- health ----------
 
@@ -126,9 +106,8 @@ type Status = 'up' | 'degraded' | 'down';
 const status = (ok: number): Status => (ok >= 0.99 ? 'up' : ok > 0 ? 'degraded' : 'down');
 
 /**
- * Students → firewall → L4 → links (studentDelivery, which sends every student from one address) × the
- * share of student blocks the firewall lets in × enroll pods vs. students (k8sHealth) × DB-01
- * connections: pods that can't get one fail their requests.
+ * Students → firewall → L4 → links (studentDelivery: the students of every block the firewall lets in) ×
+ * enroll pods vs. students (k8sHealth) × DB-01 connections: pods that can't get one fail their requests.
  */
 function health(w: World): Health {
   // One memo scope: the student path and the L4 view share the network's derived views.
@@ -142,15 +121,12 @@ function measure(w: World): Health {
   const want = dbWanted(w);
   const max = dbMax(w);
   const dbOk = pool === null ? 0 : want > max ? max / want : 1;
-  // A firewall rule that catches a student block turns that share of the students away.
-  const netOk = net.ok * studentFwShare(w);
   const notes = [...net.notes, ...app.notes];
-  if (netOk > 0 && netOk < 0.99 && !notes.includes('수강신청 접속이 일부 실패해요')) notes.unshift('수강신청 접속이 일부 실패해요');
   if (pool === null) notes.push('신청 요청이 DB 연결 오류로 실패해요 (DB 연결 설정을 읽지 못함)');
   else if (want > max) notes.push(`신청 요청 일부가 DB 연결 오류로 실패해요 (DB-01 연결 ${max}/${max})`);
   const lb = lbView(w);
   if (lb.over) notes.push(`L4 세션이 가득 찼어요 (${lb.sessions}/${w.net?.lb?.maxConn ?? lb.sessions}): 새 접속은 거부돼요`);
-  const ok = netOk * app.availability * dbOk;
+  const ok = net.ok * app.availability * dbOk;
   const services: Record<string, Status> = { 수강신청: status(ok), ...app.services, 'DB-01': dbOk >= 1 ? 'up' : dbOk > 0 ? 'degraded' : 'down' };
   for (const c of Object.values(w.campus ?? {})) {
     services[c.label] = !c.up ? 'down' : c.latencyMs >= 1000 ? 'degraded' : 'up';
@@ -252,8 +228,9 @@ export const day5: DaySpec = {
     w.traffic.sources = [];
   },
   onTick: (w, t) => {
-    scoreSecond(w, t);
     w.traffic.rps = studentRps(t);
     macroPress(w);
   },
+  scoreAvailabilityFrom: OPEN_AT,
+  scoreAvailabilityUntil: 'hold',
 };

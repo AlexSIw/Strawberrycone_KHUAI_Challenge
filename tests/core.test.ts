@@ -5,6 +5,7 @@ import { dayWorld, getStage, STAGES } from '../src/content/days';
 import { baseTopology, validateWorld } from '../src/content/topology';
 import { nextPoll, updateAlarms } from '../src/sim/alarms';
 import { DDAY_CLOCK, WEEKDAY_CLOCK } from '../src/content/days/common';
+import { HOLD_AT } from '../src/content/days/day5';
 import { fmtClock, gameSec, parseHms, stageAt, syslogStamp } from '../src/sim/clock';
 import { normIf } from '../src/sim/net/ifname';
 import {
@@ -270,6 +271,20 @@ describe('scoreRun', () => {
     // Never acknowledged: detection counts until the fix (40 s), capped.
     expect(scored(null)).toMatchObject({ mttd: 40, points: 90 });
   });
+
+  it('D-Day scores every second from the 10:00 open, incidents or not: an idle run scores low availability', () => {
+    const def = getStage(5);
+    const open = stageAt(DDAY_CLOCK, '10:00:00');
+    expect(def.scoreAvailabilityFrom).toBe(open);
+    let run = startStage(5, 1);
+    while (run.ctx.stageTime < HOLD_AT) run = tickRun(run).run;
+    // Nobody fixed anything: every timeline incident is still open, and every second since 10:00 counted.
+    expect(run.scenarios.filter((s) => s.state === 'active').length).toBeGreaterThanOrEqual(3);
+    expect(run.ticks).toBe(HOLD_AT - open + 1);
+    const s = scoreRun(run);
+    expect(s.availability).toBeLessThan(0.5);
+    expect(s.stars).toBeLessThan(3);
+  }, 60_000);
 });
 
 describe('isCleared', () => {

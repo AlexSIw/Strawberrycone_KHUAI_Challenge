@@ -9,7 +9,7 @@
 //    configure terminal, end, exit, write memory) and value-less show commands are fine to mention,
 //    unless the scenario lists them in `bannedIos`;
 //  - the values in those IOS lines on their own: IPs/CIDRs, interface names in any form ('Gi1/0/5',
-//    'gi 1/0/5', 'GigabitEthernet1/0/5', '1/0/5'), and VLAN numbers ('VLAN 20', 'vlan20').
+//    'gi 1/0/5', 'GigabitEthernet1/0/5', '1/0/5'), and VLAN numbers ('VLAN 20', 'vlan20', '20번 VLAN').
 import { canonicalize, iosVariantsRegex } from '../sim/ios';
 import { normIf } from '../sim/net/ifname';
 import type { Scenario } from '../sim/scenario';
@@ -144,8 +144,13 @@ export function ifValueRe(short: string): RegExp {
   return new RegExp(`(?<![a-z0-9])${kind.toLowerCase()}\\s*${num}(?!\\d)`);
 }
 
-/** 'VLAN 20', 'vlan20', 'vl 20' (the reply is lower-cased before matching). */
-export const vlanValueRe = (n: string | number): RegExp => new RegExp(`(?<![a-z0-9])vl(?:an)?\\s*-?\\s*${n}(?!\\d)`);
+/**
+ * A VLAN number either way round: 'VLAN 20', 'vlan20', 'vl 20', 'VLAN20번', '브이랜 20', and number-first
+ * '20번 VLAN', '20 VLAN', '20번 브이랜' (the reply is lower-cased before matching). Never 'VLAN 200' or
+ * '120번 VLAN'.
+ */
+export const vlanValueRe = (n: string | number): RegExp =>
+  new RegExp(`(?<![a-z0-9])(?:vl(?:an)?|브이랜)\\s*-?\\s*${n}(?!\\d)|(?<![\\d./])${n}\\s*번?\\s*(?:vlan|브이랜)`);
 
 /** The values in one IOS line, as regexes: IPs/CIDRs (not netmasks), interface names, VLAN numbers. */
 export function iosValueRes(line: string): RegExp[] {

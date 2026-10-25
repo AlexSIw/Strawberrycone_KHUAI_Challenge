@@ -154,7 +154,7 @@ const showNode: CNode = {
         const d = c.w.devices[c.host];
         const ports = Object.keys(c.nd.ifs).filter((k) => !isPoKey(k));
         c.out.push(
-          'KHU IOS-XE Software, Version 17.9.4',
+          'KHU NetOS Software, Version 17.9.4',
           'Copyright (c) KHU Data Center Lab (fictional device for training)',
           '',
           `${d.label} uptime is 23 weeks, 4 days, 7 hours, 12 minutes`,

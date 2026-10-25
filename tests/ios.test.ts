@@ -1,6 +1,8 @@
 // IOS CLI: parser (abbreviations, ambiguity, caret, incomplete), modes and prompts, ?/Tab, config
 // commands, save, canonical forms and the leak-guard regex. Show outputs that come only from config are
 // snapshotted; the ones that depend on live network state are checked for structure.
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { baseTopology } from '../src/content/topology';
 import { runCommand } from '../src/sim/commands';
@@ -659,5 +661,31 @@ describe('command layer integration', () => {
     expect(out.events).toContain('ios:CORE-01:enable');
     const cfg = runCommand('sw acc vl 20', baseTopology(), 'TOR-01', 1, ifMode('Gi1/0/9'));
     expect(cfg.world.devices['TOR-01'].nd!.ifs['Gi1/0/9'].accessVlan).toBe(20);
+  });
+});
+
+describe('no real product names on screen (only concept cards may name them)', () => {
+  const PRODUCTS = /\b(?:cisco|catalyst|nexus|f5|big-?ip|genian|ios[- ]?xe|nx-?os)\b/i;
+
+  it('interface ? and show version', () => {
+    const w = baseTopology();
+    const intf = iosHelp(w, 'CORE-01', CONFIG, 'interface ').map(strip);
+    expect(intf.some((l) => /^ {2}Vlan\s+VLAN interface \(SVI\)/.test(l))).toBe(true);
+    const shown = [...intf, ...type(w, 'CORE-01', ['enable', 'show version']).last.lines.map(strip)].join('\n');
+    expect(shown).not.toMatch(PRODUCTS);
+  });
+
+  it('no string in src outside concepts.ts names one (comments aside)', () => {
+    const files = readdirSync('src', { recursive: true, encoding: 'utf8' })
+      .filter((f) => /\.(?:tsx?|md|css|json)$/.test(f) && !f.endsWith('concepts.ts'))
+      .map((f) => join('src', f));
+    expect(files.length).toBeGreaterThan(20);
+    const hits = files.flatMap((f) => {
+      const code = readFileSync(f, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+      return code.split('\n').flatMap((l, i) => (PRODUCTS.test(l) ? [`${f}:${i + 1}: ${l.trim()}`] : []));
+    });
+    expect(hits).toEqual([]);
   });
 });

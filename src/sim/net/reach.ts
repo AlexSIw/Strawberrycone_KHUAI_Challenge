@@ -46,7 +46,10 @@ export interface ReachResult {
   links: string[];
 }
 
-/** Source address students come from (a public address outside any macro range). */
+/**
+ * Default source of a packet from the internet: one student address (in STUDENT_BLOCKS' first block).
+ * Student traffic as a whole comes from every block: see studentFw / studentDelivery.
+ */
 export const STUDENT_IP = '175.223.10.20';
 /** An outside address campus users browse to. */
 export const INTERNET_PROBE = '8.8.8.8';

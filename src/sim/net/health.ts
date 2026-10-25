@@ -3,8 +3,8 @@ import type { World } from '../types';
 import { own } from '../util';
 import { addressOf } from './basics';
 import { delivery, utilization } from './load';
-import { dnsServerFor, reach, reachFromClients, resolve, STUDENT_IP, type ReachFailure } from './reach';
-import { dhcpShare, lbShares, lbView } from './services';
+import { dnsServerFor, reach, reachFromClients, resolve, type ReachFailure } from './reach';
+import { dhcpShare, lbShares, lbView, studentFw } from './services';
 import { withNetMemo } from './topo';
 
 export interface PathReport {
@@ -22,15 +22,20 @@ const slow = (w: World, links: string[]) => links.some((k) => utilization(w, k) 
 
 /**
  * Students on the internet → 수강신청: public VIP → firewall → L4 (active unit) → a healthy pool member
- * that is listening, with link loads and degraded cables priced in. A full L4 session table refuses the
- * excess. (App capacity — pods × POD_RPS — is the day's health function's business.)
+ * that is listening, with link loads and degraded cables priced in. The students come evenly from
+ * STUDENT_BLOCKS, and a firewall rule that catches a block (or part of one) turns that share away. A full
+ * L4 session table refuses the excess. (App capacity — pods × POD_RPS — is the day's health function's
+ * business.)
  */
 export function studentDelivery(w: World): PathReport {
   return withNetMemo(w, () => {
     const lb = w.net?.lb;
     const down = (failure?: ReachFailure): PathReport => ({ ok: 0, notes: ['수강신청 사이트가 열리지 않아요'], failure });
     if (!lb) return down('no_route');
-    const r = reach(w, 'internet', lb.publicIp, { srcIp: STUDENT_IP, port: lb.port });
+    const fw = studentFw(w);
+    if (!fw.allowIp) return down('fw_deny');
+    // The path in is the same for every student the firewall lets through.
+    const r = reach(w, 'internet', lb.publicIp, { srcIp: fw.allowIp, port: lb.port });
     if (!r.ok) return down(r.failure);
     const view = lbView(w);
     let ok = 0;
@@ -43,6 +48,7 @@ export function studentDelivery(w: World): PathReport {
       busy ||= slow(w, m.links);
     }
     if (view.over && view.demand > 0) ok *= (w.net!.lb!.maxConn / view.demand);
+    ok *= fw.allowed;
     if (ok <= 0) return down('no_route');
     const notes: string[] = [];
     if (ok < 0.99) notes.push('수강신청 접속이 일부 실패해요');

@@ -135,6 +135,22 @@ function cloneRun(run: StageRun): StageRun {
   };
 }
 
+/**
+ * Does this tick count toward the day's availability? By default only between incidents, from the first
+ * incident on: setup time isn't the player's fault, and downtime during an incident is already priced by
+ * MTTR. A day with `scoreAvailabilityFrom` (D-Day, whose incidents overlap) counts every second from
+ * then on, incidents or not, until its `scoreAvailabilityUntil` objective is done (that tick included).
+ */
+function scoresAvailability(def: StageDef, prev: StageRun, run: StageRun): boolean {
+  if (def.scoreAvailabilityFrom !== undefined) {
+    const until = def.scoreAvailabilityUntil;
+    return run.ctx.stageTime >= def.scoreAvailabilityFrom && !(until !== undefined && until in prev.objectivesDone);
+  }
+  const anyFired = run.scenarios.some((s) => s.activatedAt !== null);
+  const anyActive = run.scenarios.some((s) => s.state === 'active');
+  return anyFired && !anyActive;
+}
+
 /** Advance one second of day time. */
 export function tickRun(prev: StageRun, dt = 1): TickResult {
   const def = getStage(prev.stage);
@@ -173,11 +189,7 @@ export function tickRun(prev: StageRun, dt = 1): TickResult {
     ...run.history.slice(-(HISTORY - 1)),
     { t: run.world.t, availability: h.availability, latencyMs: h.latencyMs, errorRate: h.errorRate, rps: h.rps, maxTemp: h.maxTemp, powerKw: h.powerKw },
   ];
-  // Availability is scored between incidents, from the first incident on: setup time isn't the
-  // player's fault, and downtime during an incident is already priced by MTTR.
-  const anyFired = run.scenarios.some((s) => s.activatedAt !== null);
-  const anyActive = run.scenarios.some((s) => s.state === 'active');
-  if (h.rps > 0 && anyFired && !anyActive) {
+  if (h.rps > 0 && scoresAvailability(def, prev, run)) {
     run.availabilitySum += h.availability;
     run.ticks += 1;
   }

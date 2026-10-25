@@ -174,7 +174,8 @@ export const webCommands: Command[] = [
         '/health': '{"status":"UP"}',
       };
       lines.push(green(own(body, path) ?? '{"status":"ok"}'));
-      return { lines, events: [`curl:200:${path}`] };
+      // The name asked for is in the event ('curl:200:sugang/enroll'): a mission can tell whose 200 it was.
+      return { lines, events: [`curl:200:${name.toLowerCase()}${path}`] };
     },
   },
   {

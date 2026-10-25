@@ -1,7 +1,7 @@
 // Appliance CLIs: the DHCP server (dhcp01), the L4 load balancers (L4-01/02) and the firewalls (FW-01/02).
 // Syntax is fixed in docs/v2-contract.md. Output = a realistic table + a short dim Korean gloss.
 import { intToIp, ipToInt, isIp, maskBits, networkOf, sameSubnet } from '../net/basics';
-import { dhcpView, fwAllows, lbView } from '../net/services';
+import { dhcpView, fwBlocksCidr, lbView, STUDENT_BLOCKS, STUDENT_SHARE } from '../net/services';
 import type { DhcpPool, FwRule, World } from '../types';
 import { own } from '../util';
 import type { CmdResult, Command } from './types';
@@ -335,13 +335,16 @@ const lbCommands: Command[] = [
 
 // ---------- Firewall (FW-01 / FW-02, one shared rule list) ----------
 
-/** Students on the internet, split over a few ISP blocks (each address sends ~1 request every 20 s). */
-const STUDENT_BLOCKS: [string, string, number][] = [
-  ['175.223.0.0/16', '학생 (모바일)', 0.4],
-  ['211.234.0.0/16', '학생 (가정 인터넷)', 0.35],
-  ['59.10.0.0/16', '학생 (가정 인터넷)', 0.25],
-];
+/** Students on the internet (STUDENT_BLOCKS): each address sends ~1 request every 20 s. */
 const STUDENT_RPS_PER_ADDR = 0.05;
+
+/** `fw top`'s FW cell for a source range: how much of it the firewall drops. */
+function fwCell(blocked: number): string {
+  if (blocked >= 1) return red('BLOCKED');
+  if (blocked <= 0) return 'allowed';
+  const pct = blocked * 100;
+  return yellow(`PARTIAL ${pct < 1 ? pct.toFixed(1) : pct.toFixed(0)}%`);
+}
 
 function parseCidr(s: string): string | null {
   if (s === 'any') return 'any';
@@ -404,9 +407,10 @@ const fwCommands: Command[] = [
     summary: '요청을 가장 많이 보내는 출발지 순위 (top talkers)',
     run(_a, { w }) {
       const dst = w.net?.lb?.publicIp ?? '203.0.113.10';
+      const port = w.net?.lb?.port ?? 80;
       const rows: { src: string; label: string; addrs: number; rps: number }[] = [];
-      for (const [cidr, label, share] of STUDENT_BLOCKS) {
-        const rps = Math.round(w.traffic.rps * share);
+      for (const { cidr, label } of STUDENT_BLOCKS) {
+        const rps = Math.round(w.traffic.rps * STUDENT_SHARE);
         if (rps > 0) rows.push({ src: cidr, label, addrs: Math.max(1, Math.round(rps / STUDENT_RPS_PER_ADDR)), rps });
       }
       for (const s of w.traffic.sources ?? []) {
@@ -420,14 +424,17 @@ const fwCommands: Command[] = [
       }
       rows.sort((a, b) => b.rps / b.addrs - a.rps / a.addrs || b.rps - a.rps);
       const lines = [`${pad('SOURCE', 20)}${padW('WHO', 20)}${rpad('ADDRS', 7)}${rpad('RPS', 8)}${rpad('RPS/ADDR', 10)}  FW`];
+      let partial = false;
       for (const r of rows) {
         const per = r.rps / r.addrs;
         const perTxt = per >= 10 ? per.toFixed(0) : per.toFixed(2);
         const perCell = per >= 10 ? ' '.repeat(Math.max(0, 10 - perTxt.length)) + red(perTxt) : rpad(perTxt, 10);
-        const allowed = fwAllows(w, r.src.split('/')[0], dst, 80);
-        lines.push(`${pad(r.src, 20)}${padW(r.label, 20)}${rpad(String(r.addrs), 7)}${rpad(String(r.rps), 8)}${perCell}  ${allowed ? 'allowed' : red('BLOCKED')}`);
+        const blocked = fwBlocksCidr(w, r.src, dst, port);
+        partial ||= blocked > 0 && blocked < 1;
+        lines.push(`${pad(r.src, 20)}${padW(r.label, 20)}${rpad(String(r.addrs), 7)}${rpad(String(r.rps), 8)}${perCell}  ${fwCell(blocked)}`);
       }
       if (!rows.length) lines.push(dim('(지금은 들어오는 요청이 없어요)'));
+      if (partial) lines.push(dim('(PARTIAL = 그 대역의 일부 주소만 막혔어요. 나머지 주소는 그대로 들어와요)'));
       lines.push(dim('(RPS = 초당 요청 수. 주소 하나가 사람보다 훨씬 많이 보내면 매크로·봇을 의심해요)'));
       return out(...lines);
     },

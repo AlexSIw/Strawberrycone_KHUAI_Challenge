@@ -1,6 +1,5 @@
 import type { CSSProperties } from 'react';
 import { CONCEPTS } from '../../content/concepts';
-import { ddayAvailability } from '../../content/days/day5';
 import { getStage } from '../../content/stages';
 import { fmtClock, gameSec, stageAt } from '../../sim/clock';
 import { scoreRun, type StageRun } from '../../sim/engine';
@@ -219,8 +218,9 @@ function Write({ run }: { run: StageRun }) {
 
   if (complete) {
     const score = scoreRun(run);
-    // D-Day's own average from the 10:00 open (the run's score only counts the seconds between incidents).
-    const avail = ddayAvailability(run.world);
+    // D-Day scores every second from the 10:00 open (StageDef.scoreAvailabilityFrom): the daily report's number.
+    const avail = run.ticks > 0 ? score.availability : null;
+    const fromOpen = getStage(run.stage).scoreAvailabilityFrom !== undefined;
     return (
       <ModalFrame
         title="설계 보드 · 장애 보고서"
@@ -246,10 +246,10 @@ function Write({ run }: { run: StageRun }) {
         </div>
         <div className="pmb-summary-head">
           <span className="tag">📄 수강신청 당일 장애 보고서</span>
-          {avail !== null ? (
-            <span className="tag">10:00 오픈부터 평균 가용성 {(avail * 100).toFixed(1)}%</span>
-          ) : (
-            <span className="tag">평균 가용성 {(score.availability * 100).toFixed(1)}%</span>
+          {avail !== null && (
+            <span className="tag">
+              {fromOpen ? '10:00 오픈부터 ' : ''}평균 가용성 {(avail * 100).toFixed(1)}%
+            </span>
           )}
           {score.mttd !== null && <span className="tag">평균 MTTD {Math.round(score.mttd)}초</span>}
           {score.mttr !== null && <span className="tag">평균 MTTR {Math.round(score.mttr)}초</span>}

@@ -1,10 +1,14 @@
 // Appliance CLIs: dhcp (dhcp01), lb (L4-01/02), fw (FW-01/02). They change the right fields and
 // refuse on the wrong host or day.
 import { describe, expect, it } from 'vitest';
+import { dayWorld, getStage } from '../src/content/days';
+import { instance } from '../src/content/incidents';
+import { botsAllowed, studentFwShare } from '../src/content/incidents/dday';
 import { baseTopology } from '../src/content/topology';
 import { runCommand } from '../src/sim/commands';
-import { dhcpView, fwAllows } from '../src/sim/net/services';
-import type { StageId, World } from '../src/sim/types';
+import { studentDelivery } from '../src/sim/net/health';
+import { dhcpView, fwAllows, fwBlocksCidr, fwSplit, lbView, STUDENT_BLOCKS } from '../src/sim/net/services';
+import type { FwRule, PlayContext, StageId, World } from '../src/sim/types';
 
 const RED = '\x1b[31m';
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
@@ -172,5 +176,99 @@ describe('fw on FW-01 / FW-02', () => {
     const fw = run(baseTopology(), 'FW-02', 'help').text;
     expect(fw).toContain('fw top');
     expect(fw).not.toContain('lb status');
+  });
+});
+
+describe('the firewall judges a whole source range', () => {
+  const rules = (...rs: [FwRule['action'], string, number?][]) => {
+    const w = baseTopology();
+    w.net!.fw.rules = rs.map(([action, src, port], i) => ({ seq: (i + 1) * 10, action, src, dst: 'any', ...(port ? { port } : {}) }));
+    return w;
+  };
+  const DST = '203.0.113.10';
+
+  it('first matching rule per address; a partial deny blocks only its share', () => {
+    expect(fwBlocksCidr(rules(), '192.0.2.0/24', DST, 80)).toBe(0);
+    expect(fwBlocksCidr(rules(['deny', '192.0.2.0/24']), '192.0.2.0/24', DST, 80)).toBe(1);
+    expect(fwBlocksCidr(rules(['deny', '192.0.0.0/16']), '192.0.2.0/24', DST, 80)).toBe(1);
+    expect(fwBlocksCidr(rules(['deny', '192.0.2.0/32']), '192.0.2.0/24', DST, 80)).toBe(1 / 256);
+    expect(fwBlocksCidr(rules(['deny', '192.0.2.0/25'], ['deny', '192.0.2.128/25']), '192.0.2.0/24', DST, 80)).toBe(1);
+    // A permit above the deny keeps its part open; a deny for another port doesn't apply.
+    expect(fwBlocksCidr(rules(['permit', '192.0.2.128/25'], ['deny', '192.0.2.0/24']), '192.0.2.0/24', DST, 80)).toBe(0.5);
+    expect(fwBlocksCidr(rules(['permit', '192.0.0.0/16'], ['deny', '192.0.2.0/24']), '192.0.2.0/24', DST, 80)).toBe(0);
+    expect(fwBlocksCidr(rules(['deny', '192.0.2.0/24', 443]), '192.0.2.0/24', DST, 80)).toBe(0);
+    // The sample addresses agree with the per-address verdict.
+    const w = rules(['permit', '192.0.2.128/25'], ['deny', '192.0.2.0/24']);
+    const s = fwSplit(w, '192.0.2.0/24', DST, 80);
+    expect(fwAllows(w, s.allowIp!, DST, 80)).toBe(true);
+    expect(fwAllows(w, s.denyIp!, DST, 80)).toBe(false);
+  });
+});
+
+describe('D-Day macro bots and student blocks: the incident, fw top, lb status and health agree', () => {
+  // dday-macro:0 = 7000 rps from 192.0.2.0/24
+  const macro = instance('dday-macro:0');
+  const CTX: PlayContext = { visited: [], events: [], commands: [], resolved: [], stageTime: 0, eventTimes: {} };
+  const health = (w: World) => getStage(5).health(w);
+  const fixed = (w: World) => macro.check(w, CTX, health(w));
+  const botsWorld = () => {
+    const w = dayWorld(5);
+    macro.inject(w);
+    return run(w, 'FW-01', 'fw rules').world;
+  };
+  const fw = (w: World, ...lines: string[]) => lines.reduce((x, l) => run(x, 'FW-01', l).world, w);
+  const sessions = (w: World) => lbView(w).demand;
+  const lb = (w: World) => w.net!.lb!;
+
+  it('without a rule the bots are let in', () => {
+    const w = botsWorld();
+    expect(botsAllowed(w)).toEqual(['192.0.2.0/24']);
+    expect(fixed(w)).toBe(false);
+    expect(sessions(w)).toBe((w.traffic.rps + 7000) * 2);
+  });
+
+  it("a /32 deny on the network address of the bots' /24 does not clear it", () => {
+    const w = fw(botsWorld(), 'fw deny 192.0.2.0/32');
+    expect(fwBlocksCidr(w, '192.0.2.0/24', lb(w).publicIp, lb(w).port)).toBe(1 / 256);
+    expect(botsAllowed(w)).toEqual(['192.0.2.0/24']);
+    expect(fixed(w)).toBe(false);
+    expect(run(w, 'FW-01', 'fw top').text).toMatch(/^192\.0\.2\.0\/24 .*PARTIAL 0\.4%$/m);
+    expect(sessions(w)).toBe(Math.round((w.traffic.rps + (7000 * 255) / 256) * 2));
+  });
+
+  it.each(['192.0.2.0/24', '192.0.0.0/16'])('a deny on %s (the exact range, or one covering it) clears it', (cidr) => {
+    const w = fw(botsWorld(), `fw deny ${cidr}`);
+    expect(botsAllowed(w)).toEqual([]);
+    expect(fixed(w)).toBe(true);
+    expect(run(w, 'FW-01', 'fw top').text).toMatch(/^192\.0\.2\.0\/24 .*BLOCKED$/m);
+    expect(sessions(w)).toBe(w.traffic.rps * 2);
+    expect(run(w, 'L4-01', 'lb status').text).toMatch(new RegExp(`Sessions\\s+${w.traffic.rps * 2} / `));
+  });
+
+  it('students come evenly from the three blocks: denying one turns away a third', () => {
+    expect(STUDENT_BLOCKS.map((b) => b.cidr)).toEqual(['175.223.0.0/16', '211.234.0.0/16', '59.10.0.0/16']);
+    const w = fw(dayWorld(5), 'fw deny 175.223.0.0/16');
+    expect(studentDelivery(w).ok).toBeCloseTo(2 / 3, 5);
+    expect(health(w).availability).toBeCloseTo(2 / 3, 5);
+    expect(studentFwShare(w)).toBeCloseTo(2 / 3, 5);
+    const top = run(w, 'FW-01', 'fw top').text;
+    expect(top).toMatch(/^175\.223\.0\.0\/16 .*BLOCKED$/m);
+    expect(top).toMatch(/^211\.234\.0\.0\/16 .*allowed$/m);
+  });
+
+  it("a student-block deny leaves the macro incident as it was (the bots' own verdict decides it)", () => {
+    let w = fw(botsWorld(), 'fw deny 175.223.0.0/16');
+    expect(botsAllowed(w)).toEqual(['192.0.2.0/24']);
+    expect(studentDelivery(w).ok).toBeCloseTo(2 / 3, 5);
+    expect(sessions(w)).toBe(Math.round(((w.traffic.rps * 2) / 3 + 7000) * 2));
+    expect(fixed(w)).toBe(false);
+    // Blocking the bots too: they're out, but a student block is still shut, so it isn't fixed yet.
+    w = fw(w, 'fw deny 192.0.2.0/24');
+    expect(botsAllowed(w)).toEqual([]);
+    expect(studentDelivery(w).ok).toBeCloseTo(2 / 3, 5);
+    expect(fixed(w)).toBe(false);
+    const seq = w.net!.fw.rules.find((r) => r.src === '175.223.0.0/16')!.seq;
+    w = fw(w, `fw del ${seq}`);
+    expect(fixed(w)).toBe(true);
   });
 });

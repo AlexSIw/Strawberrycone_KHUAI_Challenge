@@ -3,8 +3,8 @@
 import type { NetState, World } from '../types';
 import { own } from '../util';
 import { addressOf } from './basics';
-import { reach, reachFromClients, STUDENT_IP } from './reach';
-import { lbShares, lbView } from './services';
+import { reach, reachFromClients } from './reach';
+import { fwSplit, lbShares, lbView, studentFw } from './services';
 import { allVlans, stpView, vlanGraph } from './stp';
 import { linkByKey, logicalLinks, withNetMemo } from './topo';
 
@@ -17,7 +17,7 @@ export const STORM_LOAD = 1.5;
 /** Share of frames a degraded cable loses. */
 export const DEGRADED_LOSS = 0.2;
 
-/** First address of a CIDR ('198.51.100.77/32' → '198.51.100.77'): where a macro source's traffic comes from. */
+/** First address of a CIDR ('198.51.100.77/32' → '198.51.100.77'). The firewall judges a whole range with `fwBlocksCidr`. */
 export const cidrSource = (cidr: string): string => cidr.split('/')[0];
 
 /** Offered load on every logical link (Mbps) and its capacity. */
@@ -51,10 +51,29 @@ export function computeLoad(w: World): NetState['load'] {
       }
       if (served < 1) add(r.links, mbps * (1 - served));
     };
-    inbound(STUDENT_IP, w.traffic.rps * MBPS_PER_RPS);
+    // The path in doesn't depend on the source address, only the firewall's verdict does: every flow
+    // the firewall lets through (students of all blocks, the allowed part of each macro range) takes
+    // one address that gets in, and everything it drops one address that doesn't.
+    if (lb) {
+      const students = studentFw(w);
+      const studentMbps = w.traffic.rps * MBPS_PER_RPS;
+      let pass = studentMbps * students.allowed;
+      let drop = studentMbps - pass;
+      let passIp = students.allowIp;
+      let dropIp = students.denyIp;
+      for (const s of w.traffic.sources ?? []) {
+        if (s.kind !== 'macro') continue;
+        const f = fwSplit(w, s.cidr, lb.publicIp, lb.port);
+        pass += s.rps * MBPS_PER_RPS * (1 - f.blocked);
+        drop += s.rps * MBPS_PER_RPS * f.blocked;
+        passIp ??= f.allowIp;
+        dropIp ??= f.denyIp;
+      }
+      if (passIp) inbound(passIp, pass);
+      if (dropIp) inbound(dropIp, drop);
+    }
     for (const s of w.traffic.sources ?? []) {
-      if (s.kind === 'macro') inbound(cidrSource(s.cidr), s.rps * MBPS_PER_RPS);
-      else if (own(w.net?.clients, s.cidr)) {
+      if (s.kind !== 'macro' && own(w.net?.clients, s.cidr)) {
         const r = reachFromClients(w, s.cidr);
         if (r.ok || r.failure === 'fw_deny') add(r.links, s.rps * CAMPUS_MBPS_PER_RPS);
       }

@@ -71,10 +71,17 @@ describe('IOS answers are caught', () => {
     expect(vlan('VLAN 20으로 바꿔야 해')).toBe(true);
     expect(vlan('vlan20이 맞아')).toBe(true);
   });
+  it.each(['20번 VLAN으로 바꿔야 해', '20 VLAN이 맞아', 'VLAN20번에 넣어', '브이랜 20에 넣어', '20번 브이랜이야', '포트를 20번vlan에'])(
+    'a VLAN number written number-first or in Korean: %s',
+    (reply) => expect(vlan(reply)).toBe(true),
+  );
   it('but not a different port, address or VLAN that only looks alike', () => {
     expect(vlan('Gi1/0/15 는 정상이야')).toBe(false);
     expect(vlan('11/0/5 같은 건 없어')).toBe(false);
     expect(vlan('VLAN 200은 상관없어')).toBe(false);
+    expect(vlan('120번 VLAN은 상관없어')).toBe(false);
+    expect(vlan('브이랜 200은 상관없어')).toBe(false);
+    expect(vlan('Gi1/0/20 VLAN 설정을 봐')).toBe(false);
     expect(svi('10.10.30.10 은 다른 서버야')).toBe(false);
   });
   it('abbreviated forms of a banned line', () => {
