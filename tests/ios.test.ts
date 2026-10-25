@@ -466,7 +466,7 @@ describe('show output', () => {
     const lines = text(show('TOR-01', 'show interfaces status')).split('\n');
     expect(lines[0]).toMatch(/^Port\s+Name\s+Status\s+Vlan\s+Duplex\s+Speed Type$/);
     expect(lines.length).toBeLessThanOrEqual(20);
-    expect(lines.find((l) => l.startsWith('Gi1/0/1 '))).toMatch(/Gi1\/0\/1\s+\S+\s+10\s/);
+    expect(lines.find((l) => l.startsWith('Gi1/0/1 '))).toMatch(/Gi1\/0\/1\s+WEB-01\s+connected\s+10\s/);
     expect(lines.find((l) => l.startsWith('Te1/1/4 '))).toContain('disabled');
     expect(lines.find((l) => l.startsWith('Te1/1/1 '))).toContain('trunk');
     for (const l of show('TOR-01', 'show interfaces status').lines) expect(l.startsWith(RED)).toBe(false);

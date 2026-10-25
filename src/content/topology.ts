@@ -107,7 +107,8 @@ function core(n: 1 | 2): Device {
     'Te1/0/4': trunk([10, 20, 40, 50], 10000, n === 1 ? { group: 1 } : {}),
     'Te1/0/5': trunk([10, 20, 40, 50], 10000, { shutdown: true }),
     'Te1/0/6': trunk([40, 50, 100]),
-    'Te1/0/7': iface('access', 10000, { shutdown: true }),
+    // Spare link to TOR-02, cabled but shut and not bundled (D-Day: TOR-02's single uplink runs out).
+    'Te1/0/7': trunk([40, 50, 100], 10000, { shutdown: true, desc: 'SPARE-TOR-02' }),
     'Hu1/0/8': iface('access', 100000, { accessVlan: 30 }),
     'Te1/0/9': routed(p30(n === 1 ? CAMPUS['CAMPUS-ENG'][4] : CAMPUS['CAMPUS-ENG'][5]), 30, 10000),
     'Te1/0/10': routed(p30(n === 1 ? CAMPUS['CAMPUS-LIB'][4] : CAMPUS['CAMPUS-LIB'][5]), 30, 10000),
@@ -133,11 +134,12 @@ function tor(n: 1 | 2): Device {
   const vlans = n === 1 ? [10, 20, 40, 50] : [40, 50, 100];
   const ifs: Record<string, Iface> = {};
   for (let p = 1; p <= 12; p++) ifs[`Gi1/0/${p}`] = access(1);
-  for (const [, [, , vlan, , sw, port]] of Object.entries(SERVERS)) if (sw === id) ifs[port] = access(vlan);
-  ifs['Te1/1/1'] = trunk(vlans, 10000, n === 1 ? { group: 1 } : {});
-  ifs['Te1/1/2'] = trunk(vlans, 10000, n === 1 ? { group: 1 } : {});
-  ifs['Te1/1/3'] = trunk(vlans);
-  ifs['Te1/1/4'] = trunk(vlans, 10000, { shutdown: true });
+  for (const [, [label, , vlan, , sw, port]] of Object.entries(SERVERS)) if (sw === id) ifs[port] = access(vlan, { desc: label });
+  ifs['Te1/1/1'] = trunk(vlans, 10000, { desc: 'UPLINK-CORE-01', ...(n === 1 ? { group: 1 } : {}) });
+  // TOR-01: second member of Po1. TOR-02: a spare to CORE-01, cabled but shut and not bundled.
+  ifs['Te1/1/2'] = trunk(vlans, 10000, n === 1 ? { group: 1, desc: 'UPLINK-CORE-01' } : { shutdown: true, desc: 'SPARE-CORE-01' });
+  ifs['Te1/1/3'] = trunk(vlans, 10000, { desc: 'UPLINK-CORE-02' });
+  ifs['Te1/1/4'] = trunk(vlans, 10000, { shutdown: true, desc: n === 1 ? 'SPARE-CORE-01' : undefined });
   if (n === 1) ifs.Po1 = trunk(vlans);
   return saved(gear(id, 'switch', n === 1 ? 'rack1' : 'rack3', nd('ios', 'KHU-SW9300', id, ifs, { vlans: Object.fromEntries(vlans.map((v) => [v, DC_VLANS[v]])) })));
 }
@@ -214,6 +216,7 @@ export function baseTopology(): World {
     cable('tor1-spare', 'TOR-01:Te1/1/4', 'CORE-01:Te1/0/5'),
     cable('tor2-up1', 'TOR-02:Te1/1/1', 'CORE-01:Te1/0/6'),
     cable('tor2-up3', 'TOR-02:Te1/1/3', 'CORE-02:Te1/0/6'),
+    cable('tor2-spare', 'TOR-02:Te1/1/2', 'CORE-01:Te1/0/7'),
     cable('l4-1', 'L4-01:Hu1/1', 'CORE-01:Hu1/0/8'),
     cable('l4-2', 'L4-02:Hu1/1', 'CORE-02:Hu1/0/8'),
     cable('eng-1', 'CAMPUS-ENG:Te1/1/1', 'CORE-01:Te1/0/9'),
