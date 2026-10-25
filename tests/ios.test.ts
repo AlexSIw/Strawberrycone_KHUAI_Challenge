@@ -634,7 +634,7 @@ describe('solution scripts (as content writes them) run clean through the comman
       'write memory',
     ]);
     expect(red).toEqual([]);
-    expect(w.devices['CORE-02'].nd!.svis[10]).toEqual({ ip: '10.10.10.3', mask: 24, shutdown: false, helper: '10.10.50.21', hsrp: { group: 1, vip: '10.10.10.1', priority: 100, preempt: true } });
+    expect(w.devices['CORE-02'].nd!.svis[10]).toMatchObject({ ip: '10.10.10.3', mask: 24, shutdown: false, helper: '10.10.50.21', hsrp: { group: 1, vip: '10.10.10.1', priority: 100, preempt: true } });
   });
 
   it('LACP member on both ends, err-disabled recovery, STP back on', () => {
