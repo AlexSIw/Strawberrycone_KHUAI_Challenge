@@ -1,6 +1,8 @@
 // How a player completes each day's missions, and how a test plays a whole day.
 // (Not a test file itself: vitest only collects tests/**/*.test.ts.)
+import { SERVERS } from '../src/content/topology';
 import { getStage } from '../src/content/stages';
+import { connectCable, decompose, mount, setFeeds } from '../src/sim/actions';
 import {
   ackAlarm,
   applyAction,
@@ -25,11 +27,74 @@ export type Step =
 
 export const RED = '\x1b[31m';
 
+/** The three servers D-5 installs. */
+const D5 = ['web', 'web2', 'db'];
+
 /** How a player completes each mission, per day. Each day's owner fills in its own entry. */
 export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
-  0: { noc: [{ events: ['open:noc'] }] },
-  1: { noc: [{ events: ['open:noc'] }] },
-  2: { noc: [{ events: ['open:noc'] }] },
+  // D-5 (WP5): mini-games are world actions, the NOC looks are events.
+  0: {
+    tour: [{ events: ['room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc'] }],
+    quiz: [{ events: ['quiz:correct'] }],
+    mount: [{ action: (w) => D5.forEach((id) => mount(w, id)), events: ['rack:mount'] }],
+    power: [{ action: (w) => D5.forEach((id) => setFeeds(w, id, ['A', 'B'])) }],
+    cable: [{ action: (w) => D5.forEach((id) => connectCable(w, `${id}:eth0`, `TOR-01:${SERVERS[id][5]}`)), events: ['cable:connect'] }],
+    leds: [{ events: ['noc:device:TOR-01'] }],
+    fms: [{ events: ['noc:fms'] }],
+  },
+  // D-4 (WP5): IOS from the `>` prompt, as after `ssh TOR-01`.
+  1: {
+    ssh: [{ cmd: 'ssh TOR-01', host: 'ops' }],
+    vlan: [{ ios: ['enable', 'configure terminal', 'vlan 10', 'name WEB', 'exit', 'vlan 20', 'name DB', 'end'], host: 'TOR-01' }],
+    ports: [
+      {
+        ios: ['enable', 'configure terminal', 'interface gi1/0/1', 'switchport access vlan 10', 'interface gi1/0/2', 'switchport access vlan 10', 'interface gi1/0/3', 'switchport access vlan 20', 'end'],
+        host: 'TOR-01',
+      },
+    ],
+    gateway: [
+      {
+        ios: [
+          'enable',
+          'configure terminal',
+          'interface vlan 10',
+          'ip address 10.10.10.2 255.255.255.0',
+          'standby 1 ip 10.10.10.1',
+          'no shutdown',
+          'interface vlan 20',
+          'ip address 10.10.20.2 255.255.255.0',
+          'standby 1 ip 10.10.20.1',
+          'no shutdown',
+          'end',
+        ],
+        host: 'CORE-01',
+      },
+    ],
+    dns: [
+      { cmd: 'dns add web 10.10.10.11', host: 'ns1' },
+      { cmd: 'dns add db 10.10.20.11', host: 'ns1' },
+    ],
+    dhcp: [
+      { cmd: 'ssh dhcp01', host: 'ops' },
+      { cmd: 'dhcp pool list', host: 'dhcp01' },
+    ],
+    wr: [
+      { ios: ['enable', 'write memory'], host: 'TOR-01' },
+      { ios: ['enable', 'write memory'], host: 'CORE-01' },
+    ],
+  },
+  // D-3 (WP5)
+  2: {
+    start: [{ cmd: 'server start', host: 'web' }],
+    port: [{ cmd: 'server set port 80', host: 'web' }],
+    l4: [
+      { cmd: 'lb pool add web 80', host: 'L4-01' },
+      { cmd: 'lb health set path /health', host: 'L4-01' },
+    ],
+    curl: [{ cmd: 'curl http://sugang/enroll', host: 'ops' }],
+    sms: [{ events: ['noc:sms'] }],
+    msa: [{ action: decompose, events: ['board:decompose'] }],
+  },
   3: { noc: [{ events: ['open:noc'] }] },
   4: { noc: [{ events: ['open:noc'] }] },
   5: { noc: [{ events: ['open:noc'] }] },
