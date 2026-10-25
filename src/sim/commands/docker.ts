@@ -13,6 +13,8 @@ export const WEB_PORT = 80;
 export const MYSQL_DATA_DIR = '/var/lib/mysql';
 /** The enroll app is configured to reach its database at this server's published MySQL port. */
 export const DB_ENDPOINT = { host: 'srv-db', port: 3306 } as const;
+/** `w.flags` key naming an image release with a bug (D-2's bad deploy): its app answers every request with a 500. */
+export const BAD_IMAGE_FLAG = 'docker:badImage';
 
 /** The enroll recipe. The design board's card and the `docker build` output both print these lines. */
 export const ENROLL_DOCKERFILE: readonly string[] = [
@@ -491,6 +493,9 @@ export const dockerCommands: Command[] = [
           dim(' * 수강신청 앱 준비 완료'),
           db ? dim(` * DB ${DB_ENDPOINT.host}:${DB_ENDPOINT.port} 연결됨`) : red(` * DB ${DB_ENDPOINT.host}:${DB_ENDPOINT.port} 연결 실패 (응답 없음)`),
         );
+        if (own(w.flags, BAD_IMAGE_FLAG) === c.image) {
+          lines.push(red(`ERROR TypeError in /enroll (${c.image}) — 500 Internal Server Error (앱이 요청을 처리하다 오류로 멈췄어요)`));
+        }
       }
       if (!c.running) lines.push(dim('(멈춘 컨테이너예요 · docker start 로 다시 켜요)'));
       return out(...lines);

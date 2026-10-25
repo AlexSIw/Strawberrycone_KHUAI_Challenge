@@ -176,8 +176,20 @@ export function poMembers(w: World, dev: string, n: number): string[] {
 }
 
 /**
+ * Do two facing channel-group members agree on how to bundle? Both `on` (no negotiation), or both LACP
+ * with at least one `active` (two passive ends never start talking; LACP facing `on` is suspended).
+ * A member with no mode set counts as `active` (as `show running-config` prints it).
+ */
+function modesMatch(a: Iface, b: Iface): boolean {
+  const ma = a.chMode ?? 'active';
+  const mb = b.chMode ?? 'active';
+  if (ma === 'on' || mb === 'on') return ma === mb;
+  return ma === 'active' || mb === 'active';
+}
+
+/**
  * The Po a port-channel bundles with: the far Po of its first (interface order) member that is up and
- * whose peer is in a channel group. One Po bundles with exactly one far Po on one device.
+ * whose peer is in a channel group with a matching mode. One Po bundles with exactly one far Po on one device.
  */
 function partnerOf(w: World, dev: string, n: number): string | null {
   return memoGet(w, `partner:${dev}:${n}`, () => {
@@ -185,19 +197,20 @@ function partnerOf(w: World, dev: string, n: number): string | null {
       if (operState(w, dev, m) !== 'up') continue;
       const peer = peerOf(w, { dev, ifn: m });
       const pf = peer && ifaceOf(w, peer);
-      if (peer && pf?.group !== undefined) return `${peer.dev}:Po${pf.group}`;
+      const f = ifaceOf(w, { dev, ifn: m });
+      if (peer && f && pf?.group !== undefined && modesMatch(f, pf)) return `${peer.dev}:Po${pf.group}`;
     }
     return null;
   });
 }
 
-/** Is this physical member bundled (flag P): up, and both ends' Po picked each other. */
+/** Is this physical member bundled (flag P): up, modes that negotiate, and both ends' Po picked each other. */
 export function bundled(w: World, dev: string, ifn: string): boolean {
   const f = ifaceOf(w, { dev, ifn });
   if (f?.group === undefined || operState(w, dev, ifn) !== 'up') return false;
   const peer = peerOf(w, { dev, ifn });
   const pf = peer && ifaceOf(w, peer);
-  if (!peer || pf?.group === undefined) return false;
+  if (!peer || pf?.group === undefined || !modesMatch(f, pf)) return false;
   return partnerOf(w, dev, f.group) === `${peer.dev}:Po${pf.group}` && partnerOf(w, peer.dev, pf.group) === `${dev}:Po${f.group}`;
 }
 

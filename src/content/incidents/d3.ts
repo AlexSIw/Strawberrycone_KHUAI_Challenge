@@ -56,11 +56,12 @@ export const templates: IncidentTemplate[] = [
   },
   {
     // One of TOR-01's links to the cores is cut: the one traffic used (spanning tree then opens the spare
-    // to CORE-02; from D-2 it is a member of the LACP bundle, which carries on over the other member) or
-    // the STP-blocked spare itself. Either way students notice nothing, but there is one path less (major),
-    // and the NMS gets a link-down trap at once. The text must hold for both variants on every day.
+    // to CORE-02) or the STP-blocked spare itself. Either way students notice nothing, but there is one
+    // path less (major), and the NMS gets a link-down trap at once. D-3 only: under D-2's load test and on
+    // later days' bundles, losing an uplink is no longer invisible to students, so this text wouldn't hold.
     id: 'd3-uplink',
     day: 2,
+    until: 2,
     variants: [
       { cable: 'tor1-up1', port: 'Te1/1/1' },
       { cable: 'tor1-up3', port: 'Te1/1/3' },

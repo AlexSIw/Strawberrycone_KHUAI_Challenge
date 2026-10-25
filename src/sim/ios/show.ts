@@ -138,7 +138,9 @@ export function showInterfaces(w: World, host: string, nd: NetDevice, only?: str
     const util = lk ? utilization(w, lk.link.key) : 0;
     const load = st === 'up' ? Math.min(255, Math.max(1, Math.round(util * 255))) : 1;
     const loadTxt = load >= 230 ? red(`${load}/255`) : load >= 180 ? yellow(`${load}/255`) : `${load}/255`;
-    const bw = f.speed * 1000;
+    // A port-channel's BW is the sum of its bundled members (2 × 10G → 20000000 Kbit/sec), as on real IOS.
+    const poBw = po !== null ? poState(w, host, po).members.filter((m) => m.flag === 'P').reduce((s, m) => s + (nd.ifs[m.ifn]?.speed ?? 0), 0) : 0;
+    const bw = (poBw || f.speed) * 1000;
     out.push(`  MTU 1500 bytes, BW ${bw} Kbit/sec, DLY 10 usec,`, `     reliability 255/255, txload ${loadTxt}, rxload ${loadTxt}`);
     out.push('  Encapsulation ARPA, loopback not set');
     if (po !== null) {
@@ -147,7 +149,8 @@ export function showInterfaces(w: World, host: string, nd: NetDevice, only?: str
     }
     out.push(st === 'up' ? `  Full-duplex, ${speedTxt(f)}b/s${po === null ? `, media type is ${mediaType(k)}` : ''}` : `  Auto-duplex, Auto-speed${po === null ? `, media type is ${mediaType(k)}` : ''}`);
     out.push('  Last clearing of "show interface" counters never');
-    const mbps = lk ? (w.net?.load[lk.link.key]?.mbps ?? 0) / lk.share : 0;
+    // A port can't send faster than its line rate: what's offered beyond it waits or is dropped.
+    const mbps = lk ? Math.min(bw / 1000, (w.net?.load[lk.link.key]?.mbps ?? 0) / lk.share) : 0;
     const bps = Math.round(mbps * 1e6);
     const pps = Math.round(bps / 8 / 1000);
     out.push(`  5 minute input rate ${Math.round(bps / 4)} bits/sec, ${Math.round(pps / 4)} packets/sec`);
