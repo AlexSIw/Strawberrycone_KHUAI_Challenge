@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { CONCEPTS } from '../../content/concepts';
+import { ddayAvailability } from '../../content/days/day5';
 import { getStage } from '../../content/stages';
 import { fmtClock, gameSec, stageAt } from '../../sim/clock';
 import { scoreRun, type StageRun } from '../../sim/engine';
@@ -113,14 +114,22 @@ function fired(run: StageRun): ScenarioRuntime[] {
   return run.scenarios.filter((s) => s.activatedAt !== null).sort((a, b) => a.activatedAt! - b.activatedAt!);
 }
 
+/** What the board says when an incident never raised an alarm (it was fixed before the NMS saw it). */
+function noAlarm(rt: ScenarioRuntime): string {
+  if (rt.resolvedAt === null) return '경보 아직 없음';
+  // Fixed the second it started: the player had prepared for it.
+  return rt.resolvedAt - rt.activatedAt! <= 2 ? '경보 없음 (미리 대비해서 바로 해결)' : '경보 없음 (경보가 뜨기 전에 해결)';
+}
+
 /** "10:00:30 발생 → 10:00:44 확인 (MTTD 10초) → 10:00:52 해결 (MTTR 16초)". Clock = game time, MTTD/MTTR = real seconds. */
 function timeline(run: StageRun, rt: ScenarioRuntime): string {
   const def = getStage(run.stage);
   const at = (t: number) => fmtClock(gameSec(def.clock, t), true);
   const start = rt.activatedAt!;
-  const ack = run.alarms.find((a) => a.scenarioId === rt.id)?.ackAt ?? null;
+  const alarm = run.alarms.find((a) => a.scenarioId === rt.id);
+  const ack = alarm?.ackAt ?? null;
   const parts = [`${at(start)} 발생`];
-  parts.push(ack !== null ? `${at(ack)} 확인 (MTTD ${ack - start}초)` : '경보 확인(ACK) 안 함');
+  parts.push(!alarm ? noAlarm(rt) : ack !== null ? `${at(ack)} 확인 (MTTD ${ack - start}초)` : '경보 확인(ACK) 안 함');
   parts.push(rt.resolvedAt !== null ? `${at(rt.resolvedAt)} 해결 (MTTR ${rt.resolvedAt - start}초)` : '아직 해결 안 됨');
   return parts.join(' → ');
 }
@@ -210,6 +219,8 @@ function Write({ run }: { run: StageRun }) {
 
   if (complete) {
     const score = scoreRun(run);
+    // D-Day's own average from the 10:00 open (the run's score only counts the seconds between incidents).
+    const avail = ddayAvailability(run.world);
     return (
       <ModalFrame
         title="설계 보드 · 장애 보고서"
@@ -235,7 +246,11 @@ function Write({ run }: { run: StageRun }) {
         </div>
         <div className="pmb-summary-head">
           <span className="tag">📄 수강신청 당일 장애 보고서</span>
-          <span className="tag">평균 가용성 {(score.availability * 100).toFixed(1)}%</span>
+          {avail !== null ? (
+            <span className="tag">10:00 오픈부터 평균 가용성 {(avail * 100).toFixed(1)}%</span>
+          ) : (
+            <span className="tag">평균 가용성 {(score.availability * 100).toFixed(1)}%</span>
+          )}
           {score.mttd !== null && <span className="tag">평균 MTTD {Math.round(score.mttd)}초</span>}
           {score.mttr !== null && <span className="tag">평균 MTTR {Math.round(score.mttr)}초</span>}
           {extras}
