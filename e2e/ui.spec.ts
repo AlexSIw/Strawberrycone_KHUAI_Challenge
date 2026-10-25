@@ -1,8 +1,10 @@
-// UI behaviour around windows and the HUD:
-//  - the terminal's side box shows the objectives while nothing is broken, and the incidents when something is;
-//  - a window opened from another one (the radio from the terminal, the dashboard from the HUD) goes back to it
-//    on close (Esc, ✕, backdrop, Tab for the dashboard), with the terminal session as it was;
-//  - the 🏃 speed button cycles 1x → 1.5x → 2x, is remembered, and the lion really walks faster.
+// UI behaviour around windows, the terminal and the HUD:
+//  - a window opened from another one (the radio over the terminal) goes back to it on close (Esc, ✕,
+//    backdrop), with the terminal session as it was;
+//  - IOS sessions: ssh into gear shows its prompt, `?` is answered on the keystroke, Ctrl+Z, exit, and a
+//    switch's own console stays on the switch;
+//  - the 🏃 speed button cycles 1x → 1.5x → 2x, is remembered, and the lion really walks faster;
+//  - the HUD fits narrow screens.
 // Typing and clicking go through the real UI; the app's store (imported through Vite, like e2e/persist.spec.ts)
 // only starts stages, skips dialogue, runs the clock and uses map hotspots.
 import { expect, test, type Page } from '@playwright/test';
@@ -36,34 +38,10 @@ async function play(page: Page, stage: number) {
   }, stage);
 }
 
-/** Concept cards pop up when an objective or incident is done and take focus; click them away. */
-async function dismissConcepts(page: Page) {
-  await page.evaluate(() => {
-    const store = (window as unknown as Win).__store;
-    for (let i = 0; i < 20 && store.getState().concepts.length; i++) store.getState().dismissConcept();
-  });
-}
-
-/** Runs the game clock until incident `id` is in `state` (concept cards, which stop the clock, are clicked away). */
-const runUntil = (page: Page, id: string, state: 'active' | 'resolved') =>
-  page.evaluate(
-    ([sid, want]) => {
-      const store = (window as unknown as Win).__store;
-      const now = () => store.getState().run?.scenarios.find((x) => x.id === sid)?.state;
-      for (let i = 0; i < 300 && now() !== want; i++) {
-        for (let j = 0; j < 20 && store.getState().concepts.length; j++) store.getState().dismissConcept();
-        store.getState().tick();
-      }
-      return now();
-    },
-    [id, state] as const,
-  );
-
 /** Uses a map hotspot (desk, rack1, board…), as walking up to it and pressing Space does. */
 const interact = (page: Page, spot: string) => page.evaluate((s) => (window as unknown as Win).__store.getState().interact(s as never), spot);
 
 const title = (page: Page) => page.locator('.modal-head h2');
-const sideBox = (page: Page, name: '지금 목표' | '지금 장애') => page.locator('.term-side').getByRole('region', { name });
 
 /** Visible terminal rows, with xterm's non-breaking spaces made plain. */
 async function rows(page: Page): Promise<string[]> {
@@ -96,76 +74,33 @@ function watchProblems(page: Page): string[] {
 async function start(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await page.evaluate(() => localStorage.setItem('khu-dc-save-v1', JSON.stringify({ unlocked: 7, best: {}, cards: [] })));
+  await page.evaluate(() => localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best: {}, cards: [] })));
   await exposeStore(page);
 }
 
-test('터미널 옆 상자: 조용할 땐 지금 목표, 장애가 나면 지금 장애', async ({ page }) => {
-  const problems = watchProblems(page);
-  await start(page);
-  await play(page, 3);
-  await interact(page, 'desk');
-  await expect(title(page)).toHaveText(/터미널 — ops/);
+async function focusTerminal(page: Page) {
+  await page.locator('.term-screen').click();
+}
 
-  // Calm: the box lists the open objective (the objective panel is behind this window).
-  await expect(sideBox(page, '지금 목표')).toContainText('web 서버에 원격 접속해 수강신청 앱 실행하기');
-  await expect(sideBox(page, '지금 장애')).toHaveCount(0);
-
-  await typeLine(page, 'ssh web');
-  await expect.poll(() => inputRow(page)).toContain('web@khu-dc:~$');
-  await typeLine(page, 'server start');
-  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('수강신청 서버 시작!');
-  await dismissConcepts(page);
-  // Nothing to do until the next incident: it says so, and what opens the next objective.
-  await expect(sideBox(page, '지금 목표')).toContainText('다음 상황을 기다리는 중');
-  await expect(sideBox(page, '지금 목표')).toContainText('장애를 해결하면 열려요');
-  await expect(sideBox(page, '지금 목표')).not.toContainText('목표 완료');
-
-  // The incident fires: the box switches to it, with the 쿠사수 button.
-  expect(await runUntil(page, 's3-port', 'active')).toBe('active');
-  await expect(sideBox(page, '지금 장애')).toContainText('연결이 거부됨');
-  await expect(sideBox(page, '지금 장애').getByRole('button', { name: '쿠사수 힌트' })).toBeVisible();
-  await expect(sideBox(page, '지금 목표')).toHaveCount(0);
-
-  // Fixed: back to the objectives, with the one the fix unlocked.
-  await typeLine(page, 'server set port 80');
-  expect(await runUntil(page, 's3-port', 'resolved')).toBe('resolved');
-  await dismissConcepts(page);
-  await expect(sideBox(page, '지금 목표')).toContainText('curl로 /enroll 페이지 직접 요청해보기');
-  await expect(sideBox(page, '지금 장애')).toHaveCount(0);
-  await expect(title(page)).toHaveText(/터미널 — web/);
-
-  // Stage 5: the objectives are the steps that solve the first incident, so the incident box lists them too.
-  await page.keyboard.press('Escape');
-  await play(page, 5);
-  await interact(page, 'desk');
-  await expect(sideBox(page, '지금 목표')).toContainText('곧 상황이 시작돼요');
-  expect(await runUntil(page, 's5-drift', 'active')).toBe('active');
-  await dismissConcepts(page);
-  await expect(sideBox(page, '지금 장애')).toContainText('아래 목표를 차례로 하면 해결돼요');
-  await expect(sideBox(page, '지금 장애')).toContainText('새 서버(srv-new)의 배포 기록 확인하기');
-
-  expect(problems).toEqual([]);
-});
+// Needs a day with a mission whose text is known and an incident (WP5–7 content).
+test.fixme('터미널 옆 상자: 조용할 땐 지금 목표, 장애가 나면 지금 장애 (needs day content (WP5–7))', async () => {});
 
 test('창 위에 연 창은 닫으면 원래 창으로: 터미널 세션 그대로', async ({ page }) => {
   const problems = watchProblems(page);
   await start(page);
-  await play(page, 3);
+  // D-4: the 관리 PC can ssh.
+  await play(page, 1);
   await interact(page, 'desk');
+  await expect(title(page)).toHaveText(/터미널 — ops/);
   await typeLine(page, 'ssh web');
-  await typeLine(page, 'server start');
-  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('수강신청 서버 시작!');
-  await dismissConcepts(page);
-  expect(await runUntil(page, 's3-port', 'active')).toBe('active');
+  await expect.poll(() => inputRow(page)).toContain('web@khu-dc:~$');
 
-  // A half-typed line, then the radio from the box's button.
+  // A half-typed line, then the radio over the terminal (as the H key or an alarm's 쿠사수 button opens it).
   await page.locator('.term-screen').click();
   await page.keyboard.type('hostna', { delay: 15 });
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostna');
-  await sideBox(page, '지금 장애').getByRole('button', { name: '쿠사수 힌트' }).click();
+  await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'hint' }));
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
-  await expect(page.getByRole('tab', { name: /연결이 거부됨/ })).toHaveAttribute('aria-selected', 'true');
 
   // Esc: back to the same terminal session (host, scrollback, half-typed line).
   await page.keyboard.press('Escape');
@@ -177,57 +112,76 @@ test('창 위에 연 창은 닫으면 원래 창으로: 터미널 세션 그대�
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostname');
 
   // ✕ and the backdrop also go back to the terminal.
-  await sideBox(page, '지금 장애').getByRole('button', { name: '쿠사수 힌트' }).click();
+  await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'hint' }));
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
   await page.locator('.modal-head').getByRole('button', { name: /닫기/ }).click();
   await expect(title(page)).toHaveText(/터미널 — web/);
-  await sideBox(page, '지금 장애').getByRole('button', { name: '쿠사수 힌트' }).click();
+  await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'hint' }));
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
   await page.locator('.modal-backdrop').click({ position: { x: 8, y: 8 } });
   await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostname');
 
-  // The HUD stays usable over a window: the dashboard opens on top, and Tab (its toggle) goes back.
-  await page.locator('.hud').getByRole('button', { name: /대시보드/ }).click();
-  await expect(title(page)).toHaveText(/관제 대시보드/);
-  await expect(page.locator('.modal-backdrop')).toHaveCount(1);
-  await page.keyboard.press('Tab');
-  await expect(title(page)).toHaveText(/터미널 — web/);
-  // 도감 from the HUD, then the radio on top of it: Esc walks back one window at a time.
-  await page.locator('.hud').getByRole('button', { name: /도감/ }).click();
-  await expect(title(page)).toHaveText(/개념 도감/);
-  await page.keyboard.press('h');
+  // The `hint` command opens the radio on top of the terminal too.
+  await focusTerminal(page);
+  await page.keyboard.press('Control+U');
+  await typeLine(page, 'hint');
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
   await page.keyboard.press('Escape');
-  await expect(title(page)).toHaveText(/개념 도감/);
-  await page.keyboard.press('Escape');
   await expect(title(page)).toHaveText(/터미널 — web/);
-  await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostname');
-
-  // The HUD's exit question goes over the window; Esc or 계속하기 drops only the question.
-  const exitQuestion = page.locator('.modal-head h2', { hasText: '스테이지에서 나갈까요?' });
-  const terminalTitle = page.locator('.modal-head h2', { hasText: '터미널 — web' });
-  await page.locator('.hud').getByRole('button', { name: /나가기/ }).click();
-  await expect(exitQuestion).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(exitQuestion).toHaveCount(0);
-  await expect(terminalTitle).toBeVisible();
-  await page.locator('.hud').getByRole('button', { name: /나가기/ }).click();
-  await page.getByRole('button', { name: '계속하기' }).click();
-  await expect(exitQuestion).toHaveCount(0);
-  await expect(terminalTitle).toBeVisible();
-  await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostname');
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hint');
 
   await page.keyboard.press('Escape');
   await expect(page.locator('.modal-backdrop')).toHaveCount(0);
 
-  // Restarting the stage closes every window, stacked ones included.
+  // Restarting the day closes every window, stacked ones included.
   await interact(page, 'desk');
-  await sideBox(page, '지금 장애').getByRole('button', { name: '쿠사수 힌트' }).click();
+  await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'hint' }));
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
-  await play(page, 3);
+  await play(page, 1);
   await expect(page.locator('.modal-backdrop')).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as Win).__store.getState().modalStack)).toEqual([]);
+
+  expect(problems).toEqual([]);
+});
+
+test('IOS 터미널: ssh로 장비 프롬프트, ?는 바로 도움말, Ctrl+Z, exit로 관리 PC', async ({ page }) => {
+  const problems = watchProblems(page);
+  await start(page);
+  await play(page, 1);
+  await interact(page, 'desk');
+  await typeLine(page, 'ssh TOR-01');
+  await expect.poll(() => inputRow(page)).toBe('TOR-01>');
+  // The side panel is the IOS cheat sheet now.
+  await expect(page.locator('.term-help h3')).toHaveText('장비 명령 (IOS)');
+
+  await typeLine(page, 'enable');
+  await expect.poll(() => inputRow(page)).toBe('TOR-01#');
+  // `?` is answered on the keystroke: it never goes into the line, and the line comes back as it was.
+  await page.keyboard.type('sh', { delay: 15 });
+  await page.keyboard.press('?');
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toMatch(/TOR-01# ?sh\?/);
+  await expect.poll(() => inputRow(page)).toMatch(/^TOR-01# ?sh$/);
+  // Ctrl+Z outside config mode does nothing, as on a real switch.
+  await page.keyboard.press('Control+U');
+  await page.keyboard.press('Control+Z');
+  await expect.poll(() => inputRow(page)).toBe('TOR-01#');
+
+  // exit leaves the switch: back on the 관리 PC's shell, with its own command list.
+  await typeLine(page, 'exit');
+  await expect.poll(() => inputRow(page)).toBe('ops@khu-dc:~$');
+  await expect(page.locator('.term-help h3')).toHaveText('명령어 도움말');
+  expect(await page.evaluate(() => (window as unknown as Win).__store.getState().terminal.mode ?? null)).toBeNull();
+
+  // A switch's own console place starts at its `>` prompt, and exit there keeps the console on the switch.
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'terminal', host: 'TOR-01' }));
+  await expect(title(page)).toHaveText(/터미널 — TOR-01/);
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('콘솔에 연결했어요');
+  await expect.poll(() => inputRow(page)).toBe('TOR-01>');
+  await typeLine(page, 'exit');
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('Press RETURN to get started.');
+  await expect.poll(() => inputRow(page)).toBe('TOR-01>');
 
   expect(problems).toEqual([]);
 });
@@ -331,47 +285,12 @@ test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', as
   expect(problems).toEqual([]);
 });
 
-test('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로', async ({ page }) => {
-  const problems = watchProblems(page);
+// v1's D-0 quiz flow; the quiz (if any) is WP5 content.
+test.fixme('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로 (needs day content (WP5–7))', async () => {});
+
+test('HUD: 좁은 화면에서도 버튼이 잘리지 않음 (시계가 초 단위인 D-Day 포함)', async ({ page }) => {
   await start(page);
-  await play(page, 0);
-  // Everything but the quiz is done, so the right answer is recorded when the quiz window closes.
-  await page.evaluate(() =>
-    (window as unknown as Win).__store.getState().event('room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc', 'open:dashboard', 'open:mentor'),
-  );
-  await dismissConcepts(page);
-  await interact(page, 'board');
-  await expect(title(page)).toHaveText(/퀴즈/);
-  const answer = await page.evaluate(async () => {
-    const url = '/src/content/stages/index.ts';
-    const stages = (await import(/* @vite-ignore */ url)) as typeof import('../src/content/stages');
-    return stages.getStage(0).quiz!.answer;
-  });
-  await page.locator('.qz-choice').nth(answer).click();
-  await expect(page.locator('.qz-todo')).toContainText('🎉 정답');
-
-  // The quiz says "C 키 = 개념 도감": the 도감 opens on top, and closing it comes back to the explanation.
-  await page.keyboard.press('c');
-  await expect(title(page)).toHaveText(/개념 도감/);
-  await page.keyboard.press('Escape');
-  await expect(title(page)).toHaveText(/퀴즈/);
-  await expect(page.locator('.qz-todo')).toContainText('🎉 정답');
-  await page.keyboard.press('h');
-  await expect(title(page)).toHaveText(/쿠사수 무전기/);
-  await page.keyboard.press('Escape');
-  await expect(title(page)).toHaveText(/퀴즈/);
-
-  // 알겠어요! records it: the stage is cleared.
-  await page.getByRole('button', { name: '알겠어요!' }).click();
-  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().dialogue?.then)).toBe('results');
-  await expect(page.locator('.modal-backdrop')).toHaveCount(0);
-
-  expect(problems).toEqual([]);
-});
-
-test('HUD: 좁은 화면에서도 버튼이 잘리지 않음 (버티기 시계가 있는 7단계 포함)', async ({ page }) => {
-  await start(page);
-  for (const stage of [3, 7]) {
+  for (const stage of [1, 5]) {
     await play(page, stage);
     await expect(page.locator('.hud')).toBeVisible();
     for (const width of [1440, 1280, 1110, 960, 861, 700, 640, 610, 480, 390, 375]) {

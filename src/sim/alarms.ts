@@ -25,6 +25,19 @@ export const nextPoll = (t: number, every: number): number => Math.ceil(t / ever
 
 export const SEV_ORDER: Record<AlarmSev, number> = { critical: 0, major: 1, minor: 2, warning: 3 };
 
+/** How the NOC names a severity: the real word players will meet at work, with a plain-Korean gloss. */
+export const SEV_LABEL: Record<AlarmSev, string> = {
+  critical: 'Critical(긴급)',
+  major: 'Major(중요)',
+  minor: 'Minor(경미)',
+  warning: 'Warning(주의)',
+};
+
+/** Toast / alarm-list line: '🚨 Major(중요) · TOR-01: 포트 Gi1/0/5 링크 다운'. */
+export function alarmLine(a: Pick<Alarm, 'sev' | 'device' | 'text'>, deviceLabel = a.device): string {
+  return `🚨 ${SEV_LABEL[a.sev]} · ${deviceLabel}: ${a.text}`;
+}
+
 /**
  * Raise alarms for incidents the monitoring has noticed and clear those whose incident is fixed.
  * Pure: returns the new list and the ids raised this tick.

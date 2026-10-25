@@ -2,8 +2,10 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { requestHintText } from '../ai/client';
 import { CONCEPTS } from '../content/concepts';
-import { getStage, STAGES } from '../content/stages';
+import { getStage } from '../content/stages';
 import type { DialogueLine, InteractionKind, NocTab, SpotId } from '../content/types';
+import { alarmLine } from '../sim/alarms';
+import { osOf } from '../sim/commands';
 import {
   ackAlarm,
   activeScenarios,
@@ -14,12 +16,14 @@ import {
   isCleared,
   recordEvents,
   revealSolution,
+  scenarioOf,
   scoreRun,
   startStage,
   tickRun,
   type Score,
   type StageRun,
 } from '../sim/engine';
+import { USER_MODE } from '../sim/ios';
 import { newSeed } from '../sim/scheduler';
 import { LAST_DAY, type IosMode, type StageId, type World } from '../sim/types';
 
@@ -50,6 +54,8 @@ export interface Toast {
   text: string;
   /** Incident an alert toast belongs to (dropped once that incident is solved) */
   scenarioId?: string;
+  /** Who raised an alert: a user / the 팀장 calling in (📞), or the NMS (🚨) */
+  source?: 'user' | 'nms';
 }
 
 /** At most this many toasts at once, so the stack stays clear of the map's upper rooms. */
@@ -102,7 +108,17 @@ export interface TerminalSession {
 const MAX_LOG = 400;
 const MAX_HISTORY = 200;
 
-const freshSession = (host: string): TerminalSession => ({ host, log: [], history: [], draft: '' });
+/** Is this host network gear that speaks IOS (CORE-01, TOR-01 …)? */
+const isGear = (w: World | undefined, host: string) => !!w && osOf(w, host) === 'ios';
+
+/** A new session at a place: on network gear it starts at the console's `>` prompt. */
+const freshSession = (host: string, w?: World): TerminalSession => ({
+  host,
+  log: [],
+  history: [],
+  draft: '',
+  ...(isGear(w, host) ? { mode: USER_MODE } : {}),
+});
 
 export interface GameState {
   screen: Screen;
@@ -149,6 +165,8 @@ export interface GameState {
   play(stage: StageId): void;
   /** Start over: a fresh save seed (new surprises), progress kept */
   newGame(): void;
+  /** 이어하기: the furthest day reached (save.unlocked, at most D-Day) */
+  continueGame(): void;
   finishResults(next: 'next' | 'retry' | 'select'): void;
 
   // loop
@@ -160,8 +178,11 @@ export interface GameState {
   enterRoom(room: string): void;
   event(...events: string[]): void;
   act(action: (w: World) => void, ...events: string[]): void;
-  /** Runs a line on the active terminal session's host (and keeps it in that session's history). */
-  command(line: string): { lines: string[]; clear: boolean };
+  /**
+   * Runs a line on the active terminal session's host (and keeps it in that session's history unless
+   * `record` is false, e.g. the `end` Ctrl+Z sends).
+   */
+  command(line: string, record?: boolean): { lines: string[]; clear: boolean };
   /** Scrollback of the active terminal session (the Terminal component writes here) */
   appendTerminal(lines: string[]): void;
   clearTerminal(): void;
@@ -191,17 +212,31 @@ export interface GameState {
 
 // ---------- persistence ----------
 
-const SAVE_KEY = 'khu-dc-save-v2';
+export const SAVE_KEY = 'khu-dc-save-v2';
 const emptySave = (): SaveData => ({ unlocked: 0, seed: newSeed(), best: {}, cards: [] });
 
-function loadSave(): SaveData {
+const validSeed = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= 0xffffffff;
+
+/** The save, cleaned up. A save without a seed gets one, written back at once so it stays the same. */
+export function loadSave(): SaveData {
+  let raw: Partial<SaveData> | null = null;
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return emptySave();
-    return { ...emptySave(), ...JSON.parse(raw) };
+    const text = localStorage.getItem(SAVE_KEY);
+    raw = text ? (JSON.parse(text) as Partial<SaveData>) : null;
   } catch {
-    return emptySave();
+    raw = null;
   }
+  const base = emptySave();
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const unlocked = Number.isInteger(r.unlocked) ? Math.max(0, Math.min(LAST_DAY, r.unlocked as number)) : 0;
+  const save: SaveData = {
+    unlocked,
+    seed: validSeed(r.seed) ? r.seed : base.seed,
+    best: r.best && typeof r.best === 'object' ? r.best : {},
+    cards: Array.isArray(r.cards) ? r.cards.filter((c): c is string => typeof c === 'string') : [],
+  };
+  if (!raw || !validSeed(raw.seed)) writeSave(save);
+  return save;
 }
 
 function writeSave(s: SaveData): void {
@@ -318,14 +353,14 @@ const NO_WINDOWS = { modal: null, modalStack: [] as Modal[], fixing: false };
 function sessionFor(s: GameState, m: Modal): Partial<GameState> {
   if (m.type !== 'terminal' || m.host === s.terminalOrigin) return {};
   const { [m.host]: session, ...others } = s.terminals;
-  return { terminals: { ...others, [s.terminalOrigin]: s.terminal }, terminal: session ?? freshSession(m.host), terminalOrigin: m.host };
+  return { terminals: { ...others, [s.terminalOrigin]: s.terminal }, terminal: session ?? freshSession(m.host, s.run?.world), terminalOrigin: m.host };
 }
 
 // ---------- store ----------
 
 export const gameStore = createStore<GameState>()((set, get) => {
-  const toast = (kind: Toast['kind'], text: string, scenarioId?: string) => {
-    const t: Toast = { id: ++toastSeq, kind, text, scenarioId };
+  const toast = (kind: Toast['kind'], text: string, scenarioId?: string, source?: Toast['source']) => {
+    const t: Toast = { id: ++toastSeq, kind, text, scenarioId, ...(source ? { source } : {}) };
     set((s) => ({ toasts: [...s.toasts.slice(-(MAX_TOASTS - 1)), t] }));
   };
 
@@ -358,7 +393,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     const save = { ...get().save, best: { ...get().save.best }, cards: [...get().save.cards] };
     const prev = save.best[run.stage];
     if (!prev || score.points > prev.points) save.best[run.stage] = { stars: score.stars, points: score.points };
-    save.unlocked = Math.max(save.unlocked, Math.min(STAGES.length - 1, run.stage + 1));
+    // Tomorrow opens for 이어하기 (every day is playable from the calendar anyway).
+    save.unlocked = Math.max(save.unlocked, Math.min(LAST_DAY, run.stage + 1));
     writeSave(save);
     set({
       save,
@@ -406,6 +442,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
       set({ save });
       get().play(0);
     },
+    continueGame: () => get().play(Math.max(0, Math.min(LAST_DAY, get().save.unlocked)) as StageId),
 
     play: (stage) => {
       const def = getStage(stage);
@@ -449,17 +486,24 @@ export const gameStore = createStore<GameState>()((set, get) => {
     tick: () => {
       const s = get();
       if (!s.run || s.isPaused()) return;
-      const { run, activated, resolved, completed } = tickRun(s.run);
+      const { run, activated, resolved, completed, raised } = tickRun(s.run);
       const def = getStage(run.stage);
       set({ run });
+      // Users and the 팀장 call in about the symptom as soon as it starts…
       for (const id of activated) {
-        const sc = def.scenarios.find((x) => x.id === id)!;
-        toast('alert', `🚨 ${sc.alert}`, id);
+        const sc = scenarioOf(def, id);
+        if (sc.alert) toast('alert', `📞 ${sc.alert}`, id, 'user');
+      }
+      // …the NMS only once its trap / syslog / poll sees it.
+      for (const id of raised) {
+        const a = run.alarms.find((x) => x.id === id);
+        if (!a || (a.scenarioId && run.scenarios.find((r) => r.id === a.scenarioId)?.state === 'resolved')) continue;
+        toast('alert', alarmLine(a, run.world.devices[a.device]?.label ?? a.device), a.scenarioId ?? undefined, 'nms');
       }
       awardCards(
         resolved.map((id) => {
-          const sc = def.scenarios.find((x) => x.id === id)!;
-          // The alert for a solved incident would read as if it were still going on.
+          const sc = scenarioOf(def, id);
+          // The alerts for a solved incident (the call and the alarm) would read as if it were still going on.
           set((st) => ({ toasts: st.toasts.filter((t) => t.scenarioId !== id) }));
           toast('resolved', `🎉 '${sc.title}' 장애를 해결했어요!`);
           return { concept: sc.concept, lesson: sc.lesson, scenarioId: id };
@@ -499,16 +543,25 @@ export const gameStore = createStore<GameState>()((set, get) => {
       afterChange(run);
     },
 
-    command: (line) => {
+    command: (line, record = true) => {
       const s = get();
       if (!s.run) return { lines: [], clear: false };
       const res = applyCommand(s.run, line, s.terminal.host, s.terminal.mode ?? null);
       const trimmed = line.trim();
+      let { host, mode, lines } = res;
+      // A console cable doesn't log out to the 관리 PC: leaving the device from its own console just
+      // frees the line, and the next Enter is back at the `>` prompt.
+      if (mode === null && s.terminal.host === s.terminalOrigin && isGear(s.run.world, s.terminalOrigin)) {
+        const name = s.run.world.devices[s.terminalOrigin]?.label ?? s.terminalOrigin;
+        host = s.terminalOrigin;
+        mode = USER_MODE;
+        lines = [...lines, '', `${name} con0 is now available`, '', 'Press RETURN to get started.', ''];
+      }
       set((st) => {
         const history = st.terminal.history ?? [];
         // No repeats in a row, like a shell.
-        const next = trimmed && history[history.length - 1] !== trimmed ? [...history, trimmed].slice(-MAX_HISTORY) : history;
-        return { run: res.run, terminal: { ...st.terminal, host: res.host, mode: res.mode, history: next } };
+        const next = record && trimmed && history[history.length - 1] !== trimmed ? [...history, trimmed].slice(-MAX_HISTORY) : history;
+        return { run: res.run, terminal: { ...st.terminal, host, mode, history: next } };
       });
       objectiveToasts(res.run, res.completed);
       if (res.openHint) {
@@ -516,7 +569,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
         get().openModal({ type: 'hint', scenarioId: active?.rt.id });
       }
       afterChange(res.run);
-      return { lines: res.lines, clear: res.clear };
+      return { lines, clear: res.clear };
     },
 
     appendTerminal: (lines) => set((s) => ({ terminal: { ...s.terminal, log: [...s.terminal.log, ...lines].slice(-MAX_LOG) } })),
@@ -573,7 +626,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
       const thread = [...(s.hints[scenarioId] ?? [])];
       if (question) thread.push({ from: 'player', text: question });
       set({ run, hintPending: true, hints: { ...s.hints, [scenarioId]: thread } });
-      const reply = await requestHintText({ run, scenario: sc, level, question, history: thread, host: get().terminal.host });
+      const term = get().terminal;
+      const reply = await requestHintText({ run, scenario: sc, level, question, history: thread, host: term.host, iosMode: term.mode?.level ?? null });
       const cur = get();
       // The stage was started again while the answer was on its way: it belongs to the old run.
       if (cur.stageEpoch !== s.stageEpoch) return;
@@ -600,9 +654,10 @@ export const gameStore = createStore<GameState>()((set, get) => {
       const s = get();
       if (!s.run) return;
       const run = escalate(s.run, scenarioId);
+      if (run === s.run) return;
       set({ run });
-      const sc = getStage(run.stage).scenarios.find((x) => x.id === scenarioId);
-      if (sc?.escalate) toast('info', `📨 ${sc.escalate.team}에 이관했어요. 처리될 때까지 지켜봐요.`);
+      const team = scenarioOf(getStage(run.stage), scenarioId).escalate?.team;
+      if (team) toast('info', `📨 ${team}에 이관했어요. 처리될 때까지 지켜봐요.`);
     },
   };
 });

@@ -1,7 +1,8 @@
 // Sound: credits window, mute toggle (button, M, saved setting), and the audio engine following the
-// game — lobby tune out of the stages, long equal-power crossfades into and out of a stage, a short one
+// game — lobby tune out of the days, long equal-power crossfades into and out of a day, a short one
 // into an incident, the alarm, the coin and the win jingle (incident card, clear popup, certificate).
-// Reads the engine through its dev hook.
+// Reads the engine through its dev hook. Incidents are made up (planted through the page's modules), so
+// this doesn't wait for the day content.
 import { expect, test, type Page } from '@playwright/test';
 
 type Track = 'lobby' | 'normal' | 'incident';
@@ -44,6 +45,46 @@ const audioState = (page: Page) => page.evaluate(() => (window as never as { __k
 const lastFade = async (page: Page) => (await audioState(page)).fades.at(-1);
 const voice = (s: AudioState, track: Track) => s.voices.find((v) => v.track === track);
 const ALL_CLIPS = ['alarm', 'coin', 'incident', 'lobby', 'normal', 'voice', 'win'];
+/** The title screen's start button (v1 wording, or v2's). */
+const START = /처음부터 시작|새로 시작/;
+
+/**
+ * Plans one made-up incident on the day being played (the day's own content is not needed): it breaks a
+ * world flag and is fixed by clearing it. It goes into the page's own copy of the content and sim modules.
+ */
+async function plantIncident(page: Page, id: string, concept: string) {
+  await page.evaluate(
+    async ([sid, card]) => {
+      const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
+      const Sc = (await import(/* @vite-ignore */ '/src/sim/scenario.ts' as string)) as typeof import('../src/sim/scenario');
+      const store = (window as unknown as Win).__store;
+      const run = store.getState().run!;
+      const def = C.getStage(run.stage);
+      if (!def.scenarios.some((x) => x.id === sid)) {
+        def.scenarios.push({
+          id: sid,
+          stage: run.stage,
+          title: '테스트 장애',
+          alert: '포털이 안 열려요',
+          severity: 'major',
+          alarm: { source: 'trap', device: 'CAMPUS-ENG', text: '링크 다운' },
+          room: 'network',
+          trigger: { type: 'stageStart' },
+          inject: (w) => void (w.flags[sid] = true),
+          check: (w) => !w.flags[sid],
+          hints: ['관찰', '방향', '도구'],
+          bannedPhrases: [],
+          solution: '',
+          solutionSteps: [],
+          concept: card,
+          lesson: '테스트',
+        });
+      }
+      store.setState({ run: { ...run, scenarios: Sc.initRuntime([{ id: sid, trigger: { type: 'stageStart', delay: run.ctx.stageTime + 1 } }]) } });
+    },
+    [id, concept] as const,
+  );
+}
 
 function watchErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -54,7 +95,7 @@ function watchErrors(page: Page): string[] {
   return errors;
 }
 
-test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 스테이지 → 장애 → 복귀 크로스페이드, 경보/코인/징글, 콘솔 에러 없음', async ({ page }) => {
+test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 하루 → 장애 → 복귀 크로스페이드, 경보/코인/징글, 콘솔 에러 없음', async ({ page }) => {
   test.setTimeout(120_000);
   const errors = watchErrors(page);
 
@@ -94,7 +135,7 @@ test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 스테이지 → �
   await expect(credits.getByRole('link', { name: 'www.matthewpablo.com' })).toHaveAttribute('href', 'https://www.matthewpablo.com');
   await page.keyboard.press('Escape');
   await expect(credits).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /처음부터 시작/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: START })).toBeVisible();
 
   // That click unlocked audio: the lobby tune (not the in-stage loop) fades in on the title screen.
   await expect.poll(async () => (await audioState(page)).music).toBe('lobby');
@@ -125,8 +166,8 @@ test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 스테이지 → �
   await expect.poll(async () => (await audioState(page)).music).toBe('lobby');
   await expect.poll(async () => voice(await audioState(page), 'lobby')?.gain).toBe(s0.gains.lobby);
 
-  // Start: a long equal-power crossfade from the lobby tune to the in-stage loop.
-  await page.getByRole('button', { name: /처음부터 시작/ }).click();
+  // Start: a long equal-power crossfade from the lobby tune to the in-day loop.
+  await page.getByRole('button', { name: START }).click();
   await expect.poll(async () => (await audioState(page)).music).toBe('normal');
   const into = await lastFade(page);
   expect(into).toMatchObject({ from: 'lobby', to: 'normal' });
@@ -148,23 +189,21 @@ test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 스테이지 → �
   // Dialogue blabber while the intro types.
   await expect.poll(async () => (await audioState(page)).blip, { timeout: 5_000 }).toBeGreaterThan(3);
 
-  // Stage 3 (through the store): finishing an objective plays the coin.
+  // D-4 (through the store) with one made-up incident planned.
   await exposeStore(page);
   const coins0 = (await audioState(page)).coin;
   await page.evaluate(() => {
     const gameStore = (window as unknown as Win).__store;
-    gameStore.getState().play(3);
+    gameStore.getState().play(1);
     for (let i = 0; i < 50 && gameStore.getState().dialogue; i++) gameStore.getState().nextDialogue();
-    gameStore.setState({ terminal: { host: 'web', log: [] } });
-    gameStore.getState().command('server start');
   });
-  await expect.poll(async () => (await audioState(page)).coin, { timeout: 5_000 }).toBe(coins0 + 1);
-  expect((await audioState(page)).music).toBe('normal'); // a new stage keeps the in-stage loop going
+  await plantIncident(page, 'e2e-audio', 'spof');
+  expect((await audioState(page)).music).toBe('normal'); // a new day keeps the in-day loop going
 
   // An incident: a SHORT crossfade into the incident loop (from its top) and the alarm.
   await page.evaluate(() => {
     const gameStore = (window as unknown as Win).__store;
-    // s3-port fires 10 stage seconds after the app is started: run the clock forward instead of waiting.
+    // Run the clock forward instead of waiting for the game loop.
     const active = () => gameStore.getState().run?.scenarios.some((x) => x.state === 'active');
     for (let i = 0; i < 20 && !active(); i++) gameStore.getState().tick();
   });
@@ -180,12 +219,12 @@ test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 스테이지 → �
   // normal loop, which picks up where it stopped.
   await page.evaluate(() => {
     const gameStore = (window as unknown as Win).__store;
-    gameStore.setState({ terminal: { host: 'web', log: [] } });
-    gameStore.getState().command('server set port 80');
+    gameStore.getState().act((w) => void (w.flags['e2e-audio'] = false));
+    gameStore.getState().tick();
   });
   await expect.poll(async () => (await audioState(page)).win, { timeout: 5_000 }).toBe(1);
   const fixed = await audioState(page);
-  expect(fixed.coin).toBe(coins0 + 2);
+  expect(fixed.coin).toBe(coins0 + 1);
   const coinAt = fixed.sfx.filter((x) => x.id === 'coin').at(-1)!.at;
   const winAt = fixed.sfx.filter((x) => x.id === 'win').at(-1)!.at;
   expect(winAt - coinAt).toBeGreaterThan(0.4);
@@ -200,7 +239,7 @@ test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 스테이지 → �
   // The jingle ducks the music while it plays.
   await expect.poll(async () => (await audioState(page)).duck, { timeout: 3_000 }).toBeLessThan(0.5);
 
-  // Leaving the stage: a long crossfade to the lobby tune, which resumes too; the alarm cycle is over.
+  // Leaving the day: a long crossfade to the lobby tune, which resumes too; the alarm cycle is over.
   await page.evaluate(() => {
     const gameStore = (window as unknown as Win).__store;
     gameStore.getState().goSelect();
@@ -217,59 +256,47 @@ test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 스테이지 → �
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
-test('스테이지 클리어 결과 창과 엔딩 수료증에서 징글, 목표마다 코인 (같은 순간은 한 번)', async ({ page }) => {
+test('하루 클리어 결과 창과 엔딩 수료증에서 징글 (한 번에 하나)', async ({ page }) => {
   test.setTimeout(120_000);
   const errors = watchErrors(page);
 
   await page.goto('/');
   await page.evaluate(() => {
     localStorage.removeItem('khu-dc-audio');
-    localStorage.removeItem('khu-dc-save-v1');
+    localStorage.removeItem('khu-dc-save-v2');
   });
   await page.reload();
 
-  // Play stage 0 like a player: the start button, then the objectives (recorded as the UI records them).
-  await page.getByRole('button', { name: /처음부터 시작/ }).click();
+  await page.getByRole('button', { name: START }).click();
   await expect.poll(async () => (await audioState(page)).loaded.length).toBe(ALL_CLIPS.length);
   await expect.poll(async () => (await audioState(page)).music).toBe('normal');
   await exposeStore(page);
-  const event = (...events: string[]) =>
-    page.evaluate((ev) => {
-      const gameStore = (window as unknown as Win).__store;
-      for (let i = 0; i < 50 && gameStore.getState().dialogue; i++) gameStore.getState().nextDialogue();
-      gameStore.getState().event(...ev);
-    }, events);
-  const coin = async () => (await audioState(page)).coin;
-  /** One objective's worth of player actions, then its coin (cues closer than 0.15 s merge, so pause like a player). */
-  const objective = async (coins: number, ...events: string[]) => {
-    await event(...events);
-    await expect.poll(coin).toBe(coins);
-    await page.waitForTimeout(300);
-  };
 
-  await objective(1, 'open:dashboard');
-  await objective(2, 'open:mentor');
-  await objective(3, 'room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc');
-  // The quiz objective also gives a new card and clears the stage: one coin for all of it.
-  await objective(4, 'quiz:correct');
-  await page.waitForTimeout(300);
-  expect(await coin()).toBe(4);
-  expect((await audioState(page)).win).toBe(0); // objective cards don't jingle
+  // Every mission done and nothing pending (the day's own missions are content): the day clears.
+  await page.evaluate(async () => {
+    const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
+    const gameStore = (window as unknown as Win).__store;
+    for (let i = 0; i < 50 && gameStore.getState().dialogue; i++) gameStore.getState().nextDialogue();
+    const run = gameStore.getState().run!;
+    const done = Object.fromEntries(C.getStage(run.stage).objectives.map((o) => [o.id, 0]));
+    gameStore.setState({ run: { ...run, scenarios: [], objectivesDone: done } });
+    gameStore.getState().event('e2e:done');
+  });
+  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().dialogue?.then)).toBe('results');
+  expect((await audioState(page)).win).toBe(0);
 
-  // The card, then the outro, with Enter as a player would; the clear popup brings the jingle.
-  await expect(page.locator('.ccard')).toBeVisible();
-  await page.keyboard.press('Enter');
-  const clear = page.getByRole('heading', { name: 'Stage 0 클리어!' });
-  for (let i = 0; i < 30 && !(await clear.isVisible()); i++) {
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
-  }
-  await expect(clear).toBeVisible();
+  // The outro, then the clear popup brings the jingle.
+  await page.evaluate(() => {
+    const gameStore = (window as unknown as Win).__store;
+    for (let i = 0; i < 20 && gameStore.getState().concepts.length; i++) gameStore.getState().dismissConcept();
+    for (let i = 0; i < 50 && gameStore.getState().dialogue; i++) gameStore.getState().nextDialogue();
+  });
+  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().screen)).toBe('results');
   await expect.poll(async () => (await audioState(page)).win, { timeout: 3_000 }).toBe(1);
   expect((await audioState(page)).music).toBe('normal');
   await expect.poll(async () => (await audioState(page)).duck, { timeout: 3_000 }).toBeLessThan(0.5);
 
-  // The last stage's "next" opens the ending certificate (pressed soon, as a player in a hurry would): the lobby
+  // D-Day's "next" opens the ending certificate (pressed soon, as a player in a hurry would): the lobby
   // tune comes back and the jingle plays once more, taking over from the clear popup's.
   const clearWin = (await audioState(page)).sfx.filter((x) => x.id === 'win').at(-1)!;
   await expect.poll(async () => (await audioState(page)).time, { timeout: 5_000, intervals: [50] }).toBeGreaterThan(clearWin.at + 1.1);
@@ -279,7 +306,7 @@ test('스테이지 클리어 결과 창과 엔딩 수료증에서 징글, 목표
     gameStore.setState({ run: { ...run, stage: 5 } });
     gameStore.getState().finishResults('next');
   });
-  await expect(page.getByRole('heading', { name: '수료증' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().screen)).toBe('ending');
   await expect.poll(async () => (await audioState(page)).win, { timeout: 3_000 }).toBe(2);
   const end = await audioState(page);
   expect(end.music).toBe('lobby');
@@ -295,3 +322,6 @@ test('스테이지 클리어 결과 창과 엔딩 수료증에서 징글, 목표
 
   expect(errors, errors.join('\n')).toEqual([]);
 });
+
+// A coin per mission played through the UI needs each day's missions.
+test.fixme('미션마다 코인, 미션과 새 카드가 같은 순간이면 한 번 — needs day content (WP5–7)', async () => {});

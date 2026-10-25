@@ -2,6 +2,7 @@
 import { getStage, planIncidents } from '../content/stages';
 import type { StageDef } from '../content/types';
 import { POLL_EVERY, updateAlarms, type Alarm } from './alarms';
+import { fmtClock, gameSec } from './clock';
 import { runCommand } from './commands';
 import { syncNet } from './net/sync';
 import { initRuntime, tickScenarios, type Scenario, type ScenarioRuntime } from './scenario';
@@ -55,7 +56,8 @@ const registries = new WeakMap<StageDef, Map<string, Scenario>>();
 /** Look a scenario instance up in the day's registry. */
 export function scenarioOf(def: StageDef, id: string): Scenario {
   let m = registries.get(def);
-  if (!m) {
+  // Rebuilt if the registry grew (tests add synthetic incidents to a day).
+  if (!m || m.size !== def.scenarios.length) {
     m = new Map(def.scenarios.map((s) => [s.id, s]));
     registries.set(def, m);
   }
@@ -141,11 +143,9 @@ export function tickRun(prev: StageRun, dt = 1): TickResult {
   run.world = step(run.world, dt);
   run.ctx.stageTime = run.world.t;
   def.onTick?.(run.world, run.ctx.stageTime);
-  const healthBefore = def.health(run.world);
-  const { activated, resolved } = tickScenarios(reg, run.scenarios, run.world, run.ctx, healthBefore, (id) =>
-    id in run.objectivesDone ? run.objectivesDone[id] : null,
-  );
-  // Escalated incidents: the owning team fixes it after its delay; the normal check then resolves it.
+  // Escalated incidents: the owning team fixes it once, `delay` seconds after the hand-over; the normal
+  // check below then resolves it in this same tick (so MTTR = time to escalate + the team's delay).
+  let teamFixed = false;
   for (const r of run.scenarios) {
     const esc = reg(r.id).escalate;
     if (r.state !== 'active' || r.escalatedAt === null || !esc) continue;
@@ -153,8 +153,14 @@ export function tickRun(prev: StageRun, dt = 1): TickResult {
     if (!run.world.flags[flag] && run.ctx.stageTime >= r.escalatedAt + esc.delay) {
       esc.fix(run.world);
       run.world.flags[flag] = true;
+      teamFixed = true;
     }
   }
+  if (teamFixed && run.world.net) syncNet(run.world, 0);
+  const healthBefore = def.health(run.world);
+  const { activated, resolved } = tickScenarios(reg, run.scenarios, run.world, run.ctx, healthBefore, (id) =>
+    id in run.objectivesDone ? run.objectivesDone[id] : null,
+  );
   // Injects and fixes changed the network: refresh caches and syslog before anyone looks.
   if (run.world.net) syncNet(run.world, 0);
   run.ctx.resolved.push(...resolved);
@@ -254,20 +260,43 @@ export function ackAlarm(prev: StageRun, alarmId: string): StageRun {
   return run;
 }
 
-/** Hand a shallow-area incident to its owning team (담당팀 이관). Also acknowledges its alarm. */
-export function escalate(prev: StageRun, scenarioId: string): StageRun {
-  const def = getStage(prev.stage);
-  const run = ackAlarm(prev, scenarioId);
+/** Can this incident be handed to its owning team right now? (shallow-area incidents, active, not handed over yet) */
+export function canEscalate(run: StageRun, scenarioId: string): boolean {
   const r = run.scenarios.find((x) => x.id === scenarioId);
-  if (r && r.state === 'active' && r.escalatedAt === null && scenarioOf(def, r.id).escalate) r.escalatedAt = run.ctx.stageTime;
+  return !!r && r.state === 'active' && r.escalatedAt === null && !!scenarioOf(getStage(run.stage), r.id).escalate;
+}
+
+/**
+ * Hand a shallow-area incident to its owning team (담당팀 이관). Also acknowledges its alarm.
+ * Returns `prev` unchanged when the incident can't be escalated.
+ */
+export function escalate(prev: StageRun, scenarioId: string): StageRun {
+  if (!canEscalate(prev, scenarioId)) return prev;
+  const run = ackAlarm(prev, scenarioId);
+  run.scenarios.find((x) => x.id === scenarioId)!.escalatedAt = run.ctx.stageTime;
   return run;
 }
 
+/**
+ * May this planned incident never happen? Optional scenarios, and anything on a `condition` trigger (a
+ * mistake the player may never make — the scheduler doesn't gate on those either).
+ */
+export function isOptional(def: StageDef, r: ScenarioRuntime): boolean {
+  return !!scenarioOf(def, r.id).optional || r.trigger.type === 'condition';
+}
+
+/** Every mission done, and every incident that fired is fixed (optional ones that never fired don't count). */
 export function isCleared(run: StageRun): boolean {
   const def = getStage(run.stage);
   const objectivesOk = def.objectives.every((o) => o.id in run.objectivesDone);
-  const scenariosOk = run.scenarios.every((r) => r.state === 'resolved' || (scenarioOf(def, r.id).optional && r.state === 'waiting'));
+  const scenariosOk = run.scenarios.every((r) => r.state === 'resolved' || (r.state === 'waiting' && isOptional(def, r)));
   return objectivesOk && scenariosOk;
+}
+
+/** The wall clock for the HUD: 'HH:MM' on weekdays, 'HH:MM:SS' on D-Day (it runs in phases). */
+export function clockText(run: StageRun): string {
+  const def = getStage(run.stage);
+  return fmtClock(gameSec(def.clock, run.ctx.stageTime), !!def.clock.phases?.length);
 }
 
 export interface Score {

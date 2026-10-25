@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { getStage } from '../content/stages';
+import { SEV_LABEL } from '../sim/alarms';
 import { activeScenarios, HINT_COST, visibleObjectives, type StageRun } from '../sim/engine';
-import type { Scenario } from '../sim/scenario';
-import type { RoomId } from '../sim/types';
+import type { AlarmSev, Scenario } from '../sim/scenario';
+import { dayLabel, type RoomId } from '../sim/types';
 import { gameStore, useGame, type HintMessage } from '../store/game';
 import { ModalFrame } from './ModalFrame';
 import { objectiveStatus, waitingText } from './objectiveStatus';
@@ -16,31 +17,37 @@ const MAX_LEVEL = 3;
 const ROOM_NAME: Record<RoomId, string> = {
   server: '서버실',
   network: '네트워크실',
-  power: '전원실',
+  power: '전기실',
   cooling: '냉각실',
   noc: '관제실',
 };
 
-/** Example question for the input box: on this stage's topic, but never an incident's answer (no UPS, port, API…). */
+/** Example question for the input box, per day: on that day's topic, but never an incident's answer (no port, VLAN number, IP…). */
 const ASK_EXAMPLE: Record<number, string> = {
-  0: '데이터센터가 뭐예요?',
-  1: '랙이 뭐예요?',
-  2: 'ping이 뭐예요?',
-  3: 'curl이 뭐예요?',
-  4: '모놀리스가 뭐예요?',
-  5: '레지스트리가 뭐예요?',
-  6: 'pod가 뭐예요?',
-  7: '뭐부터 고쳐야 해요?',
+  0: '전원 A/B는 왜 두 개예요?',
+  1: 'VLAN이 뭐예요?',
+  2: 'L4 스위치가 뭐예요?',
+  3: '컨테이너가 뭐예요?',
+  4: '이중화가 뭐예요?',
+  5: '뭐부터 확인해야 해요?',
 };
 
 /** Points the next hint costs on this incident (Lv1 is free). */
 const nextHintCost = (level: number) => (level >= 3 ? 0 : (HINT_COST[level + 1] - HINT_COST[level]) * 5);
 
-const CALM_LINES = [
-  '지금은 조용하네! 이럴 때 목표를 하나씩 끝내두자.',
-  '장애가 없을 때 장비를 미리 둘러봐 두면 나중에 편해. 천천히 살펴봐.',
-  '잘하고 있어! 알람이 울리면 내가 바로 도와줄게.',
-];
+/** What 쿠사수 says when nothing is on fire, per day. */
+const CALM_LINES: Record<number, string> = {
+  0: '지금은 조용하네! 오늘은 몸 쓰는 날이야. 랙, 전원, 케이블부터 하나씩 해보자.',
+  1: '조용할 때 관제 화면(NMS)을 한 번 둘러봐. 평소 모습을 알아야 이상한 걸 바로 알아채.',
+  2: '서비스 여는 날이야. 목표를 미리 끝내두면 경보가 와도 여유가 있어.',
+  3: '잘하고 있어! 경보가 울리면 내가 바로 도와줄게. 그동안 남은 목표를 해두자.',
+  4: '내일이 D-Day야. 하나가 꺼져도 버티는지 지금 확인해두자.',
+  5: '잠깐 조용하네. 관제 화면에서 경보랑 트래픽을 계속 지켜봐!',
+};
+
+/** Severity tone for the colors (the stylesheet has two: red and amber). */
+const tone = (sev: AlarmSev) => (sev === 'critical' || sev === 'major' ? 'critical' : 'warning');
+const sevBadge = (sev: AlarmSev) => `${tone(sev) === 'critical' ? '🚨' : '⚠️'} ${SEV_LABEL[sev]}`;
 
 /**
  * Incident the pending answer belongs to. The store only keeps a yes/no `hintPending`, so without
@@ -129,7 +136,7 @@ function CalmView({ run }: { run: StageRun | null }) {
   }
   const def = getStage(run.stage);
   const objectives = visibleObjectives(def, run);
-  const line = CALM_LINES[run.stage % CALM_LINES.length];
+  const line = CALM_LINES[run.stage] ?? CALM_LINES[0];
   return (
     <div className="hc-calm">
       <div className="hc-calm-top">
@@ -225,9 +232,9 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
 
   return (
     <div className="hc-incident" role="tabpanel" id="hc-panel" aria-labelledby={`hc-tab-${sc.id}`}>
-      <header className={`hc-head ${resolved ? 'resolved' : sc.severity}`}>
+      <header className={`hc-head ${resolved ? 'resolved' : tone(sc.severity)}`}>
         <div className="hc-head-title">
-          <span className={`hc-sev ${sc.severity}`}>{sc.severity === 'critical' ? '🚨 긴급' : '⚠️ 주의'}</span>
+          <span className={`hc-sev ${tone(sc.severity)}`}>{sevBadge(sc.severity)}</span>
           <b>{sc.title}</b>
           {resolved && <span className="hc-badge ok">✅ 해결됨</span>}
         </div>
@@ -238,7 +245,7 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
       {showLadder && !resolved && (
         <div className="hc-ladder">
           <p>
-            <b>Lv1</b> 관찰 질문 → <b>Lv2</b> 방향 → <b>Lv3</b> 도구.
+            <b>Lv1</b> 관찰 질문 → <b>Lv2</b> 방향 → <b>Lv3</b> 도구. Lv2부터는 {dayLabel(run.stage)} 일일 리포트 점수가 조금 깎여요.
           </p>
           <button type="button" className="btn ghost hc-ladder-ok" onClick={closeLadder}>
             알겠어요
@@ -386,10 +393,10 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
               role="tab"
               aria-controls="hc-panel"
               aria-selected={selected?.sc.id === t.sc.id}
-              className={`hc-tab ${selected?.sc.id === t.sc.id ? 'on' : ''} ${t.resolved ? 'resolved' : t.sc.severity}`}
+              className={`hc-tab ${selected?.sc.id === t.sc.id ? 'on' : ''} ${t.resolved ? 'resolved' : tone(t.sc.severity)}`}
               onClick={() => setPicked(t.sc.id)}
             >
-              {t.resolved ? '✅' : t.sc.severity === 'critical' ? '🚨' : '⚠️'} {t.sc.title}
+              {t.resolved ? '✅' : tone(t.sc.severity) === 'critical' ? '🚨' : '⚠️'} {t.sc.title}
             </button>
           ))}
         </div>

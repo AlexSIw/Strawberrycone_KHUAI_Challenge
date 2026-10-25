@@ -5,9 +5,12 @@
 //   → {fallback: true}            키 없음 / 업스트림 오류 / 정답 유출 → 게임이 기본 힌트를 보여줌
 // Every other path is served from ../dist by the [assets] config (run_worker_first = ["/api/*"]).
 
+import { bannedFor, leaks } from '../../src/ai/leak';
 import { CONCEPTS } from '../../src/content/concepts';
 import { ALL_SCENARIOS } from '../../src/content/stages';
+import { SEV_LABEL } from '../../src/sim/alarms';
 import type { Scenario } from '../../src/sim/scenario';
+import { DAY_LABEL } from '../../src/sim/types';
 import manual0 from '../../src/content/manual/day0.md';
 import manual1 from '../../src/content/manual/day1.md';
 import manual2 from '../../src/content/manual/day2.md';
@@ -92,6 +95,8 @@ interface HistoryItem {
 
 interface HintInput {
   scenario: Scenario;
+  /** 'D-4': the day being played (from the snapshot when it names a real day, else the incident's own day) */
+  dayLabel: string;
   level: 1 | 2 | 3;
   question: string;
   history: HistoryItem[];
@@ -126,7 +131,9 @@ function parseInput(raw: unknown): HintInput | string {
   const recentCommands = Array.isArray(snapshot.recentCommands)
     ? snapshot.recentCommands.filter((c): c is string => typeof c === 'string').slice(-6).map((c) => c.slice(0, 80))
     : [];
-  return { scenario, level, question, history, snapshot, recentCommands };
+  const day = typeof snapshot.day === 'string' ? snapshot.day : '';
+  const dayLabel = (DAY_LABEL as readonly string[]).includes(day) ? day : DAY_LABEL[scenario.stage];
+  return { scenario, dayLabel, level, question, history, snapshot, recentCommands };
 }
 
 // ---------- prompt ----------
@@ -142,14 +149,17 @@ function buildSystem(inp: HintInput): string {
   const concept = CONCEPTS[sc.concept];
   const manual = MANUALS[sc.stage] ?? '';
   return [
-    '너는 경희대학교 데이터센터의 선배 엔지니어 "쿠사수"야. 신입 엔지니어(경희대 사자)가 수강신청 서버 장애를 스스로 해결하도록 돕는 멘토야.',
-    '플레이어는 서버를 거의 모르는 초보야.',
+    '너는 경희대학교 데이터센터의 선배 엔지니어 "쿠사수"야. 신입 엔지니어(경희대 사자)가 수강신청 날(D-Day)을 앞두고 데이터센터와 캠퍼스 네트워크 장애를 스스로 해결하도록 돕는 멘토야.',
+    '플레이어는 서버와 네트워크를 거의 모르는 초보야.',
     '',
     '[규칙]',
     '- 한국어 반말로, 친근하고 짧게. 최대 3문장.',
+    '- 게임은 날짜(D-5, D-4 … D-Day)로 진행돼. 진행 단계를 말할 땐 "스테이지"가 아니라 날짜(D-n)로 말해.',
     '- 플레이어는 수업 듣는 학생이 아니라 서버 일에 관심 있는 누구나야. 수업·강의·교수님·시험·과제·공부·복습·대회 이야기는 절대 꺼내지 마. "배운 것" 대신 "해본 것"·"겪은 것"이라고 말해. 플레이어가 먼저 그런 걸 물으면 한 문장으로 받고 장애 이야기로 돌아와.',
-    '- 영어 약어나 전문용어(rps, pod, NotReady, 500 에러 같은 것)는 처음 쓸 때 바로 옆에 쉬운 말로 한 번 풀어줘. 예: "rps(1초에 들어오는 요청 수)". 진짜 용어는 지우지 말고 같이 써.',
-    '- 정답을 절대 말하지 마: 정확한 명령어 전체, 설정 값, IP 주소, 포트 번호, 고쳐야 할 장비의 이름·위치는 말하지 않아.',
+    '- 영어 약어나 전문용어(rps, pod, VLAN, NMS, 500 에러 같은 것)는 처음 쓸 때 바로 옆에 쉬운 말로 한 번 풀어줘. 예: "rps(1초에 들어오는 요청 수)". 진짜 용어는 지우지 말고 같이 써.',
+    '- 정답을 절대 말하지 마: 정확한 명령어 전체(sh, conf t, int 같은 줄임말로 쓴 것도 포함), 설정 값, IP 주소, 포트 번호, VLAN 번호, 인터페이스 이름(Gi1/0/5 같은 것), 고쳐야 할 장비의 이름·위치는 말하지 않아.',
+    '- enable, configure terminal, end, write memory처럼 모드를 오가거나 저장하는 명령, 값 없이 상태를 보는 show 명령은 말해도 돼.',
+    '- NMS 경보는 증상이야. 원인을 경보 문구에서 단정하지 말고, 플레이어가 직접 확인하게 해.',
     `- 이번 힌트 단계는 ${inp.level}단계야. 이 단계에 맞는 힌트만 줘. ${LEVEL_GUIDE[inp.level]}`,
     '  (참고: 1단계 = 관찰 질문, 2단계 = 방향, 3단계 = 도구/명령 종류)',
     '- 플레이어가 이미 해본 명령(현재 상황의 recentCommands)이 있으면 먼저 짧게 칭찬하고, 그다음 힌트를 줘.',
@@ -158,12 +168,14 @@ function buildSystem(inp: HintInput): string {
     '- 게임과 상관없는 질문이면 한 문장으로 받아주고 장애 이야기로 돌아와.',
     '- 출력은 JSON 객체 하나만: {"reply": "쿠사수가 할 말", "concept": "관련 개념 이름(짧게)"}. 코드 블록이나 다른 글은 붙이지 마.',
     '',
-    `[운영 매뉴얼 — Stage ${sc.stage}]`,
+    `[운영 매뉴얼 — 날짜(D-n): ${DAY_LABEL[sc.stage]}]`,
     manual.trim(),
     '',
     '[이번 장애 — 비공개 정보, 절대 그대로 말하지 말 것]',
+    `오늘 날짜: ${inp.dayLabel}`,
     `제목: ${sc.title}`,
-    `증상(플레이어가 받은 알림): ${sc.alert}`,
+    `증상(사용자·팀장이 알린 것): ${sc.alert}`,
+    `NMS 경보: [${SEV_LABEL[sc.severity] ?? sc.severity}] ${sc.alarm.device} — ${sc.alarm.text}`,
     `정답(비공개): ${sc.solution}`,
     `절대 쓰면 안 되는 표현: ${sc.bannedPhrases.join(' / ')}`,
     concept ? `관련 개념: ${concept.name} — 비유: ${concept.analogy} — ${concept.definition}` : '',
@@ -296,47 +308,6 @@ function parseReply(text: string): { reply: string; concept: string } {
     }
   }
   return { reply: t, concept: '' };
-}
-
-// ---------- answer-leak guard ----------
-
-const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ');
-
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/**
- * Exact answer values inside a solution command: IPs (10.0.1.20), port pairs (80:8000) and KEY=VALUE
- * settings. On their own they already give the answer away, even without the rest of the command.
- */
-const VALUE_TOKEN = /^(?:\d{1,3}(?:\.\d{1,3}){3}|\d+:\d+|[a-z_][a-z0-9_]*=\S+)$/i;
-
-/**
- * Phrases are matched as substrings, with two kinds of edges:
- * - a phrase starting/ending with a digit must not continue into more digits
- *   (banning 10.0.1.1 must not block a reply that mentions 10.0.1.10);
- * - a leading/trailing space in a bannedPhrase means "word edge": '/enrol ' blocks "/enrol)" and
- *   "/enrol이" but not the correct "/enroll".
- */
-function phraseRe(raw: string): RegExp {
-  const p = raw.trim();
-  const head = /^\s/.test(raw) ? '(?<![a-z0-9_])' : /^\d/.test(p) ? '(?<![\\d.])' : '';
-  const tail = /\s$/.test(raw) ? '(?![a-z0-9_])' : /\d$/.test(p) ? '(?!\\d)' : '';
-  return new RegExp(head + escapeRe(p) + tail);
-}
-
-/** bannedPhrases + every multi-word solution command + the exact values in those commands. */
-function bannedFor(sc: Scenario): RegExp[] {
-  const cmds = sc.solutionSteps.flatMap((s) => ('cmd' in s ? [s.cmd.trim()] : []));
-  const values = cmds.flatMap((c) => c.split(/\s+/).filter((t) => VALUE_TOKEN.test(t)));
-  const phrases = [...sc.bannedPhrases, ...cmds.filter((c) => c.includes(' ')), ...values]
-    .map(normalize)
-    .filter((p) => p.trim() !== '');
-  return [...new Set(phrases)].map(phraseRe);
-}
-
-function leaks(reply: string, banned: RegExp[]): boolean {
-  const r = ` ${normalize(reply)} `;
-  return banned.some((re) => re.test(r));
 }
 
 // ---------- handler ----------
