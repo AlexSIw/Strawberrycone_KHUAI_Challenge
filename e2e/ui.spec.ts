@@ -1,12 +1,14 @@
 // UI behaviour around windows, the terminal and the HUD:
+//  - the terminal's side box shows the missions while nothing is broken, and the incident when something is;
 //  - a window opened from another one (the radio over the terminal) goes back to it on close (Esc, ✕,
 //    backdrop), with the terminal session as it was;
 //  - IOS sessions: ssh into gear shows its prompt, `?` is answered on the keystroke, Ctrl+Z, exit, and a
 //    switch's own console stays on the switch;
 //  - the 🏃 speed button cycles 1x → 1.5x → 2x, is remembered, and the lion really walks faster;
+//  - the quiz keeps its answer while the concept book or the radio is opened on top of it;
 //  - the HUD fits narrow screens.
 // Typing and clicking go through the real UI; the app's store (imported through Vite, like e2e/persist.spec.ts)
-// only starts stages, skips dialogue, runs the clock and uses map hotspots.
+// only starts days, skips dialogue, runs the clock, clicks concept cards away and uses map hotspots.
 import { expect, test, type Page } from '@playwright/test';
 
 type GameStore = (typeof import('../src/store/game'))['gameStore'];
@@ -14,7 +16,9 @@ type GameStore = (typeof import('../src/store/game'))['gameStore'];
 type Win = Window & { __store: GameStore };
 /** The DataCenter scene's lion, as far as these tests look at it (it is a private field of the scene). */
 type Lion = { x: number; y: number; anims: { timeScale: number }; body: { reset(x: number, y: number): void } };
-type GameWin = Window & { __khuGame?: { scene: { getScene(key: string): ({ player?: Lion } & { sys: { isActive(): boolean } }) | null } } };
+type FrameFn = (t: number, dt: number) => void;
+type Scene = { player?: Lion; sys: { isActive(): boolean }; events: { on(e: 'update', f: FrameFn): void; off(e: 'update', f: FrameFn): void } };
+type GameWin = Window & { __khuGame?: { scene: { getScene(key: string): Scene | null } } };
 
 /**
  * Puts the app's own store instance on window.__store. A dev server that hot-updated the store
@@ -29,19 +33,40 @@ async function exposeStore(page: Page) {
   });
 }
 
-/** Starts a stage and skips its intro, like a player clicking through. */
-async function play(page: Page, stage: number) {
+/** Starts a day and skips its briefing, like a player clicking through. */
+async function play(page: Page, day: number) {
   await page.evaluate((n) => {
     const store = (window as unknown as Win).__store;
     store.getState().play(n as 0);
     for (let i = 0; i < 50 && store.getState().dialogue; i++) store.getState().nextDialogue();
-  }, stage);
+  }, day);
 }
+
+/** A finished mission pops up its concept card, which takes the focus and stops the clock: click it away. */
+async function dismissConcepts(page: Page) {
+  await page.evaluate(() => {
+    const store = (window as unknown as Win).__store;
+    for (let i = 0; i < 20 && store.getState().concepts.length; i++) store.getState().dismissConcept();
+  });
+}
+
+/** Runs the game clock (clicking concept cards away) until some incident is active, or none is. Returns whether one is. */
+const runUntilIncident = (page: Page, want: boolean) =>
+  page.evaluate((active) => {
+    const store = (window as unknown as Win).__store;
+    const now = () => !!store.getState().run?.scenarios.some((x) => x.state === 'active');
+    for (let i = 0; i < 300 && now() !== active; i++) {
+      for (let j = 0; j < 20 && store.getState().concepts.length; j++) store.getState().dismissConcept();
+      store.getState().tick();
+    }
+    return now();
+  }, want);
 
 /** Uses a map hotspot (desk, rack1, board…), as walking up to it and pressing Space does. */
 const interact = (page: Page, spot: string) => page.evaluate((s) => (window as unknown as Win).__store.getState().interact(s as never), spot);
 
 const title = (page: Page) => page.locator('.modal-head h2');
+const sideBox = (page: Page, name: '지금 목표' | '지금 장애') => page.locator('.term-side').getByRole('region', { name });
 
 /** Visible terminal rows, with xterm's non-breaking spaces made plain. */
 async function rows(page: Page): Promise<string[]> {
@@ -59,6 +84,15 @@ async function typeLine(page: Page, line: string) {
   await page.locator('.term-screen').click();
   await page.keyboard.type(line, { delay: 15 });
   await page.keyboard.press('Enter');
+}
+
+/** Types a line, waits for its output (the store has run it by then), then clicks away a mission's card. */
+async function run(page: Page, line: string) {
+  const count = () => page.evaluate(() => (window as unknown as Win).__store.getState().terminal.history?.length ?? 0);
+  const before = await count();
+  await typeLine(page, line);
+  await expect.poll(count).toBeGreaterThan(before);
+  await dismissConcepts(page);
 }
 
 /** Errors from the page, minus the hint Worker that isn't running in tests. */
@@ -82,14 +116,56 @@ async function focusTerminal(page: Page) {
   await page.locator('.term-screen').click();
 }
 
-// Needs a day with a mission whose text is known and an incident (WP5–7 content).
-test.fixme('터미널 옆 상자: 조용할 땐 지금 목표, 장애가 나면 지금 장애 (needs day content (WP5–7))', async () => {});
+test('터미널 옆 상자: 조용할 땐 지금 목표, 장애가 나면 지금 장애', async ({ page }) => {
+  const problems = watchProblems(page);
+  await start(page);
+  // D-3: open the enrollment site; once students get through, the L4 health-check incident fires.
+  await play(page, 2);
+  await interact(page, 'desk');
+  await expect(title(page)).toHaveText(/터미널 — ops/);
+
+  // Calm: the box lists the open mission (the mission panel is behind this window).
+  await expect(sideBox(page, '지금 목표')).toContainText('web 서버에 원격 접속해 수강신청 앱 실행하기');
+  await expect(sideBox(page, '지금 장애')).toHaveCount(0);
+
+  await run(page, 'ssh web');
+  await expect.poll(() => inputRow(page)).toContain('web@khu-dc:~$');
+  await run(page, 'server start');
+  // The next mission takes its place.
+  await expect(sideBox(page, '지금 목표')).toContainText('80번 포트');
+  await run(page, 'server set port 80');
+  await run(page, 'exit');
+  await run(page, 'ssh L4-01');
+  await run(page, 'lb pool add web 80');
+  await run(page, 'lb health set path /health');
+  await run(page, 'exit');
+  await run(page, 'curl http://sugang/enroll');
+  await expect(sideBox(page, '지금 목표')).toContainText('SMS');
+
+  // The incident fires: the box switches to it, with the 쿠사수 button.
+  expect(await runUntilIncident(page, true)).toBe(true);
+  await expect(sideBox(page, '지금 장애')).toContainText('수강신청 사이트 접속 불가');
+  await expect(sideBox(page, '지금 장애').getByRole('button', { name: '쿠사수 힌트' })).toBeVisible();
+  await expect(sideBox(page, '지금 목표')).toHaveCount(0);
+
+  // Fixed (the check's path and port both put right): back to the missions.
+  await run(page, 'ssh L4-01');
+  await run(page, 'lb health set path /health');
+  await run(page, 'lb health set port 80');
+  expect(await runUntilIncident(page, false)).toBe(false);
+  await dismissConcepts(page);
+  await expect(sideBox(page, '지금 목표')).toContainText('SMS');
+  await expect(sideBox(page, '지금 장애')).toHaveCount(0);
+  await expect(title(page)).toHaveText(/터미널 — L4-01/);
+
+  expect(problems).toEqual([]);
+});
 
 test('창 위에 연 창은 닫으면 원래 창으로: 터미널 세션 그대로', async ({ page }) => {
   const problems = watchProblems(page);
   await start(page);
-  // D-4: the 관리 PC can ssh.
-  await play(page, 1);
+  // D-3: the 관리 PC reaches WEB-01 by name (D-4 put it in the DNS).
+  await play(page, 2);
   await interact(page, 'desk');
   await expect(title(page)).toHaveText(/터미널 — ops/);
   await typeLine(page, 'ssh web');
@@ -138,7 +214,7 @@ test('창 위에 연 창은 닫으면 원래 창으로: 터미널 세션 그대�
   await interact(page, 'desk');
   await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'hint' }));
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
-  await play(page, 1);
+  await play(page, 2);
   await expect(page.locator('.modal-backdrop')).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as Win).__store.getState().modalStack)).toEqual([]);
 
@@ -152,6 +228,8 @@ test('IOS 터미널: ssh로 장비 프롬프트, ?는 바로 도움말, Ctrl+Z, 
   await interact(page, 'desk');
   await typeLine(page, 'ssh TOR-01');
   await expect.poll(() => inputRow(page)).toBe('TOR-01>');
+  // That was D-4's first mission: its card pops up.
+  await dismissConcepts(page);
   // The side panel is the IOS cheat sheet now.
   await expect(page.locator('.term-help h3')).toHaveText('장비 명령 (IOS)');
 
@@ -186,7 +264,7 @@ test('IOS 터미널: ssh로 장비 프롬프트, ?는 바로 도움말, Ctrl+Z, 
   expect(problems).toEqual([]);
 });
 
-/** The lion, once the stage's Phaser scene is up. */
+/** The lion, once the day's Phaser scene is up. */
 async function waitForLion(page: Page) {
   await expect
     .poll(() => page.evaluate(() => !!(window as GameWin).__khuGame?.scene.getScene('DataCenter')?.player), { timeout: 20_000 })
@@ -194,8 +272,9 @@ async function waitForLion(page: Page) {
 }
 
 /**
- * Walking speed in px/s: from the spawn point, hold → and time the distance covered
- * (measured after a short run-up, between two readings of the game's own clock).
+ * Walking speed in px per game second: from the spawn point, hold → and, after a short run-up, measure the
+ * distance covered against the frame times the scene itself was given. The scene's own clock keeps the number
+ * right on a busy machine, where frames come late and the game falls behind the wall clock.
  */
 async function walkSpeed(page: Page): Promise<{ speed: number; timeScale: number }> {
   await page.evaluate(() => {
@@ -206,19 +285,37 @@ async function walkSpeed(page: Page): Promise<{ speed: number; timeScale: number
   await page.keyboard.down('ArrowRight');
   try {
     await page.waitForTimeout(200);
-    const read = () =>
-      page.evaluate(() => {
-        const lion = (window as GameWin).__khuGame!.scene.getScene('DataCenter')!.player!;
-        return { x: lion.x, t: performance.now(), timeScale: lion.anims.timeScale };
-      });
-    const a = await read();
+    await startClock(page);
     await page.waitForTimeout(400);
-    const b = await read();
-    return { speed: (b.x - a.x) / ((b.t - a.t) / 1000), timeScale: b.timeScale };
+    return await readClock(page);
   } finally {
     await page.keyboard.up('ArrowRight');
   }
 }
+
+type ClockWin = GameWin & { __walk?: { x0: number; ms: number; tick: FrameFn } };
+
+/** Starts summing the scene's frame times, from where the lion is now. */
+const startClock = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as ClockWin;
+    const scene = w.__khuGame!.scene.getScene('DataCenter')!;
+    if (w.__walk) scene.events.off('update', w.__walk.tick);
+    const walk = { x0: scene.player!.x, ms: 0, tick: (_t: number, dt: number) => void (walk.ms += dt) };
+    scene.events.on('update', walk.tick);
+    w.__walk = walk;
+  });
+
+/** px per game second since startClock, and the walk cycle's speed. */
+const readClock = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as ClockWin;
+    const scene = w.__khuGame!.scene.getScene('DataCenter')!;
+    const walk = w.__walk!;
+    scene.events.off('update', walk.tick);
+    const lion = scene.player!;
+    return { speed: (lion.x - walk.x0) / (walk.ms / 1000), timeScale: lion.anims.timeScale };
+  });
 
 test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', async ({ page }) => {
   const problems = watchProblems(page);
@@ -268,16 +365,11 @@ test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', as
   await page.waitForTimeout(150);
   await page.getByRole('button', { name: /이동 속도/ }).click(); // → 1x
   await expect(page.getByRole('button', { name: /이동 속도/ })).toHaveText(/1x/);
-  const read = () =>
-    page.evaluate(() => {
-      const lion = (window as GameWin).__khuGame!.scene.getScene('DataCenter')!.player!;
-      return { x: lion.x, t: performance.now(), timeScale: lion.anims.timeScale };
-    });
-  const a = await read();
+  await startClock(page);
   await page.waitForTimeout(300);
-  const b = await read();
+  const b = await readClock(page);
   await page.keyboard.up('ArrowRight');
-  const midSpeed = (b.x - a.x) / ((b.t - a.t) / 1000);
+  const midSpeed = b.speed;
   expect(midSpeed).toBeGreaterThan(150);
   expect(midSpeed).toBeLessThan(270);
   expect(b.timeScale).toBe(1);
@@ -285,13 +377,58 @@ test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', as
   expect(problems).toEqual([]);
 });
 
-// v1's D-0 quiz flow; the quiz (if any) is WP5 content.
-test.fixme('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로 (needs day content (WP5–7))', async () => {});
+test('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로', async ({ page }) => {
+  const problems = watchProblems(page);
+  await start(page);
+  // D-5: the quiz opens after the tour of the rooms.
+  await play(page, 0);
+  await page.evaluate(() => (window as unknown as Win).__store.getState().event('room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc'));
+  await dismissConcepts(page);
+  await interact(page, 'board');
+  await expect(title(page)).toHaveText(/퀴즈/);
+  const answer = await page.evaluate(async () => {
+    const url = '/src/content/stages/index.ts';
+    const days = (await import(/* @vite-ignore */ url)) as typeof import('../src/content/stages');
+    return days.getStage(0).quiz!.answer;
+  });
+  /** The right choice marked and the 사수's explanation shown. */
+  const explained = async () => {
+    await expect(page.locator('.qz-choice').nth(answer)).toHaveClass(/right/);
+    await expect(page.locator('.qz-mentor.is-ok')).toContainText('정답!');
+  };
+  await page.locator('.qz-choice').nth(answer).click();
+  await expect(page.locator('.qz-todo')).toContainText('🎉 정답');
+  await explained();
+  // The mission is done at once: its card pops up over the quiz, and 계속하기 goes back to it.
+  await page.getByRole('button', { name: /계속하기/ }).click();
+  await expect(page.locator('.ccard-backdrop')).toHaveCount(0);
+  await explained();
+
+  // The quiz says "C 키 = 개념 도감": the 도감 opens on top, and closing it comes back to the explanation.
+  await page.keyboard.press('c');
+  await expect(title(page)).toHaveText(/개념 도감/);
+  await page.keyboard.press('Escape');
+  await expect(title(page)).toHaveText(/퀴즈/);
+  await explained();
+  await page.keyboard.press('h');
+  await expect(title(page)).toHaveText(/쿠사수 무전기/);
+  await page.keyboard.press('Escape');
+  await expect(title(page)).toHaveText(/퀴즈/);
+  await explained();
+
+  // 알겠어요! closes it; the next mission (the rack) is up.
+  await page.getByRole('button', { name: '알겠어요!' }).click();
+  await expect(page.locator('.modal-backdrop')).toHaveCount(0);
+  expect(await page.evaluate(() => 'quiz' in ((window as unknown as Win).__store.getState().run?.objectivesDone ?? {}))).toBe(true);
+  await expect(page.locator('.obj-panel')).toContainText('1번 랙에 서버 3대 장착하기');
+
+  expect(problems).toEqual([]);
+});
 
 test('HUD: 좁은 화면에서도 버튼이 잘리지 않음 (시계가 초 단위인 D-Day 포함)', async ({ page }) => {
   await start(page);
-  for (const stage of [1, 5]) {
-    await play(page, stage);
+  for (const day of [1, 5]) {
+    await play(page, day);
     await expect(page.locator('.hud')).toBeVisible();
     for (const width of [1440, 1280, 1110, 960, 861, 700, 640, 610, 480, 390, 375]) {
       await page.setViewportSize({ width, height: 720 });
@@ -311,7 +448,7 @@ test('HUD: 좁은 화면에서도 버튼이 잘리지 않음 (시계가 초 단�
         const chipCut = chipShown && stageBox!.getBoundingClientRect().width + 0.5 < chip!.getBoundingClientRect().width;
         return { cut, chipCut };
       });
-      expect(fit, `stage ${stage} at ${width}px`).toEqual({ cut: [], chipCut: false });
+      expect(fit, `day ${day} at ${width}px`).toEqual({ cut: [], chipCut: false });
     }
     await page.setViewportSize({ width: 1440, height: 900 });
   }
