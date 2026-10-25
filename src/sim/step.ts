@@ -1,6 +1,8 @@
 import { tickApp } from './app';
 import { reconcile, updateNodes } from './k8s';
 import { powered } from './net/basics';
+import { nodeOnline } from './net/reach';
+import { withNetMemo } from './net/topo';
 import { syncNet } from './net/sync';
 import type { World } from './types';
 
@@ -22,7 +24,9 @@ export function step(prev: World, dt = 1): World {
   w.t += dt;
   tickCooling(w, dt);
   if (w.k8s) {
-    updateNodes(w);
+    // A node is online when it has power, its NIC is up at the TOR and (with a network) it reaches its gateway.
+    // (One memo scope for all nodes: readiness changes don't touch the network views.)
+    withNetMemo(w, () => updateNodes(w, (id) => nodeOnline(w, id)));
     reconcile(w.k8s);
   }
   tickApp(w, dt);

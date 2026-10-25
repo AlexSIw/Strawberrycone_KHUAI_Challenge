@@ -74,6 +74,8 @@ export interface Iface {
   desc?: string;
   /** Edge-detect cache for syslog. Written ONLY by syncNet. */
   _oper?: IfOper;
+  /** Edge-detect cache for %EC-5-BUNDLE: Po number this member was bundled into at the last sync (null = not bundled). Written ONLY by syncNet. */
+  _inPo?: number | null;
 }
 
 export interface Hsrp {
@@ -337,7 +339,8 @@ export interface Deployment {
 }
 
 export interface K8sState {
-  nodes: Record<string, { ready: boolean; rack: string; uplink: string }>;
+  /** `cordoned` = `kubectl cordon`/`drain`: the scheduler places no new pods there (running ones stay unless drained). */
+  nodes: Record<string, { ready: boolean; rack: string; uplink: string; cordoned?: boolean }>;
   deployments: Record<string, Deployment>;
   pods: Pod[];
   services: Record<string, { selector: string }>;

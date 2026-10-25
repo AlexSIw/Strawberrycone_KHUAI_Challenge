@@ -1,4 +1,4 @@
-import { isLoopback, ping, resolveName } from '../network';
+import { httpStatus, isLoopback, lbShares, listening, reach, resolve } from '../network';
 import { own } from '../util';
 import type { Command } from './types';
 import { bold, dim, err, green, ok, out, red, yellow } from './types';
@@ -96,7 +96,6 @@ export const webCommands: Command[] = [
   },
   {
     name: 'curl',
-    maxStage: 2,
     minStage: 2,
     usage: 'curl [-v] http://<이름>[:포트]/<경로>',
     summary: '로봇 손님처럼 웹 요청(HTTP) 보내기',
@@ -108,23 +107,49 @@ export const webCommands: Command[] = [
       if (!m) return err('사용법: curl [-v] http://web/enroll');
       const [, name, portStr, path = '/'] = m;
       const port = portStr ? parseInt(portStr, 10) : 80;
-      // localhost / 127.0.0.1 is the machine you are on.
-      const ip = isLoopback(name) ? '127.0.0.1' : resolveName(w, name);
-      if (!ip) return { lines: [red(`curl: (6) Could not resolve host: ${name}`), dim('(이름을 IP 주소로 바꾸지 못했어요)')] };
-      const p = ping(w, host, name);
       const lines: string[] = [];
-      if (verbose) lines.push(dim(`*   Trying ${ip}:${port}...`));
-      if (!p.ok) {
-        lines.push(red(`curl: (28) Failed to connect to ${name} port ${port}: Timed out`), dim('(기다려도 대답이 없어서 포기했어요)'));
-        return { lines };
+      // localhost / 127.0.0.1 is the machine you are on.
+      let ip = '127.0.0.1';
+      if (!isLoopback(name)) {
+        const r = resolve(w, name, host);
+        if (!r.ip) return { lines: [red(`curl: (6) Could not resolve host: ${name}`), dim(r.failure === 'dns_down' ? '(이름을 물어볼 DNS 서버에 닿지 않아요)' : '(이름을 IP 주소로 바꾸지 못했어요)')], events: ['curl:dns'] };
+        ip = r.ip;
       }
-      const s = w.web;
-      const serves = s && s.running && p.targetId === s.host && s.port === port;
-      if (!serves) {
+      if (verbose) lines.push(dim(`*   Trying ${ip}:${port}...`));
+      let server = host;
+      if (ip !== '127.0.0.1') {
+        const r = reach(w, host, ip, { port });
+        if (!r.ok || !r.targetId) {
+          lines.push(red(`curl: (28) Failed to connect to ${name} port ${port} after 3002 ms: Timed out`), dim('(기다려도 대답이 없어서 포기했어요)'));
+          return { lines, events: ['curl:timeout'] };
+        }
+        server = r.targetId;
+      }
+      let serverPort = port;
+      const lb = w.net?.lb;
+      const refused = () => {
         if (verbose) lines.push(dim('> SYN  →'), dim('< RST  ← (그 포트에서 기다리는 프로그램이 없어요)'));
-        lines.push(red(`curl: (7) Failed to connect to ${name} port ${port}: Connection refused`));
+        lines.push(red(`curl: (7) Failed to connect to ${name} port ${port} after 1 ms: Connection refused`));
         if (!verbose) lines.push(dim('(연결 거부: 문을 두드렸는데 아무도 안 열어줬어요)'));
         return { lines, events: ['curl:refused'] };
+      };
+      // The L4's VIP: the active unit hands the connection to a healthy pool member.
+      if (lb && (ip === lb.vip || ip === lb.publicIp)) {
+        if (port !== lb.port) return refused();
+        const pick = lbShares(w).sort((a, b) => b.share - a.share)[0]?.member;
+        if (!pick) {
+          if (verbose) lines.push(dim(`* Connected to ${name} (${ip}) port ${port}`), dim(`> GET ${path} HTTP/1.1`), dim('< HTTP/1.1 503 Service Unavailable'));
+          lines.push(red('<html><body><h1>503 Service Unavailable</h1>No server is available to handle this request.</body></html>'), dim('(L4가 요청을 넘길 건강한 서버가 하나도 없대요)'));
+          return { lines, events: ['curl:503'] };
+        }
+        server = pick.host;
+        serverPort = pick.port;
+      }
+      const status = httpStatus(w, server, serverPort, path);
+      if (status === 0) {
+        if (!listening(w, server, serverPort)) return refused();
+        lines.push(red('curl: (1) Received HTTP/0.9 when not allowed'), dim('(웹 서버가 아닌 프로그램이 대답했어요)'));
+        return { lines, events: ['curl:not-http'] };
       }
       if (verbose) {
         lines.push(
@@ -134,11 +159,11 @@ export const webCommands: Command[] = [
           dim(`* Connected to ${name} (${ip}) port ${port}`),
           dim(`> GET ${path} HTTP/1.1`),
           dim(`> Host: ${name}`),
+          dim(`< HTTP/1.1 ${status === 200 ? '200 OK' : '404 Not Found'}`),
+          dim('< Content-Type: application/json'),
         );
       }
-      const found = s!.routes.includes(path);
-      if (verbose) lines.push(dim(`< HTTP/1.1 ${found ? '200 OK' : '404 Not Found'}`), dim('< Content-Type: application/json'));
-      if (!found) {
+      if (status !== 200) {
         lines.push(yellow(`{"error":"Not Found","path":"${path}"}`));
         return { lines, events: [`curl:404:${path}`] };
       }
@@ -146,6 +171,7 @@ export const webCommands: Command[] = [
         '/': '{"service":"KHU 수강신청","status":"ok"}',
         '/enroll': '{"message":"수강신청 페이지","open":true}',
         '/courses': '{"courses":["대학 글쓰기","컴퓨터 개론","교양 영어"]}',
+        '/health': '{"status":"UP"}',
       };
       lines.push(green(own(body, path) ?? '{"status":"ok"}'));
       return { lines, events: [`curl:200:${path}`] };

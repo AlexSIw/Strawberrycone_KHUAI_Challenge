@@ -1,4 +1,4 @@
-import { APP_PORT, endpointReaches, parseEndpoint, podAge, podsOf, readyPods, rollback, setImage, unscheduled } from '../k8s';
+import { APP_PORT, cordon, drain, endpointReaches, parseEndpoint, podAge, podsOf, readyPods, rollback, setImage, unscheduled } from '../k8s';
 import type { Command, CmdResult } from './types';
 import { bold, dim, err, green, ok, out, red, yellow } from './types';
 import type { Deployment, World } from '../types';
@@ -36,6 +36,9 @@ function positional(args: string[]): string[] {
 
 /** The deployment a player named, looked up safely ("constructor" is just an unknown name). */
 const deploymentOf = (w: World, name: string): Deployment | undefined => own(w.k8s?.deployments, name);
+
+/** Accepts "n1" and "node/n1". */
+const nodeName = (s: string | undefined) => (s ?? '').replace(/^(node|nodes|no)\//, '');
 
 const isIp = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
 
@@ -81,7 +84,8 @@ export const k8sCommands: Command[] = [
         // Pad before colouring: colour codes would otherwise count toward the width and shift PODS.
         const label = `${temp.toFixed(0)}°C`.padEnd(6);
         const t = temp >= 40 ? red(label) : temp >= 32 ? yellow(label) : label;
-        rows.push(`${id.padEnd(6)}${n.ready ? green('Ready'.padEnd(10)) : red('NotReady'.padEnd(10))} ${n.rack.padEnd(7)} ${t} ${w.k8s!.pods.filter((p) => p.node === id).length}`);
+        const st = (n.ready ? 'Ready' : 'NotReady') + (n.cordoned ? ',SchedulingDisabled' : '');
+        rows.push(`${id.padEnd(6)}${n.ready && !n.cordoned ? green(st.padEnd(10)) : n.ready ? yellow(st.padEnd(10)) : red(st.padEnd(10))} ${n.rack.padEnd(7)} ${t} ${w.k8s!.pods.filter((p) => p.node === id).length}`);
       }
       return { lines: rows, events: ['k8s_get_nodes'] };
     },
@@ -119,6 +123,54 @@ export const k8sCommands: Command[] = [
         rows.push(`${name.padEnd(14)}→ ${readyPods(w.k8s!, s.selector).map((p) => p.ip).join(', ') || red('(연결된 pod 없음)')}`);
       }
       return { lines: [...rows, dim('Service 이름으로 부르면 pod가 바뀌어도 알아서 연결돼요.')], events: ['k8s_get_svc'] };
+    },
+  },
+  {
+    name: 'cordon',
+    minStage: 4,
+    usage: 'cordon <노드>',
+    summary: '노드에 새 pod를 더 보내지 않기 (있던 pod는 그대로)',
+    run(args, { w }) {
+      const bad = cluster(w);
+      if (bad) return bad;
+      const node = nodeName(positional(args)[0]);
+      if (!node || !own(w.k8s!.nodes, node)) return err('사용법: cordon <노드>  (nodes 로 이름 확인)');
+      if (w.k8s!.nodes[node].cordoned) return out(dim(`node/${node} already cordoned`));
+      cordon(w.k8s!, node);
+      return { lines: [`node/${node} cordoned`, dim('(이제 이 노드에는 새 pod가 안 들어가요. 있던 pod는 그대로 일해요)')], events: [`k8s_cordon:${node}`] };
+    },
+  },
+  {
+    name: 'uncordon',
+    minStage: 4,
+    usage: 'uncordon <노드>',
+    summary: '노드를 다시 pod 받을 수 있게 열기',
+    run(args, { w }) {
+      const bad = cluster(w);
+      if (bad) return bad;
+      const node = nodeName(positional(args)[0]);
+      if (!node || !own(w.k8s!.nodes, node)) return err('사용법: uncordon <노드>  (nodes 로 이름 확인)');
+      if (!w.k8s!.nodes[node].cordoned) return out(dim(`node/${node} already uncordoned`));
+      cordon(w.k8s!, node, false);
+      return { lines: [`node/${node} uncordoned`, dim('(이 노드도 다시 새 pod를 받아요)')], events: [`k8s_uncordon:${node}`] };
+    },
+  },
+  {
+    name: 'drain',
+    minStage: 4,
+    usage: 'drain <노드>',
+    summary: '노드를 비우기: 새 pod 막고, 있던 pod를 다른 노드로 옮기기',
+    run(args, { w }) {
+      const bad = cluster(w);
+      if (bad) return bad;
+      const node = nodeName(positional(args)[0]);
+      if (!node || !own(w.k8s!.nodes, node)) return err('사용법: drain <노드>  (nodes 로 이름 확인)');
+      const lines = [w.k8s!.nodes[node].cordoned ? `node/${node} already cordoned` : `node/${node} cordoned`];
+      const gone = drain(w.k8s!, node) ?? [];
+      for (const p of gone) lines.push(`evicting pod default/${p.name}`);
+      for (const p of gone) lines.push(`pod/${p.name} evicted`);
+      lines.push(`node/${node} drained`, dim('(pod들은 다른 노드에서 새로 떠요. 점검이 끝나면 uncordon 으로 다시 열어요)'));
+      return { lines, events: [`k8s_cordon:${node}`, `k8s_drain:${node}`] };
     },
   },
   {
