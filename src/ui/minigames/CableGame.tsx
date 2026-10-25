@@ -1,20 +1,22 @@
-// 케이블 미니게임 (Among Us 전선 느낌): 서버 포트를 끌어서 스위치 포트에 꽂고, 고장 난 선은 테스트·교체한다.
+// 케이블 미니게임 (Among Us 전선 느낌): 서버 포트를 끌어서 오늘의 스위치(TOR) 포트에 꽂고, 고장 난 선은 테스트·교체한다.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { mapDevicesOf, mapSwitchOf } from '../../game/worldView';
 import { connectCable, replaceCable } from '../../sim/actions';
 import { cableAt, linkUp, powered } from '../../sim/network';
 import type { Cable, Device, World } from '../../sim/types';
 import { gameStore } from '../../store/game';
 import { useStageState } from '../useStageState';
-import { GameFooter, Led, MiniGameFrame, NoteLine, TaskBar, rackName, useDragDrop, useNote, useTimers, useWorld } from './common';
+import { GameFooter, Led, MiniGameFrame, NoteLine, TaskBar, rackName, useDay, useDragDrop, useNote, useTimers, useWorld } from './common';
 import './CableGame.css';
 
-const SWITCH = 'sw1';
-const SHOWN_PORT = /^p[1-8]$/;
+/** Server ports on the TOR's front panel (the Te ports are its uplinks). */
+const SHOWN_PORT = /^Gi\d+\/\d+\/\d+$/;
 /** A node comes back to Ready once its rack is cooler than this (see sim/k8s.ts updateNodes). */
 const NODE_SAFE_TEMP = 35;
 
 type Pt = { x: number; y: number };
-type WireState = 'up' | 'down' | 'nopower';
+/** degraded = link up but frames arrive with errors (bad crimp, damaged jacket) */
+type WireState = 'up' | 'degraded' | 'down' | 'nopower';
 
 interface TestResult {
   kind: 'ok' | 'bad' | 'warn';
@@ -31,11 +33,11 @@ const otherEnd = (c: Cable, endpoint: string) => (c.a === endpoint ? c.b : c.a);
 const labelOf = (w: World, id: string) => w.devices[id]?.label ?? id;
 
 function sigOf(w: World, c: Cable): string {
-  return `${c.broken}|${powered(w, devOf(c.a))}|${powered(w, devOf(c.b))}`;
+  return `${c.broken}|${!!c.degraded}|${powered(w, devOf(c.a))}|${powered(w, devOf(c.b))}`;
 }
 
 function wireState(w: World, c: Cable): WireState {
-  if (linkUp(w, devOf(c.a), portOf(c.a))) return 'up';
+  if (linkUp(w, devOf(c.a), portOf(c.a))) return c.degraded ? 'degraded' : 'up';
   return powered(w, devOf(c.a)) && powered(w, devOf(c.b)) ? 'down' : 'nopower';
 }
 
@@ -43,6 +45,7 @@ function wireState(w: World, c: Cable): WireState {
 function testOf(w: World, c: Cable): TestResult {
   const sig = sigOf(w, c);
   if (c.broken) return { kind: 'bad', text: '신호 없음 ❌ 케이블 내부 단선 의심', sig };
+  if (c.degraded) return { kind: 'warn', text: '신호는 가는데 에러가 섞여요 ⚠ 케이블 손상 의심', sig };
   const off = [devOf(c.a), devOf(c.b)].filter((id) => !powered(w, id));
   if (off.length) {
     return { kind: 'warn', text: `한쪽 장비 전원 꺼짐 ⚡ (${off.map((id) => labelOf(w, id)).join(', ')}) · 케이블은 정상`, sig };
@@ -96,6 +99,8 @@ function useJackPositions(board: RefObject<HTMLDivElement | null>): Record<strin
 
 export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   const world = useWorld();
+  const day = useDay();
+  const SWITCH = day ? mapSwitchOf(day) : 'TOR-01';
   const boardRef = useRef<HTMLDivElement>(null);
   const pts = useJackPositions(boardRef);
   const [selected, setSelected] = useState<string | null>(null);
@@ -131,7 +136,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
     if (!w || mode !== 'build' || !to.startsWith(`${SWITCH}:`)) return;
     if (cableAt(w, from)) return;
     if (cableAt(w, to)) {
-      showNote('bad', `${portOf(to).toUpperCase()} 포트는 이미 사용 중이에요. 빈 포트에 꽂아 주세요.`);
+      showNote('bad', `${portOf(to)} 포트는 이미 사용 중이에요. 빈 포트에 꽂아 주세요.`);
       return;
     }
     gameStore.getState().act((ww) => {
@@ -142,16 +147,22 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
     const lit = after ? linkUp(after, devOf(from), portOf(from)) : false;
     showNote(
       'ok',
-      `딸깍! ${labelOf(w, devOf(from))} ↔ 스위치 ${portOf(to).toUpperCase()} 연결` + (lit ? ' · LED 초록불 💚' : ' · LED는 아직 꺼져 있어요 (전원 확인)'),
+      `딸깍! ${labelOf(w, devOf(from))} ↔ ${labelOf(w, SWITCH)} ${portOf(to)} 연결` + (lit ? ' · LED 초록불 💚' : ' · LED는 아직 꺼져 있어요 (전원 확인)'),
     );
   };
 
   const { drag, bind } = useDragDrop<string>(tryConnect);
 
-  if (!world) return null;
+  if (!world || !day) return null;
   const sw = world.devices[SWITCH];
   const ports = (sw?.ports ?? []).filter((p) => SHOWN_PORT.test(p));
-  const servers = Object.values(world.devices).filter((d) => d.kind === 'server' && d.id !== 'ops');
+  // Today's servers; without a list, the ones that belong on this switch (cabled to it, or not cabled yet).
+  const servers = mapDevicesOf(day, world).filter((d) => {
+    if (d.kind !== 'server' || d.id === 'ops') return false;
+    if (day.mapDevices) return true;
+    const c = cableAt(world, endpointOf(d));
+    return !c || devOf(otherEnd(c, endpointOf(d))) === SWITCH;
+  });
   const installed = servers.filter((d) => d.installed);
   const notMounted = servers.length - installed.length;
   const holding = drag?.item ?? selected;
@@ -209,7 +220,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
     const ep = `${SWITCH}:${p}`;
     const c = cableAt(world, ep);
     if (selected && mode === 'build') return tryConnect(selected, ep);
-    if (c) showNote('info', `${p.toUpperCase()}: ${labelOf(world, devOf(otherEnd(c, ep)))} 연결됨 · ${linkUp(world, SWITCH, p) ? 'LED 깜빡임(정상)' : 'LED 꺼짐'}`);
+    if (c) showNote('info', `${p}: ${labelOf(world, devOf(otherEnd(c, ep)))} 연결됨 · ${linkUp(world, SWITCH, p) ? 'LED 깜빡임(정상)' : 'LED 꺼짐'}`);
     else showNote('info', mode === 'build' ? '빈 포트예요. 먼저 왼쪽 서버의 포트를 고르세요.' : '빈 포트예요.');
   };
 
@@ -221,6 +232,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   const allConnected = installed.length > 0 && states.every((s) => s.c);
   const allLinked = allConnected && states.every((s) => s.state === 'up');
   const anyDown = states.some((s) => s.state === 'down');
+  const anyDegraded = states.some((s) => s.state === 'degraded');
   const anyNoPower = states.some((s) => s.state === 'nopower');
   // Build: every server (also the ones still in boxes) needs a cable. Repair: every link must be green.
   const done = mode === 'build' ? notMounted === 0 && allConnected && !anyDown : allLinked;
@@ -230,6 +242,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   else if (mode === 'build' && !allConnected)
     task = holding ? '이제 오른쪽 스위치의 빈 포트를 클릭하거나, 끌어다 놓으세요.' : '왼쪽 서버의 포트(eth0)를 끌어서 오른쪽 스위치의 빈 포트에 꽂으세요.';
   else if (anyDown) task = 'LED가 꺼진 링크가 있어요. 🔍 테스트로 원인부터 확인해 보세요.';
+  else if (anyDegraded) task = '신호가 불안정한 링크가 있어요. 🔍 테스트로 어느 선인지 찾아보세요.';
   else if (mode === 'build' && notMounted > 0) task = `아직 랙에 없는 서버가 ${notMounted}대 있어요. 서버실에서 장착한 뒤 여기서 연결하세요.`;
   else if (allLinked)
     task = mode === 'build' ? '완료! 모든 서버가 스위치와 초록불로 연결됐어요.' : replacedHere ? '완료! 모든 링크가 다시 초록불이에요.' : '모든 링크가 초록불이에요. 지금은 고칠 게 없어요.';
@@ -268,7 +281,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
 
   return (
     <MiniGameFrame
-      title={mode === 'build' ? '네트워크실 · 스위치에 케이블 연결' : '네트워크실 · 케이블 점검'}
+      title={mode === 'build' ? `케이블 연결 · ${labelOf(world, SWITCH)}` : `케이블 점검 · ${labelOf(world, SWITCH)}`}
       icon="🔌"
       size="wide"
       onEscape={() => {
@@ -350,7 +363,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
 
           <div className="cb-col cb-switch">
             <div className="cb-col-title">
-              스위치 {SWITCH} <Led state={powered(world, SWITCH) ? 'on' : 'off'} title={powered(world, SWITCH) ? '전원 ON' : '전원 OFF'} />
+              스위치 {labelOf(world, SWITCH)} <Led state={powered(world, SWITCH) ? 'on' : 'off'} title={powered(world, SWITCH) ? '전원 ON' : '전원 OFF'} />
             </div>
             <div className="cb-faceplate">
               {ports.map((p) => {
@@ -369,7 +382,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
                     aria-label={`스위치 ${p} 포트: ${c ? `${labelOf(world, devOf(otherEnd(c, ep)))} 연결됨` : '비어 있음'}`}
                   >
                     <span className="cb-jack-hole" data-jack={ep} aria-hidden />
-                    <span className="cb-port-name">{p.toUpperCase()}</span>
+                    <span className="cb-port-name">{p}</span>
                     <Led state={up ? 'blink' : 'off'} />
                     <span className="cb-port-use">{c ? labelOf(world, devOf(otherEnd(c, ep))) : '비어 있음'}</span>
                   </button>
@@ -393,6 +406,9 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
         </span>
         <span>
           <i className="cb-swatch down" /> 양쪽 전원은 켜졌는데 신호 없음
+        </span>
+        <span>
+          <i className="cb-swatch degraded" /> 신호 불안정 (에러 섞임)
         </span>
         <span>
           <i className="cb-swatch nopower" /> 한쪽 장비 전원 꺼짐

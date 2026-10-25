@@ -7,7 +7,7 @@ import './Ending.css';
 
 const CONFETTI_COLORS = ['#d7262b', '#e9b77c', '#ffd166', '#4fd17a', '#6ab7ff', '#f4ece4'];
 
-/** The finale: a certificate for finishing every stage. */
+/** The finale after D-Day: a certificate for the whole week. */
 export function Ending() {
   const save = useGame((s) => s.save);
   const totalStars = STAGES.reduce((a, st) => a + (save.best[st.id]?.stars ?? 0), 0);
@@ -58,7 +58,7 @@ export function Ending() {
           </div>
 
           <p className="end-body">
-            위 사람은 케이블 한 줄부터 쿠버네티스 클러스터까지 직접 고치며
+            위 사람은 D-5 첫 출근부터 케이블 한 줄, 스위치 설정, 관제까지 직접 해내며
             <br />
             수강신청 날 서버를 끝까지 지켜냈기에 이 증서를 드립니다.
           </p>
@@ -82,7 +82,7 @@ export function Ending() {
               )}
             </div>
             <div>
-              <span className="end-stat-label">클리어한 스테이지</span>
+              <span className="end-stat-label">마친 날</span>
               <span className="end-stat-value">
                 {STAGES.filter((st) => save.best[st.id]).length}
                 <small>/{STAGES.length}</small>
@@ -95,7 +95,7 @@ export function Ending() {
             <ol>
               {STAGES.map((st) => (
                 <li key={st.id}>
-                  <span className="end-recap-no">{st.id}</span>
+                  <span className="end-recap-no">{st.label}</span>
                   <span className="end-recap-title">{st.title}</span>
                   <span className="end-recap-topics">{st.topics.join(' · ')}</span>
                   <span className="end-recap-stars" aria-label={`별 ${save.best[st.id]?.stars ?? 0}개`}>
@@ -122,7 +122,7 @@ export function Ending() {
       {/* Sticky so the next step is visible without scrolling past the certificate */}
       <div className="end-actions">
         <p className="end-next">
-          {perfect ? '모든 스테이지 별 3개! 완벽한 수료예요 🏆' : '축하해요! 별 3개를 못 받은 스테이지는 스테이지 선택에서 다시 도전할 수 있어요.'}
+          {perfect ? '모든 날 별 3개! 완벽한 수료예요 🏆' : '축하해요! 별 3개를 못 받은 날은 달력에서 다시 도전할 수 있어요.'}
         </p>
         <button className="btn primary end-btn" onClick={() => gameStore.getState().goTitle()}>
           처음 화면으로

@@ -140,9 +140,9 @@ export const RACK_TEX = {
 
 export const CABINET_TEX = { w: 96, h: 120, top: 24 };
 
-/** Switch port LED i (0..9): two rows of five. */
+/** Switch port LED i (0..15): two rows of eight (Gi1/0/1–8 on top; Gi1/0/9–12 and Te1/1/1–4 below). */
 export function switchLed(i: number) {
-  return { x: (6 + (i % 5) * 4) * PX, y: (12 + Math.floor(i / 5) * 3) * PX, w: 2 * PX, h: PX };
+  return { x: (4 + (i % 8) * 3) * PX, y: (12 + Math.floor(i / 8) * 3) * PX, w: 2 * PX, h: PX };
 }
 export const ROUTER_LEDS = {
   wan: { x: 8 * PX, y: 12 * PX, w: 2 * PX, h: PX },
@@ -358,13 +358,12 @@ function drawSwitch(p: Painter): void {
   drawCabinet(p, C.blue);
   p.box(3, 10, 26, 9, 0x2d3a5a);
   p.rect(4, 11, 24, 1, 0x3f4f78);
-  for (let i = 0; i < 10; i++) {
-    const x = 6 + (i % 5) * 4;
-    const y = 13 + Math.floor(i / 5) * 3;
+  for (let i = 0; i < 16; i++) {
+    const x = 4 + (i % 8) * 3;
+    const y = 13 + Math.floor(i / 8) * 3;
     p.rect(x, y, 2, 2, 0x0d0e12);
     p.rect(x, y, 2, 1, 0x1f2129);
   }
-  p.rect(25, 13, 2, 1, C.green);
   hangingCables(p, [6, 10, 14, 18, 22, 26], 19, 37);
 }
 

@@ -29,7 +29,7 @@ export function connectCable(w: World, a: string, b: string): string {
 
 export function replaceCable(w: World, cableId: string): void {
   const c = own(w.cables, cableId);
-  if (c) c.broken = false;
+  if (c) Object.assign(c, { broken: false, degraded: false });
 }
 
 export function repairCrac(w: World): void {

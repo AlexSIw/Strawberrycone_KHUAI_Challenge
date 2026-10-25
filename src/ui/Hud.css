@@ -48,38 +48,18 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Stage 7 countdown */
-.hud-survive {
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: center;
-  column-gap: 8px;
-  padding: 2px 10px 4px;
-  border: 2px solid var(--amber);
-  border-radius: 8px;
-  background: rgba(255, 181, 71, 0.12);
-  flex-shrink: 0;
-}
-.hud-survive-label { font-size: 11px; color: var(--amber); }
-.hud-survive-time { font-size: 17px; color: var(--amber); font-variant-numeric: tabular-nums; }
-.hud-survive-bar {
-  grid-column: 1 / -1;
-  height: 4px;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.hud-survive-bar i { display: block; height: 100%; background: var(--amber); transition: width 1s linear; }
-.hud-survive.soon { animation: hud-pulse 1s steps(2) infinite; }
-.hud-survive.done { border-color: var(--green); background: rgba(79, 209, 122, 0.12); }
-.hud-survive.done .hud-survive-label,
-.hud-survive.done .hud-survive-time { color: var(--green); }
-.hud-survive.done .hud-survive-bar i { background: var(--green); }
-.hud-survive.fixleft { border-color: var(--red-2); background: rgba(215, 38, 43, 0.15); animation: hud-pulse 1s steps(2) infinite; }
-.hud-survive.fixleft .hud-survive-label { color: var(--red-2); }
-
-@keyframes hud-pulse {
-  50% { box-shadow: 0 0 0 3px rgba(255, 181, 71, 0.35); }
+/* D-Day badge and overtime tag */
+.hud-stage-no.dday { background: #ffd166; border-color: #b08a2a; color: #2a1410; }
+.hud-date { color: var(--muted); }
+.hud-overtime {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--navy);
+  border: 1px solid var(--blue);
+  font-size: 11px;
+  color: var(--blue);
+  vertical-align: 2px;
 }
 
 /* KPI chips */
@@ -147,12 +127,9 @@
   .hud-btn kbd { display: none; }
   .hud-stage-title { display: none; }
   .hud-kpi { min-width: 0; padding: 2px 7px; }
-  .hud-survive-label { display: none; }
+  .hud-date { display: none; }
   /* Just "1x" (like the other buttons, icon-sized): its tooltip and label still say 이동 속도 */
   .hud-speed > [aria-hidden] { display: none; }
-}
-@media (max-width: 720px) {
-  .hud-stage-word { display: none; }
 }
 @media (max-width: 660px) {
   .hud-kpi:nth-child(2) { display: none; }
@@ -164,8 +141,6 @@
   .hud-kpi { height: 38px; padding: 1px 6px; }
   .hud-kpi-label { font-size: 10px; }
   .hud-kpi-value { font-size: 14px; }
-  .hud-survive { padding: 2px 6px 3px; }
-  .hud-survive-time { font-size: 15px; }
   .hud-buttons { gap: 4px; }
   .hud-btn { padding: 4px 6px; }
   .hud-speed { gap: 2px; }
@@ -175,23 +150,4 @@
   .hud { gap: 4px; padding: 0 6px; }
   .hud-buttons { gap: 3px; }
   .hud-btn { padding: 4px 5px; }
-}
-
-/* Stage 7 also shows the survive countdown: the other chips make room for it earlier. */
-@media (max-width: 1240px) {
-  .hud--survive .hud-btn-label { display: none; }
-}
-@media (max-width: 1100px) {
-  .hud--survive .hud-btn kbd { display: none; }
-}
-@media (max-width: 960px) {
-  .hud--survive .hud-survive-label { display: none; }
-  .hud--survive .hud-survive { column-gap: 0; }
-}
-@media (max-width: 600px) {
-  .hud--survive .hud-kpi:nth-child(3) { display: none; }
-}
-@media (max-width: 385px) {
-  /* The countdown already says which stage this is. */
-  .hud--survive .hud-stage { display: none; }
 }

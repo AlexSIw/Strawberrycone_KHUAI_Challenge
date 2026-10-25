@@ -1,6 +1,5 @@
 import { gameStore, useGame, type Modal } from '../store/game';
 import { ConceptsBook } from './ConceptsBook';
-import { Dashboard } from './Dashboard';
 import { HintChat } from './HintChat';
 import { ModalFrame } from './ModalFrame';
 import { Terminal } from './Terminal';
@@ -12,12 +11,13 @@ import { Quiz } from './boards/Quiz';
 import { CableGame } from './minigames/CableGame';
 import { PowerGame } from './minigames/PowerGame';
 import { RackGame } from './minigames/RackGame';
-import { RepairGame } from './minigames/RepairGame';
+import { GaugeModal } from './noc/GaugeModal';
+import { NocConsole } from './noc/NocConsole';
 
 /**
  * Renders the open window (the top of the store's window stack). Each window closes itself via
  * gameStore.closeModal(), which brings back the window underneath, if any.
- * The layer starts below the HUD, so its buttons (dashboard, radio, 도감…) still work with a window open.
+ * The layer starts below the HUD, so its buttons (관제, radio, 도감…) still work with a window open.
  */
 export function ModalHost() {
   const modal = useGame((s) => s.modal);
@@ -43,8 +43,13 @@ function renderWindow(modal: Modal) {
           </div>
         </ModalFrame>
       );
+    case 'noc':
+      return <NocConsole tab={modal.tab} />;
     case 'dashboard':
-      return <Dashboard />;
+      // v1 name of the monitor-wall screen: the NOC's SMS tab is today's dashboard.
+      return <NocConsole tab="sms" />;
+    case 'gauge':
+      return <GaugeModal target={modal.target} />;
     case 'hint':
       return <HintChat initialScenario={modal.scenarioId} />;
     case 'rack':
@@ -54,7 +59,8 @@ function renderWindow(modal: Modal) {
     case 'power':
       return <PowerGame />;
     case 'repair':
-      return <RepairGame target={modal.target} />;
+      // Facilities are monitor-only in v2: the repair spot shows the unit's gauges instead.
+      return <GaugeModal target={modal.target} />;
     case 'board':
       if (modal.board === 'decompose') return <DecomposeBoard />;
       if (modal.board === 'dockerfile') return <DockerfileBoard />;

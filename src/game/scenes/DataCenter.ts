@@ -1,8 +1,10 @@
-// The walkable data center: floor plan, equipment with live LEDs, the lion, the mentor and incident markers.
+// The walkable data center: floor plan, equipment with live LEDs, the lion and the mentor. What is broken is
+// only shown in the NOC (alarms); the map just flashes the monitor wall while alarms are open.
 import Phaser from 'phaser';
 import { getStage } from '../../content/stages';
 import type { InteractionKind, SpotId, StageDef } from '../../content/types';
-import { activeScenarios, visibleObjectives, type StageRun } from '../../sim/engine';
+import { openAlarms } from '../../sim/alarms';
+import { visibleObjectives, type StageRun } from '../../sim/engine';
 import type { World } from '../../sim/types';
 import { gameStore, type GameState } from '../../store/game';
 import { EventBus } from '../EventBus';
@@ -47,6 +49,7 @@ import {
   blackout,
   cracOk,
   LED_COLOR,
+  mapSwitchOf,
   patchLed,
   pduLeds,
   rackSlots,
@@ -54,6 +57,7 @@ import {
   routerLeds,
   SWITCH_PORTS,
   switchPortLeds,
+  torOf,
   unmountedServers,
   upsView,
   type LedState,
@@ -88,9 +92,9 @@ const VERB: Record<InteractionKind['kind'], string> = {
   console: '콘솔 접속',
   consolePick: '콘솔 접속',
   terminal: '터미널 열기',
-  dashboard: '대시보드 보기',
+  dashboard: '관제 화면 보기',
   mentor: '말 걸기',
-  repair: '수리하기',
+  repair: '계기판 보기',
   board: '열기',
   quiz: '퀴즈 풀기',
   inspect: '살펴보기',
@@ -98,10 +102,9 @@ const VERB: Record<InteractionKind['kind'], string> = {
   gauge: '계기판 보기',
 };
 
-function verbFor(k: InteractionKind, cracWorking: boolean): string {
+function verbFor(k: InteractionKind): string {
   if (k.kind === 'cable' && k.mode === 'repair') return '케이블 점검';
   if (k.kind === 'console') return `콘솔 접속 (${k.host})`;
-  if (k.kind === 'repair' && cracWorking) return '점검하기';
   return VERB[k.kind];
 }
 
@@ -212,9 +215,7 @@ export class DataCenter extends Phaser.Scene {
   private alertLevel: 'none' | 'warning' | 'critical' = 'none';
   private boxes: Phaser.GameObjects.Image[] = [];
   private mentorBubble!: Phaser.GameObjects.Image;
-  private markers = new Map<string, Marker>();
-  private markerKey = '';
-  /** Blue "여기" marker over the device of the current objective (hidden during incidents) */
+  /** Blue "여기" marker over the device of the current objective (hidden while alarms are open) */
   private goal!: Marker;
   private goalSpot: SpotId | null = null;
   /** Objective panel and toast stack, in canvas px (re-read every COVER_REFRESH_MS) */
@@ -243,8 +244,6 @@ export class DataCenter extends Phaser.Scene {
     this.monitorAlerts = [];
     this.alertLevel = 'none';
     this.boxes = [];
-    this.markers = new Map();
-    this.markerKey = '';
     this.goalSpot = null;
     this.covers = [];
     this.coversAt = 0;
@@ -273,7 +272,10 @@ export class DataCenter extends Phaser.Scene {
     this.spots = SPOTS.flatMap((spot) => {
       const kind = this.def.interactions[spot.id];
       if (!kind || (kind.kind === 'quiz' && !this.def.quiz)) return [];
-      return [{ spot, kind, area: roomAt(spot.x, spot.y) }];
+      // A rack with a top-of-rack switch says so in its prompt ("랙 1 · TOR-01").
+      const rack = RACK_SPOTS.find((r) => r.spot === spot.id)?.rack;
+      const tor = rack && run ? torOf(run.world, rack) : undefined;
+      return [{ spot: tor ? { ...spot, label: `${spot.label} · ${tor.label}` } : spot, kind, area: roomAt(spot.x, spot.y) }];
     });
     this.area = roomAt(PLAYER_SPAWN.x, PLAYER_SPAWN.y);
 
@@ -281,7 +283,7 @@ export class DataCenter extends Phaser.Scene {
 
     if (run) {
       this.refreshWorld(run.world);
-      this.refreshIncidents(run);
+      this.refreshAlarms(run);
       this.refreshGoal(run);
     }
     this.cleanups.push(gameStore.subscribe((s, prev) => this.onStore(s, prev)));
@@ -628,7 +630,7 @@ export class DataCenter extends Phaser.Scene {
       return;
     }
     if (s.run && s.run.world !== prev.run?.world) this.refreshWorld(s.run.world);
-    if (s.run && s.run.scenarios !== prev.run?.scenarios) this.refreshIncidents(s.run);
+    if (s.run && s.run.alarms !== prev.run?.alarms) this.refreshAlarms(s.run);
     if (s.run && s.run !== prev.run) this.refreshGoal(s.run);
     // A window opened/closed: drop held keys so the lion doesn't keep walking.
     if (isBlocked(s) !== isBlocked(prev)) this.input.keyboard?.resetKeys();
@@ -650,11 +652,12 @@ export class DataCenter extends Phaser.Scene {
     this.applyBlinkTo(led);
   }
 
-  /** Green flickers like network activity, red flashes, amber/off stay steady. */
+  /** Green flickers like network activity, red flashes, CRC alternates green/amber, amber/off stay steady. */
   private applyBlinkTo(led: Led): void {
     const t = this.blink + led.phase;
     if (led.state === 'green') led.rect.setAlpha(t % 3 === 0 ? 0.4 : 1);
     else if (led.state === 'red') led.rect.setAlpha(t % 2 === 0 ? 1 : 0.4);
+    else if (led.state === 'crc') led.rect.setFillStyle(this.blink % 2 === 0 ? LED_COLOR.green : LED_COLOR.amber).setAlpha(1);
     else led.rect.setAlpha(1);
   }
 
@@ -662,7 +665,7 @@ export class DataCenter extends Phaser.Scene {
     this.blink++;
     for (const l of this.leds) this.applyBlinkTo(l);
     const on = this.blink % 2 === 0;
-    // NOC screens flash during incidents
+    // NOC screens flash while alarms are open
     const color = this.alertLevel === 'critical' ? 0xff3b3b : 0xffb547;
     for (const r of this.monitorAlerts) {
       r.setFillStyle(color);
@@ -680,7 +683,7 @@ export class DataCenter extends Phaser.Scene {
 
   private refreshWorld(w: World): void {
     for (const r of this.racks) this.refreshRack(r, w);
-    switchPortLeds(w).forEach((s, i) => this.setLed(this.switchLeds[i], s));
+    switchPortLeds(w, mapSwitchOf(this.def)).forEach((s, i) => this.setLed(this.switchLeds[i], s));
     const rl = routerLeds(w);
     this.setLed(this.routerLeds.wan, rl.wan);
     this.setLed(this.routerLeds.lan, rl.lan);
@@ -704,13 +707,13 @@ export class DataCenter extends Phaser.Scene {
     this.powerOverlay.setVisible(dark);
     this.powerLamp.setVisible(dark);
 
-    const boxed = unmountedServers(w);
+    const boxed = unmountedServers(w, this.def);
     this.boxes.forEach((b, i) => b.setVisible(i < boxed));
   }
 
   private refreshRack(r: RackView, w: World): void {
     const slots = rackSlots(w, r.rack).slice(0, RACK_TEX.slots);
-    const sig = slots.map((s) => `${s.id}:${s.installed ? 1 : 0}`).join(',');
+    const sig = slots.map((s) => `${s.label}:${s.installed ? 1 : 0}`).join(',');
     if (sig !== r.sig) {
       r.sig = sig;
       // the "설치 전" outline has an endless tween; Phaser doesn't stop tweens of destroyed objects
@@ -728,7 +731,7 @@ export class DataCenter extends Phaser.Scene {
         if (s.installed) {
           const unit = this.add.image(ux, uy, 'server-unit').setOrigin(0).setDepth(r.depth + 0.1);
           const label = this.add
-            .text(ux + 5, uy + 3, s.id, { fontFamily: FONT, fontSize: '11px', color: '#e8eefc' })
+            .text(ux + 5, uy + 3, s.label, { fontFamily: FONT, fontSize: '11px', color: '#e8eefc' })
             .setDepth(r.depth + 0.3);
           const led = this.makeLed(ux + RACK_TEX.ledX, uy + RACK_TEX.ledY, 6, 6, r.depth + 0.2);
           r.parts.push(unit, label, led.rect);
@@ -742,9 +745,9 @@ export class DataCenter extends Phaser.Scene {
             .setStrokeStyle(2, 0xffb547, 0.8)
             .setDepth(r.depth + 0.1);
           const label = this.add
-            .text(ux + 5, uy + 3, `${s.id} 설치 전`, { fontFamily: FONT, fontSize: '11px', color: '#ffb547' })
+            .text(ux + 5, uy + 3, `${s.label} 설치 전`, { fontFamily: FONT, fontSize: '11px', color: '#ffb547' })
             .setDepth(r.depth + 0.3);
-          if (label.width > RACK_TEX.unitW - 8) label.setText(s.id);
+          if (label.width > RACK_TEX.unitW - 8) label.setText(s.label);
           this.tweens.add({ targets: ghost, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
           r.parts.push(ghost, label);
         }
@@ -767,63 +770,13 @@ export class DataCenter extends Phaser.Scene {
     } else r.temp.setVisible(false);
   }
 
-  private refreshIncidents(run: StageRun): void {
-    const active = activeScenarios(run);
-    this.angry = active.some((a) => a.def.severity === 'critical');
-    this.alertLevel = this.angry ? 'critical' : active.length ? 'warning' : 'none';
-    this.mentorBubble.setVisible(active.length > 0);
-
-    const key = active.map((a) => a.rt.id).join('|');
-    if (key === this.markerKey) return;
-    this.markerKey = key;
-
-    const ids = new Set(active.map((a) => a.rt.id));
-    for (const [id, m] of this.markers) {
-      if (ids.has(id)) continue;
-      // stop the endless pulse tweens too (they'd keep running on destroyed objects)
-      this.tweens.killTweensOf([...m.container.list, m.arrow]);
-      m.container.destroy();
-      m.arrow.destroy();
-      this.markers.delete(id);
-    }
-    const byRoom = new Map<AreaId, typeof active>();
-    for (const a of active) byRoom.set(a.def.room, [...(byRoom.get(a.def.room) ?? []), a]);
-    for (const [room, list] of byRoom) {
-      const r = ROOM_BY_ID[room];
-      // Clear of the room name painted on the floor, so neither hides the other.
-      const at = r.marker ?? { x: r.label.x, y: r.label.y - 1.5 };
-      list.forEach((a, i) => {
-        const x = Math.round(at.x * TILE + (i - (list.length - 1) / 2) * 170);
-        const y = Math.round(at.y * TILE);
-        let m = this.markers.get(a.rt.id);
-        if (!m) {
-          m = this.createMarker(a.def.title, a.def.severity === 'critical' || a.def.severity === 'major' ? 'critical' : 'warning');
-          this.markers.set(a.rt.id, m);
-        }
-        m.x = x;
-        m.y = y;
-        m.container.setPosition(x, y);
-      });
-    }
-  }
-
-  private createMarker(title: string, severity: 'critical' | 'warning'): Marker {
-    const bubble = this.add.image(0, 0, 'bubble-alert').setOrigin(0.5, 1).setScale(1.5);
-    const critical = severity === 'critical';
-    const tag = this.add
-      .text(0, 4, title, {
-        fontFamily: FONT,
-        fontSize: '12px',
-        color: critical ? '#ffffff' : '#2a1410',
-        backgroundColor: critical ? '#d7262b' : '#ffb547',
-        padding: { x: 5, y: 2 },
-      })
-      .setOrigin(0.5, 0);
-    const container = this.add.container(0, 0, [bubble, tag]).setDepth(DEPTH.marker);
-    this.tweens.add({ targets: bubble, scale: 1.8, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    const arrow = this.add.image(0, 0, 'arrow').setDepth(DEPTH.arrow).setVisible(false);
-    this.tweens.add({ targets: arrow, alpha: 0.45, duration: 380, yoyo: true, repeat: -1 });
-    return { container, arrow, x: 0, y: 0, half: Math.ceil(tag.width / 2) };
+  /** The monitor wall flashes (red for critical/major, amber otherwise) while the NOC has open alarms. */
+  private refreshAlarms(run: StageRun): void {
+    const open = openAlarms(run.alarms);
+    const severe = open.some((a) => a.sev === 'critical' || a.sev === 'major');
+    this.angry = open.some((a) => a.sev === 'critical');
+    this.alertLevel = severe ? 'critical' : open.length ? 'warning' : 'none';
+    this.mentorBubble.setVisible(open.length > 0);
   }
 
   /** The "go here" marker for the current objective: a small blue tag that bobs over the device. */
@@ -844,10 +797,10 @@ export class DataCenter extends Phaser.Scene {
     return { container, arrow, x: 0, y: 0, half: Math.ceil(tag.width / 2) };
   }
 
-  /** Point at the device of the first unfinished objective, unless an incident needs the player. */
+  /** Point at the device of the first unfinished objective, unless an alarm needs the player. */
   private refreshGoal(run: StageRun): void {
     const next = visibleObjectives(this.def, run).find((o) => !(o.id in run.objectivesDone));
-    const spot = activeScenarios(run).length === 0 && next?.spot && this.def.interactions[next.spot] ? next.spot : null;
+    const spot = openAlarms(run.alarms).length === 0 && next?.spot && this.def.interactions[next.spot] ? next.spot : null;
     if (spot === this.goalSpot) return;
     this.goalSpot = spot;
     if (!spot) {
@@ -876,13 +829,13 @@ export class DataCenter extends Phaser.Scene {
   }
 
   /**
-   * Off-screen markers get an arrow at the edge of the view pointing at them. A marker hidden under
+   * An off-screen goal marker gets an arrow at the edge of the view pointing at it. A marker hidden under
    * the objective panel or the toast stack counts as off-screen too, and a marker whose tag only
    * partly sticks under one of them is nudged sideways so the whole tag can be read.
    */
   private updateArrows(time: number): void {
     const goalOn = this.goalSpot !== null;
-    if (this.markers.size === 0 && !goalOn) return;
+    if (!goalOn) return;
     this.readCovers(time);
     const cam = this.cameras.main;
     const v = cam.worldView;
@@ -928,18 +881,11 @@ export class DataCenter extends Phaser.Scene {
       m.arrow.setPosition(wx, wy).setRotation(Math.atan2(m.y - wy, m.x - wx)).setScale(1.6 / z);
     };
 
-    for (const m of this.markers.values()) {
-      // fade a marker the lion is standing under so it doesn't hide him
-      const close = Math.abs(m.x - this.player.x) < 90 && m.y - 70 < this.player.y && this.player.y < m.y + 70;
-      place(m, close ? 0.35 : 1);
-    }
-    if (goalOn) {
-      // The [E] prompt takes over once the lion is at the device.
-      const there = this.near?.spot.id === this.goalSpot;
-      this.goal.container.setVisible(!there);
-      if (there) this.goal.arrow.setVisible(false);
-      else place(this.goal, 1);
-    }
+    // The [E] prompt takes over once the lion is at the device.
+    const there = this.near?.spot.id === this.goalSpot;
+    this.goal.container.setVisible(!there);
+    if (there) this.goal.arrow.setVisible(false);
+    else place(this.goal, 1);
   }
 
   // ---------- per frame ----------
@@ -1042,8 +988,8 @@ export class DataCenter extends Phaser.Scene {
       return;
     }
     const { spot, kind } = near;
-    // the verb can change while standing still (CRAC breaks → "점검하기" becomes "수리하기")
-    const label = `${spot.label} · ${verbFor(kind, this.cracSpinning)}`;
+    // redrawn only when the text changes
+    const label = `${spot.label} · ${verbFor(kind)}`;
     if (this.promptLabel !== label) {
       this.promptLabel = label;
       this.drawPrompt(label);

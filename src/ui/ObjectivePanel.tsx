@@ -1,24 +1,9 @@
 import { useState } from 'react';
 import { getStage } from '../content/stages';
-import { activeScenarios } from '../sim/engine';
-import type { RoomId } from '../sim/types';
+import { openAlarms } from '../sim/alarms';
 import { gameStore, useGame } from '../store/game';
-import { lockedText, nextStepText, objectiveStatus } from './objectiveStatus';
+import { lockedText, objectiveStatus, waitingText } from './objectiveStatus';
 import './ObjectivePanel.css';
-
-const ROOM_LABEL: Record<RoomId, string> = {
-  server: '서버실',
-  network: '네트워크실',
-  power: '전원실',
-  cooling: '냉각실',
-  noc: '관제실',
-};
-
-function elapsed(sec: number): string {
-  const s = Math.max(0, Math.floor(sec));
-  if (s < 5) return '방금';
-  return s < 60 ? `${s}초 전` : `${Math.floor(s / 60)}분 ${s % 60}초 전`;
-}
 
 const startsCollapsed = () => {
   try {
@@ -28,7 +13,10 @@ const startsCollapsed = () => {
   }
 };
 
-/** Left column: what to do now (objectives) and what is broken now (incidents). */
+/**
+ * Left column: today's missions, and one alarm chip that opens the NOC. What is broken (and where) is
+ * only ever seen in the NOC: the chip counts alarms, it never names a cause or a room.
+ */
 export function ObjectivePanel() {
   const run = useGame((s) => s.run);
   const screen = useGame((s) => s.screen);
@@ -39,8 +27,9 @@ export function ObjectivePanel() {
 
   const def = getStage(run.stage);
   const st = objectiveStatus(def, run);
-  const incidents = activeScenarios(run);
-  const now = run.ctx.stageTime;
+  const alarms = openAlarms(run.alarms);
+  const critical = alarms.filter((a) => a.sev === 'critical').length;
+  const unacked = alarms.some((a) => a.ackAt === null);
   const isDone = (id: string) => id in run.objectivesDone;
   const nextObjective = st.next;
   const doneList = st.done;
@@ -48,12 +37,9 @@ export function ObjectivePanel() {
   const locked = lockedText(st);
   // Finished tasks fold into one row so the panel doesn't grow over the map.
   const foldDone = doneList.length > 1 && !showDone;
-  // Nothing has gone wrong yet and the service isn't fully up: the player is still building it.
-  const preparing = run.scenarios.every((s) => s.activatedAt === null) && run.health.availability < 0.99;
-
-  // The highlighted objective already says what to do; the box is only for incidents and the waiting states
-  // (which say what unlocks next, never "목표 완료!" while objectives are still locked).
-  const nextStep = nextStepText(st);
+  // The highlighted objective already says what to do; the box is only for the waiting states (which say
+  // what unlocks next, never "목표 완료!" while objectives are still locked). Incidents speak through alarms.
+  const nextStep = alarms.length ? null : waitingText({ ...st, incident: false });
 
   const item = (o: (typeof st.visible)[number]) => {
     const done = isDone(o.id);
@@ -73,7 +59,7 @@ export function ObjectivePanel() {
   };
 
   return (
-    <aside className={`obj-panel panel ${collapsed ? 'collapsed' : ''} ${incidents.length ? 'has-incident' : ''}`} aria-label="목표와 장애">
+    <aside className={`obj-panel panel ${collapsed ? 'collapsed' : ''} ${alarms.length ? 'has-incident' : ''}`} aria-label="오늘의 미션">
       <button
         className="obj-head"
         onClick={(e) => {
@@ -83,11 +69,11 @@ export function ObjectivePanel() {
         aria-expanded={!collapsed}
         title={collapsed ? '목표 펼치기' : '목표 접기'}
       >
-        <span className="obj-head-title">🎯 목표</span>
+        <span className="obj-head-title">🎯 오늘의 미션</span>
         <span className="obj-head-count">
           {st.doneCount}/{st.total}
         </span>
-        {incidents.length > 0 && <span className="obj-head-alert">🚨 {incidents.length}</span>}
+        {alarms.length > 0 && <span className="obj-head-alert">🔔 {alarms.length}</span>}
         <span className="obj-head-caret" aria-hidden>
           {collapsed ? '▸' : '▾'}
         </span>
@@ -142,62 +128,44 @@ export function ObjectivePanel() {
             )}
           </ul>
 
-          <section className={`obj-incidents ${incidents.length > 1 ? 'compact' : ''}`} aria-label="지금 장애">
-            {incidents.length === 0 ? (
-              <>
-                <h3 className="calm">✅ 장애 없음</h3>
-                <p className="obj-calm">
-                  {preparing && openList.length ? '아직 서비스 준비 중이에요. 위 목표부터 끝내봐요.' : '지금은 조용해요. 대시보드를 가끔 확인하세요.'}
-                </p>
-              </>
-            ) : (
-              <h3>🚨 지금 장애</h3>
-            )}
-            {incidents.map(({ rt, def: sc }) => {
-              const hint = run.hintLevel[sc.id] ?? 0;
-              return (
-                <article key={sc.id} className={`obj-incident ${sc.severity}`}>
-                  <div className="obj-incident-top">
-                    <strong>{sc.title}</strong>
-                    <span className="obj-room tag">{ROOM_LABEL[sc.room]}</span>
-                  </div>
-                  <p className="obj-alert" title={sc.alert}>
-                    {sc.alert}
-                  </p>
-                  <div className="obj-incident-foot">
-                    <span className="obj-elapsed">⏱ {elapsed(now - (rt.activatedAt ?? now))}</span>
-                    {hint > 0 && <span className="obj-hintlv">힌트 {hint}/3</span>}
-                    <button
-                      className="btn obj-ask"
-                      onClick={(e) => {
-                        e.currentTarget.blur();
-                        gameStore.getState().openModal({ type: 'hint', scenarioId: sc.id });
-                      }}
-                    >
-                      📻 쿠사수에게 묻기
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </section>
+          <button
+            type="button"
+            className={`obj-alarm ${critical ? 'critical' : alarms.length ? 'warn' : 'calm'}${unacked ? ' unacked' : ''}`}
+            onClick={(e) => {
+              e.currentTarget.blur();
+              gameStore.getState().openModal({ type: 'noc', tab: 'nms' });
+            }}
+            title="관제 화면(NOC)에서 경보를 확인해요"
+          >
+            <span className="obj-alarm-count">
+              {alarms.length ? (
+                <>
+                  🔔 경보 {alarms.length}
+                  {critical > 0 && <b> · Critical {critical}</b>}
+                </>
+              ) : (
+                '🔕 경보 없음'
+              )}
+            </span>
+            <span className="obj-alarm-go">
+              {' '}— <kbd>N</kbd>키로 관제 화면
+            </span>
+          </button>
 
-          {incidents.length === 0 && (
-            <footer className="obj-controls">
-              <span>
-                <kbd>WASD</kbd>/<kbd>방향키</kbd> 이동
-              </span>
-              <span>
-                <kbd>E</kbd> 상호작용
-              </span>
-              <span>
-                <kbd>Tab</kbd> 대시보드
-              </span>
-              <span>
-                <kbd>H</kbd> 쿠사수
-              </span>
-            </footer>
-          )}
+          <footer className="obj-controls">
+            <span>
+              <kbd>WASD</kbd>/<kbd>방향키</kbd> 이동
+            </span>
+            <span>
+              <kbd>E</kbd> 상호작용
+            </span>
+            <span>
+              <kbd>N</kbd> 관제 화면
+            </span>
+            <span>
+              <kbd>H</kbd> 쿠사수
+            </span>
+          </footer>
         </div>
       )}
     </aside>

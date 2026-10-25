@@ -22,8 +22,6 @@ export interface RoomDef {
   door: { x: number; y: number; w: number } | null;
   /** Centre of the room name painted on the floor (tile units, may be fractional) */
   label: { x: number; y: number };
-  /** Where incident markers stand (tile units); default: 1.5 tiles above the label */
-  marker?: { x: number; y: number };
   /** Floor texture family */
   floor: string;
 }
@@ -33,10 +31,9 @@ export const ROOMS: RoomDef[] = [
   { id: 'network', name: '네트워크실', x0: 18, y0: 1, x1: 27, y1: 11, door: { x: 22, y: 11, w: 2 }, label: { x: 24.5, y: 9.5 }, floor: 'network' },
   { id: 'cooling', name: '냉각실', x0: 29, y0: 1, x1: 38, y1: 11, door: { x: 33, y: 11, w: 2 }, label: { x: 33.5, y: 8.5 }, floor: 'cooling' },
   { id: 'corridor', name: '복도', x0: 1, y0: 12, x1: 38, y1: 14, door: null, label: { x: 9, y: 13 }, floor: 'corridor' },
-  { id: 'power', name: '전원실', x0: 1, y0: 15, x1: 12, y1: 24, door: { x: 6, y: 15, w: 2 }, label: { x: 6.5, y: 22 }, floor: 'power' },
-  // NOC markers stand between the monitor wall and the desk row, where the player works; the floor
-  // label sits a little higher so it stays inside the default 900 px tall view.
-  { id: 'noc', name: '관제실 (NOC)', x0: 14, y0: 15, x1: 38, y1: 24, door: { x: 17, y: 15, w: 2 }, label: { x: 25, y: 22 }, marker: { x: 23, y: 20.2 }, floor: 'noc' },
+  { id: 'power', name: '전기실 (UPS·분전반)', x0: 1, y0: 15, x1: 12, y1: 24, door: { x: 6, y: 15, w: 2 }, label: { x: 6.5, y: 22 }, floor: 'power' },
+  // The floor label sits a little low so it stays clear of the desks, inside the default 900 px tall view.
+  { id: 'noc', name: '관제실 (NOC)', x0: 14, y0: 15, x1: 38, y1: 24, door: { x: 17, y: 15, w: 2 }, label: { x: 25, y: 22 }, floor: 'noc' },
 ];
 
 export const ROOM_BY_ID = Object.fromEntries(ROOMS.map((r) => [r.id, r])) as Record<AreaId, RoomDef>;
@@ -83,13 +80,13 @@ export const SPOTS: SpotDef[] = [
   { id: 'rack2', x: 6, y: 3, w: 2, h: 3, label: '랙 2' },
   { id: 'rack3', x: 9, y: 3, w: 2, h: 3, label: '랙 3' },
   { id: 'rack4', x: 12, y: 3, w: 2, h: 3, label: '랙 4' },
-  { id: 'switch', x: 20, y: 3, w: 2, h: 2, label: '스위치' },
-  { id: 'router', x: 24, y: 3, w: 2, h: 2, label: '라우터' },
+  { id: 'switch', x: 20, y: 3, w: 2, h: 2, label: '코어 스위치' },
+  { id: 'router', x: 24, y: 3, w: 2, h: 2, label: '보더 라우터·방화벽' },
   { id: 'patch', x: 20, y: 7, w: 2, h: 2, label: '패치 패널' },
   { id: 'crac', x: 32, y: 3, w: 3, h: 3, label: '항온항습기(CRAC)' },
-  { id: 'pdu', x: 3, y: 18, w: 2, h: 2, label: 'PDU (전원 분배기)' },
+  { id: 'pdu', x: 3, y: 18, w: 2, h: 2, label: 'PDU (분전반)' },
   { id: 'ups', x: 7, y: 18, w: 2, h: 2, label: 'UPS (무정전 전원장치)' },
-  { id: 'monitor', x: 20, y: 16, w: 3, h: 1, label: '관제 모니터' },
+  { id: 'monitor', x: 20, y: 16, w: 3, h: 1, label: '관제 화면' },
   { id: 'desk', x: 25, y: 18, w: 2, h: 1, label: '관리 PC' },
   { id: 'mentor', x: 30, y: 19, w: 1, h: 1, label: '쿠사수' },
   { id: 'board', x: 34, y: 16, w: 2, h: 1, label: '설계 보드' },
@@ -144,7 +141,7 @@ export const TRAYS: { x0: number; x1: number; y: number }[] = [
   { x0: 18, x1: 27, y: 2 },
 ];
 
-/** Where cardboard boxes appear for servers that are not mounted yet (stage 1). */
+/** Where cardboard boxes appear for servers that are not mounted yet (D-5). */
 export const UNBOXED_SPOTS = [
   { x: 13, y: 8 },
   { x: 14, y: 8 },

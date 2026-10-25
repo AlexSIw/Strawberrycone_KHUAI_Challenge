@@ -33,7 +33,7 @@ export function ConceptsBook() {
           const no = `No.${String(i + 1).padStart(2, '0')}`;
           if (!owned.has(c.id)) {
             const st = FIRST_STAGE[c.id];
-            const where = st === undefined ? '게임 어딘가에서' : `Stage ${st} · ${STAGES[st].title}에서`;
+            const where = st === undefined ? '게임 어딘가에서' : `${STAGES[st].label} · ${STAGES[st].title}에서`;
             return (
               <div key={c.id} className="cbk-card locked" aria-label="잠긴 카드">
                 <div className="cbk-no">{no}</div>

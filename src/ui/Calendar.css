@@ -1,4 +1,4 @@
-/* Stage select screen. Prefix: sel- */
+/* Calendar (day select) screen. Prefix: sel- */
 .sel-screen {
   height: 100%;
   overflow-y: auto;
@@ -37,7 +37,7 @@
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 14px;
 }
 .sel-grid li { display: flex; }
@@ -61,7 +61,8 @@
 .sel-card:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 .sel-card.cleared { border-color: rgba(79, 209, 122, 0.55); }
 .sel-card.next { border-color: var(--red-2); box-shadow: 0 0 0 3px rgba(215, 38, 43, 0.25); animation: sel-glow 1.6s ease-in-out infinite; }
-.sel-card.locked { cursor: not-allowed; opacity: 0.55; filter: grayscale(0.7); }
+.sel-card.dday { background: linear-gradient(160deg, #3a1b20, var(--panel) 60%); }
+.sel-card.dday .sel-no { background: #ffd166; border-color: #b08a2a; color: #2a1410; }
 
 @keyframes sel-glow {
   50% { box-shadow: 0 0 0 6px rgba(215, 38, 43, 0.12); }
@@ -76,8 +77,7 @@
   background: var(--red);
   border: 2px solid #8d1519;
 }
-.sel-card.locked .sel-no { background: var(--panel-2); border-color: var(--line); }
-.sel-lock { font-size: 18px; }
+.sel-date { flex: 1; font-family: var(--pixel); font-size: 13px; color: var(--tan); }
 .sel-new { font-family: var(--pixel); font-size: 12px; color: var(--red-2); animation: sel-blink 1s steps(2) infinite; }
 @keyframes sel-blink {
   50% { opacity: 0.3; }
@@ -92,7 +92,6 @@
 .sel-topics .tag { font-size: 11px; }
 
 .sel-card-foot { margin-top: auto; padding-top: 8px; font-size: 13px; }
-.sel-locked-msg { color: var(--muted); }
 .sel-best { color: var(--green); }
 .sel-go { color: var(--tan); font-family: var(--pixel); }
 

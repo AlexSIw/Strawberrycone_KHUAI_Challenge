@@ -1,10 +1,11 @@
-// 전원실 미니게임: 한전 전기 · UPS · PDU A/B 상태를 보고, 장비마다 A/B 플러그를 꽂는다.
+// 전기실 미니게임: PDU A/B 상태를 보고, 장비마다 A/B 플러그를 꽂는다. (UPS·수전은 시설팀 담당: 계기판만 본다)
 // A = UPS 뒤의 줄(정전 대비), B = 따로 들어오는 두 번째 줄(PDU·회로 고장 대비).
-import { setFeeds, setUps } from '../../sim/actions';
+import { mapDevicesOf } from '../../game/worldView';
+import { setFeeds } from '../../sim/actions';
 import { feedLive, powered } from '../../sim/network';
 import type { Device } from '../../sim/types';
 import { gameStore } from '../../store/game';
-import { GameFooter, Led, MiniGameFrame, TaskBar, rackName, useWorld } from './common';
+import { GameFooter, Led, MiniGameFrame, TaskBar, rackName, useDay, useWorld } from './common';
 import './PowerGame.css';
 
 type Feed = 'A' | 'B';
@@ -18,20 +19,6 @@ function feedText(feeds: Feed[]): string {
   return `${feeds[0]}만`;
 }
 
-function Battery({ mode }: { mode: 'idle' | 'full' | 'draining' }) {
-  return (
-    <span className={`pw-battery ${mode}`} aria-hidden>
-      <span className="pw-battery-cap" />
-      <span className="pw-battery-cells">
-        <i />
-        <i />
-        <i />
-        <i />
-      </span>
-    </span>
-  );
-}
-
 /** Flip one plug, reading the device's current plugs from the live world (never from a stale render). */
 function toggleFeed(id: string, f: Feed) {
   gameStore.getState().act((w) => {
@@ -40,17 +27,14 @@ function toggleFeed(id: string, f: Feed) {
   }, 'power:feed');
 }
 
-function toggleUps() {
-  gameStore.getState().act((w) => setUps(w, !w.power?.ups), 'power:ups');
-}
-
 export function PowerGame() {
   const world = useWorld();
-  if (!world) return null;
+  const day = useDay();
+  if (!world || !day) return null;
 
   if (!world.power) {
     return (
-      <MiniGameFrame title="전원실 · PDU" icon="⚡" size="narrow" footer={<GameFooter done={false} />}>
+      <MiniGameFrame title="전기실 · PDU" icon="⚡" size="narrow" footer={<GameFooter done={false} />}>
         <TaskBar done>전원 정상 — 지금은 여기서 할 일이 없어요.</TaskBar>
         <p className="muted" style={{ margin: 0, lineHeight: 1.7 }}>
           모든 장비가 안정적으로 전기를 받고 있어요.
@@ -59,8 +43,8 @@ export function PowerGame() {
     );
   }
 
-  const { mains, ups, pduDown } = world.power;
-  const all = Object.values(world.devices).filter((d) => d.kind !== 'internet' && d.id !== 'ops');
+  const { mains, pduDown } = world.power;
+  const all = mapDevicesOf(day, world).filter((d) => d.kind !== 'internet' && d.id !== 'ops');
   const rows = all.filter((d) => d.installed).sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
   const notMounted = all.filter((d) => !d.installed);
   const pduA = feedLive(world, 'A');
@@ -81,59 +65,29 @@ export function PowerGame() {
   else if (offRows.length) task = '꺼진 장비가 있어요. 플러그를 확인하세요.';
   else task = '완료! 모든 장비에 전원이 들어왔어요.';
 
-  const batteryMode = !ups ? 'idle' : mains ? 'full' : 'draining';
-  const upsState = !ups ? '연결 안 됨 · A는 한전 전기만 받아요' : mains ? '충전 완료' : '배터리로 버티는 중';
-
   return (
     <MiniGameFrame
-      title="전원실 · UPS와 PDU"
+      title="전기실 · PDU A/B"
       icon="⚡"
       size="wide"
       footer={<GameFooter done={done}>{done ? '모든 장비가 ON! 상태 LED와 PDU 불빛으로 전기가 어디서 오는지 늘 확인할 수 있어요.' : null}</GameFooter>}
     >
       <TaskBar done={done}>{task}</TaskBar>
 
-      {/* power path: mains → (UPS) → PDU A, mains → PDU B */}
-      <div className="pw-diagram">
-        <div className={`pw-node pw-mains${mains ? ' live' : ' dead'}`}>
-          <div className="pw-node-title">🏭 한전 전기</div>
-          <div className="pw-node-sub">건물 바깥에서 오는 전기</div>
-          <div className={`pw-big ${mains ? 'ok' : 'bad'}`} role="status">
-            {mains ? '정상' : '⚡정전!'}
-          </div>
-        </div>
-
-        <div className={`pw-line pw-l1${mains ? ' live' : ''}`} aria-hidden />
-
-        <div className={`pw-node pw-ups${ups ? ' on' : ''}`}>
-          <div className="pw-ups-head">
-            <span className="pw-node-title">🔋 UPS</span>
-            <Battery mode={batteryMode} />
-            <span className="pw-ups-state">{upsState}</span>
-          </div>
-          <button type="button" className={`pw-switch${ups ? ' on' : ''}`} role="switch" aria-checked={ups} onClick={toggleUps}>
-            <span className="pw-switch-knob" aria-hidden />
-            <span className="pw-switch-text">UPS → PDU A 연결: {ups ? 'ON' : 'OFF'}</span>
-          </button>
-        </div>
-
-        <div className={`pw-line pw-l2${pduA ? ' live' : ''}`} aria-hidden />
-
-        <div className={`pw-node pw-pdu pw-pdu-a${pduA ? ' live' : ' dead'}`}>
-          <div className="pw-node-title">PDU A</div>
-          <div className="pw-pdu-row">
-            <Led state={pduA ? 'on' : 'off'} /> {pduDown === 'A' ? '차단기 내려감 (점검 중)' : pduA ? '전기 있음' : '전기 없음'} · <span className="pw-pdu-count">{plugged('A')}대</span>
-          </div>
-        </div>
-
-        <div className={`pw-line pw-l3${pduB ? ' live' : ''}`} aria-hidden />
-
-        <div className={`pw-node pw-pdu pw-pdu-b${pduB ? ' live' : ' dead'}`}>
-          <div className="pw-node-title">PDU B</div>
-          <div className="pw-pdu-row">
-            <Led state={pduB ? 'on' : 'off'} /> {pduDown === 'B' ? '차단기 내려감 (점검 중)' : pduB ? '전기 있음' : '전기 없음'} · <span className="pw-pdu-count">{plugged('B')}대</span>
-          </div>
-        </div>
+      {/* The two lines the plugs go into. Mains and the UPS are the facility team's: their gauges are on the FMS. */}
+      <div className="pw-feeds-row">
+        {(['A', 'B'] as const).map((f) => {
+          const live = f === 'A' ? pduA : pduB;
+          return (
+            <div key={f} className={`pw-node pw-pdu${live ? ' live' : ' dead'}`}>
+              <div className="pw-node-title">PDU {f}</div>
+              <div className="pw-pdu-row">
+                <Led state={live ? 'on' : 'off'} /> {pduDown === f ? '차단기 내려감 (점검 중)' : live ? '전기 있음' : '전기 없음'} ·{' '}
+                <span className="pw-pdu-count">{plugged(f)}대</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div className="pw-legend">

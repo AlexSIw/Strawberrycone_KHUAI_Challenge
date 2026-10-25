@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { CONCEPTS } from '../content/concepts';
 import { STAGES } from '../content/stages';
-import type { StageId } from '../sim/types';
+import { koDate } from '../sim/clock';
+import { LAST_DAY, type StageId } from '../sim/types';
 import { gameStore, useGame } from '../store/game';
-import './StageSelect.css';
+import './Calendar.css';
 
 /** Same count as the in-game 개념 도감 (📖, C): every concept card, in book order. */
 function cardTotals(cards: string[]) {
@@ -22,13 +23,13 @@ function Stars({ n }: { n: number }) {
   );
 }
 
-/** Pick a stage. Locked stages open one by one as you clear them. */
-export function StageSelect() {
+/** The week up to 수강신청: every day is open from the start (judges can jump to D-Day). */
+export function Calendar() {
   const save = useGame((s) => s.save);
   const [openCard, setOpenCard] = useState<string | null>(null);
   const { owned, collectible } = cardTotals(save.cards);
   const totalStars = Object.values(save.best).reduce((a, b) => a + b.stars, 0);
-  const nextStage = STAGES.find((st) => st.id <= save.unlocked && !save.best[st.id]) ?? null;
+  const nextDay = STAGES.find((st) => !save.best[st.id]) ?? null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -48,15 +49,15 @@ export function StageSelect() {
           ◀ 처음 화면
         </button>
         <div className="sel-head-text">
-          <h1>스테이지 선택</h1>
+          <h1>📅 수강신청까지 달력</h1>
           <p>
-            {nextStage
-              ? `다음 할 일: Stage ${nextStage.id} 「${nextStage.title}」 카드를 눌러 시작하세요.`
-              : '모든 스테이지를 클리어했어요! 별 3개에 도전해보세요.'}
+            {nextDay
+              ? `다음 할 일: ${nextDay.label} 「${nextDay.title}」. 어느 날이든 바로 골라서 할 수 있어요.`
+              : '모든 날을 마쳤어요! 별 3개에 도전해보세요.'}
           </p>
         </div>
         <div className="sel-totals">
-          <span title="모든 스테이지에서 모은 별">
+          <span title="모든 날에서 모은 별">
             ★ {totalStars}/{STAGES.length * 3}
           </span>
           <span title="모은 개념 카드">
@@ -67,20 +68,20 @@ export function StageSelect() {
 
       <ol className="sel-grid">
         {STAGES.map((st) => {
-          const locked = st.id > save.unlocked;
           const best = save.best[st.id];
-          const isNext = nextStage?.id === st.id;
+          const isNext = nextDay?.id === st.id;
+          const dday = st.id === LAST_DAY;
           return (
             <li key={st.id}>
               <button
-                className={`sel-card ${locked ? 'locked' : ''} ${best ? 'cleared' : ''} ${isNext ? 'next' : ''}`}
-                onClick={() => !locked && play(st.id)}
-                disabled={locked}
-                aria-label={`Stage ${st.id} ${st.title}${locked ? ' (잠김)' : ''}`}
+                className={`sel-card ${best ? 'cleared' : ''} ${isNext ? 'next' : ''} ${dday ? 'dday' : ''}`}
+                onClick={() => play(st.id)}
+                aria-label={`${st.label} ${koDate(st.date)} ${st.title}`}
               >
                 <div className="sel-card-top">
-                  <span className="sel-no">Stage {st.id}</span>
-                  {locked ? <span className="sel-lock">🔒</span> : best ? <Stars n={best.stars} /> : isNext ? <span className="sel-new">NEW</span> : null}
+                  <span className="sel-no">{st.label}</span>
+                  <span className="sel-date">{koDate(st.date)}</span>
+                  {best ? <Stars n={best.stars} /> : isNext ? <span className="sel-new">NEXT</span> : null}
                 </div>
                 <h2 className="sel-title">{st.title}</h2>
                 <p className="sel-subtitle">{st.subtitle}</p>
@@ -92,13 +93,7 @@ export function StageSelect() {
                   ))}
                 </div>
                 <div className="sel-card-foot">
-                  {locked ? (
-                    <span className="sel-locked-msg">이전 스테이지를 클리어하세요</span>
-                  ) : best ? (
-                    <span className="sel-best">최고 {best.points}점 · 다시 하기 ▶</span>
-                  ) : (
-                    <span className="sel-go">시작하기 ▶</span>
-                  )}
+                  {best ? <span className="sel-best">최고 {best.points}점 · 다시 하기 ▶</span> : <span className="sel-go">{dday ? '실전 시작 ▶' : '출근하기 ▶'}</span>}
                 </div>
               </button>
             </li>

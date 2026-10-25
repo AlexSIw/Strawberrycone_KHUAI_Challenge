@@ -89,7 +89,7 @@
 .end-recap ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .end-recap li {
   display: grid;
-  grid-template-columns: 26px 190px 1fr auto;
+  grid-template-columns: 52px 170px 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
@@ -97,8 +97,9 @@
   font-size: 13px;
 }
 .end-recap-no {
-  width: 22px;
+  min-width: 48px;
   height: 22px;
+  padding: 0 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

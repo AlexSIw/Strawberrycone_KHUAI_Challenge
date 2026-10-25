@@ -9,6 +9,8 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { getStage } from '../../content/stages';
+import type { StageDef } from '../../content/types';
 import type { World } from '../../sim/types';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
@@ -17,6 +19,12 @@ import './minigames.css';
 /** The live world of the current run (re-renders every tick). */
 export function useWorld(): World | undefined {
   return useGame((s) => s.run?.world);
+}
+
+/** Today's day definition (mapSwitch / mapDevices for the mini-games). */
+export function useDay(): StageDef | undefined {
+  const stage = useGame((s) => s.run?.stage);
+  return stage === undefined ? undefined : getStage(stage);
 }
 
 /** "rack1" → "랙 1" */

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import { gameStore, useGame } from '../store/game';
+import { LAST_DAY, type StageId } from '../sim/types';
+import { gameStore, useGame, type GameState } from '../store/game';
 import { Credits } from './Credits';
 import { SoundToggle } from './SoundToggle';
 import './TitleScreen.css';
@@ -22,6 +23,15 @@ function Rack({ units, seed }: { units: number; seed: number }) {
   );
 }
 
+/** 이어하기: the store's continueGame() when it has one, else the furthest day reached. */
+function continueGame(): void {
+  const s = gameStore.getState() as GameState & { continueGame?: () => void };
+  if (typeof s.continueGame === 'function') s.continueGame();
+  else s.play(Math.min(s.save.unlocked, LAST_DAY) as StageId);
+}
+
+const hasSave = (s: GameState) => s.save.unlocked > 0 || Object.keys(s.save.best).length > 0;
+
 export function TitleScreen() {
   const save = useGame((s) => s.save);
   const hasProgress = save.unlocked > 0 || Object.keys(save.best).length > 0;
@@ -29,7 +39,7 @@ export function TitleScreen() {
   const [credits, setCredits] = useState(false);
   const closeCredits = useCallback(() => setCredits(false), []);
 
-  // Enter does what the hint line says: first visit → start Stage 0, returning player → stage select.
+  // Enter does what the hint line says: first visit → a new game from D-5, returning player → 이어하기.
   // (Guarded so a held key from the previous screen doesn't fire it; off while the credits are open.)
   useEffect(() => {
     if (credits) return;
@@ -39,14 +49,14 @@ export function TitleScreen() {
       if ((e.target as HTMLElement | null)?.closest('button')) return;
       e.preventDefault();
       const s = gameStore.getState();
-      if (s.save.unlocked > 0 || Object.keys(s.save.best).length > 0) s.goSelect();
-      else s.play(0);
+      if (hasSave(s)) continueGame();
+      else s.newGame();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [credits]);
 
-  const { play, goSelect } = gameStore.getState();
+  const { play, goSelect, newGame } = gameStore.getState();
 
   return (
     <>
@@ -93,26 +103,34 @@ export function TitleScreen() {
           <p className="title-pitch">
             서버를 하나도 몰라도 괜찮아요.
             <br />
-            케이블 한 줄부터 쿠버네티스까지, 수강신청 날 서버를 지켜내세요!
+            D-5 첫 출근부터 수강신청 당일까지, 케이블 한 줄부터 관제까지 직접 지켜내세요!
           </p>
 
           <div className="title-buttons">
-            <button className="btn primary title-btn" onClick={() => play(0)}>
-              ▶ 처음부터 시작
+            {hasProgress && (
+              <button className="btn primary title-btn" onClick={continueGame}>
+                ▶ 이어하기
+              </button>
+            )}
+            <button className={`btn title-btn${hasProgress ? '' : ' primary'}`} onClick={() => newGame()}>
+              ✨ 새로 시작
+            </button>
+            <button className="btn title-btn title-dday" onClick={() => play(LAST_DAY)}>
+              🔥 D-Day 바로 체험
             </button>
             <button className="btn title-btn" onClick={() => goSelect()}>
-              🗂 스테이지 선택
+              📅 달력
             </button>
           </div>
 
           <p className="title-next">
             {hasProgress ? (
               <>
-                저장된 기록 ★ {stars}개 · 이어 하려면 <kbd>Enter</kbd> 또는 <strong>스테이지 선택</strong>을 눌러요.
+                저장된 기록 ★ {stars}개 · <kbd>Enter</kbd> 또는 <strong>이어하기</strong>로 계속해요.
               </>
             ) : (
               <>
-                <kbd>Enter</kbd> 또는 <strong>처음부터 시작</strong>을 눌러 첫 출근을 해요.
+                <kbd>Enter</kbd> 또는 <strong>새로 시작</strong>을 눌러 첫 출근을 해요. 수강신청 날만 보고 싶다면 <strong>D-Day 바로 체험</strong>!
               </>
             )}
           </p>
