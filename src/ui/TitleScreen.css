@@ -153,8 +153,10 @@
 
 .title-pitch { margin: 6px 0 22px; font-size: 16px; line-height: 1.7; color: var(--text); word-break: keep-all; }
 
-.title-buttons { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-.title-btn { font-size: 18px; padding: 12px 26px; min-width: 200px; }
+.title-buttons { display: grid; grid-template-columns: repeat(2, minmax(200px, 1fr)); gap: 10px 12px; }
+.title-btn { font-size: 18px; padding: 10px 22px; min-width: 200px; }
+.title-dday { border-color: #b08a2a; color: #ffd166; }
+.title-dday:hover { background: #3a2f1f; }
 
 .title-next { margin: 16px 0 0; font-size: 13px; color: var(--muted); }
 .title-next strong { color: var(--text); font-weight: 700; }
@@ -166,7 +168,7 @@
 @media (max-width: 560px) {
   .title-racks { display: none; }
   .title-btn { min-width: 0; width: 100%; }
-  .title-buttons { width: 100%; flex-direction: column; }
+  .title-buttons { width: 100%; grid-template-columns: 1fr; }
   .title-pitch { font-size: 15px; }
 }
 @media (max-height: 640px) {

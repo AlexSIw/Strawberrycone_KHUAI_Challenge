@@ -59,7 +59,7 @@ export function DecomposeBoard() {
         <p style={{ lineHeight: 1.7, margin: 0 }}>
           지금 구조: 수강신청 앱 하나(모놀리스)가 로그인·과목조회·장바구니·신청·알림을 전부 맡고 있어요.
         </p>
-        <p className="muted">아직은 설계를 바꿀 이유가 없어요. 수강신청이 시작되면 대시보드를 지켜보세요.</p>
+        <p className="muted">아직은 설계를 바꿀 이유가 없어요. 수강신청이 시작되면 관제 화면을 지켜보세요.</p>
       </ModalFrame>
     );
   }

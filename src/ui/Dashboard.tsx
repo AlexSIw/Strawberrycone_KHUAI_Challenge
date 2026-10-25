@@ -6,9 +6,7 @@ import type { MetricPoint, StageRun } from '../sim/engine';
 import { readyPods } from '../sim/k8s';
 import { cableAt, linkUp, powered } from '../sim/network';
 import type { Device, Health, World } from '../sim/types';
-import { useGame } from '../store/game';
 import { availLevel, latencyLevel, type Level } from './levels';
-import { ModalFrame } from './ModalFrame';
 import './Dashboard.css';
 
 type Panel = StageDef['panels'][number];
@@ -28,9 +26,9 @@ const CRIT_LINE = '#ff5a5f';
 const TEMP_WARN = 35;
 const TEMP_CRIT = 45;
 
-const LEVEL_TEXT: Record<Level, string> = { ok: '● 좋음', warn: '▲ 주의', bad: '✕ 위험' };
+export const LEVEL_TEXT: Record<Level, string> = { ok: '● 좋음', warn: '▲ 주의', bad: '✕ 위험' };
 
-function levelOf(kind: 'availability' | 'latency' | 'error' | 'temp', v: number): Level {
+export function levelOf(kind: 'availability' | 'latency' | 'error' | 'temp', v: number): Level {
   switch (kind) {
     case 'availability':
       return availLevel(v);
@@ -43,8 +41,8 @@ function levelOf(kind: 'availability' | 'latency' | 'error' | 'temp', v: number)
   }
 }
 
-const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
-const fmtNum = (v: number) => Math.round(v).toLocaleString('ko-KR');
+export const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
+export const fmtNum = (v: number) => Math.round(v).toLocaleString('ko-KR');
 
 // ---------- KPI header ----------
 
@@ -61,7 +59,7 @@ function Kpi({ label, value, explain, level }: { label: string; value: string; e
   );
 }
 
-function KpiRow({ h }: { h: Health }) {
+export function KpiRow({ h }: { h: Health }) {
   // No students yet (stage 1): there are no requests to fail, so only the readiness number means something.
   const idle = h.rps <= 0;
   return (
@@ -91,7 +89,7 @@ function KpiRow({ h }: { h: Health }) {
 
 // ---------- shared bits ----------
 
-function Section({ title, hint, half, children }: { title: string; hint: string; half?: boolean; children: ReactNode }) {
+export function Section({ title, hint, half, children }: { title: string; hint: string; half?: boolean; children: ReactNode }) {
   return (
     <section className={`dash-section ${half ? 'half' : ''}`}>
       <header>
@@ -104,7 +102,7 @@ function Section({ title, hint, half, children }: { title: string; hint: string;
 }
 
 /** `title` spells the state out for screen readers / hover, since the LED itself is only a color. */
-function Led({ on, tone, label, title }: { on: boolean; tone?: 'ok' | 'bad' | 'warn'; label: string; title?: string }) {
+export function Led({ on, tone, label, title }: { on: boolean; tone?: 'ok' | 'bad' | 'warn'; label: string; title?: string }) {
   return (
     <span className={`dash-led ${on ? tone ?? 'ok' : 'off'}`} title={title ?? label} aria-label={title}>
       <i aria-hidden />
@@ -113,7 +111,7 @@ function Led({ on, tone, label, title }: { on: boolean; tone?: 'ok' | 'bad' | 'w
   );
 }
 
-interface ChartRow {
+export interface ChartRow {
   t: number;
   availability: number;
   errorRate: number;
@@ -122,7 +120,7 @@ interface ChartRow {
   temp: number;
 }
 
-const toRows = (history: MetricPoint[]): ChartRow[] =>
+export const toRows = (history: MetricPoint[]): ChartRow[] =>
   history.map((p) => ({
     t: p.t,
     availability: p.availability * 100,
@@ -149,7 +147,7 @@ interface MiniChartProps {
   refs?: { y: number; color: string; label: string }[];
 }
 
-function MiniChart({ title, rows, dataKey, unit, format, domain = [0, 'auto'], height = 150, refs = [] }: MiniChartProps) {
+export function MiniChart({ title, rows, dataKey, unit, format, domain = [0, 'auto'], height = 150, refs = [] }: MiniChartProps) {
   const last = rows[rows.length - 1];
   return (
     <div className="dash-chart">
@@ -525,9 +523,10 @@ function PodsPanel({ w }: { w: World }) {
   );
 }
 
-// ---------- window ----------
+// ---------- the day's panels (shown in the NOC's SMS tab) ----------
 
-function DashboardBody({ run }: { run: StageRun }) {
+/** KPI row + the panels this day unlocks, in a fixed order; `extra` goes right under the KPIs. */
+export function DashboardPanels({ run, extra }: { run: StageRun; extra?: ReactNode }) {
   const def = getStage(run.stage);
   const rows = useMemo(() => toRows(run.history), [run.history]);
   const panels = PANEL_ORDER.filter((p) => def.panels.includes(p));
@@ -537,8 +536,8 @@ function DashboardBody({ run }: { run: StageRun }) {
   const w = run.world;
   return (
     <>
-      <p className="dash-next muted">빨간 숫자부터 살펴보세요. Tab 키를 다시 누르면 닫혀요.</p>
       <KpiRow h={h} />
+      {extra}
       <div className="dash-grid">
         {panels.map((p) => {
           switch (p) {
@@ -558,14 +557,5 @@ function DashboardBody({ run }: { run: StageRun }) {
         })}
       </div>
     </>
-  );
-}
-
-export function Dashboard() {
-  const run = useGame((s) => s.run);
-  return (
-    <ModalFrame title="관제 대시보드 (NOC)" icon="📊" size="wide">
-      {run ? <DashboardBody run={run} /> : <p className="muted">게임을 시작하면 데이터가 보여요.</p>}
-    </ModalFrame>
   );
 }

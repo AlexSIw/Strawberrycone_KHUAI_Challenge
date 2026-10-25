@@ -1,5 +1,6 @@
 import { CONCEPTS } from '../../content/concepts';
 import { getStage } from '../../content/stages';
+import { stageAt } from '../../sim/clock';
 import type { StageRun } from '../../sim/engine';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
@@ -106,13 +107,14 @@ function timeline(run: StageRun, id: string): string {
 export function PostmortemBoard() {
   const run = useGame((s) => s.run);
   if (!run) return null;
-  if (!('survive' in run.objectivesDone)) return <Waiting run={run} />;
+  // v2 D-Day: the `hold` mission (clock reached 10:30); v1 called it `survive`.
+  if (!('hold' in run.objectivesDone) && !('survive' in run.objectivesDone)) return <Waiting run={run} />;
   return <Report run={run} />;
 }
 
 function Waiting({ run }: { run: StageRun }) {
   const def = getStage(run.stage);
-  const left = Math.max(0, (def.survive ?? 0) - run.ctx.stageTime);
+  const left = Math.max(0, (def.survive ?? stageAt(def.clock, '10:30:00')) - run.ctx.stageTime);
   return (
     <ModalFrame title="설계 보드 · 장애 보고서" icon="📋" size="narrow">
       <div className="pmb-wait">
@@ -149,7 +151,7 @@ function Waiting({ run }: { run: StageRun }) {
           );
         })}
       </ul>
-      <p className="muted pmb-wait-note">👉 지금은 대시보드를 보며 장애부터 막아주세요. 보고서는 그다음!</p>
+      <p className="muted pmb-wait-note">👉 지금은 관제 화면(N)을 보며 장애부터 막아주세요. 보고서는 그다음!</p>
     </ModalFrame>
   );
 }

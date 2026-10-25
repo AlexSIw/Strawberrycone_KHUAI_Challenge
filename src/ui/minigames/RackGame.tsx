@@ -1,5 +1,7 @@
 // 랙 장착 미니게임: 카트의 서버 상자를 끌어서 자기 랙의 빈 칸(U)에 꽂는다.
 import { useRef, useState } from 'react';
+import type { StageDef } from '../../content/types';
+import { mapDevicesOf } from '../../game/worldView';
 import { mount } from '../../sim/actions';
 import { linkUp, powered } from '../../sim/network';
 import type { Device, World } from '../../sim/types';
@@ -14,6 +16,7 @@ import {
   TaskBar,
   prefersReducedMotion,
   rackName,
+  useDay,
   useDragDrop,
   useNote,
   useTimers,
@@ -31,12 +34,13 @@ type Slots = Record<string, string>;
 
 type Layout = Record<string, (string | null)[]>;
 
-function rackServers(w: World): Device[] {
-  return Object.values(w.devices).filter((d) => d.kind === 'server' && !!d.rack);
+/** Today's rack-mounted devices (def.mapDevices; without a list, every rack server). */
+function rackServers(w: World, day: StageDef): Device[] {
+  return mapDevicesOf(day, w).filter((d) => !!d.rack);
 }
 
 function racksOf(servers: Device[]): string[] {
-  const all = new Set([...BASE_RACKS, ...servers.map((d) => d.rack!)]);
+  const all = new Set(servers.length ? servers.map((d) => d.rack!) : BASE_RACKS);
   return [...all].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
@@ -69,6 +73,7 @@ function ServerBox({ d, lifted }: { d: Device; lifted?: boolean }) {
 
 export function RackGame() {
   const world = useWorld();
+  const day = useDay();
   // Kept for the stage: reopening the rack shows every server in the U the player chose.
   const [slots, setSlots] = useStageState<Slots>('rack:slots', {});
   const [selected, setSelected] = useState<string | null>(null);
@@ -98,7 +103,8 @@ export function RackGame() {
     const [kind, rack, slotStr] = zone.split(':');
     if (kind !== 'slot' && kind !== 'rack') return;
     if (rack !== d.rack) return wrongRack(d, rack);
-    const col = layoutOf(rackServers(w), slots)[rack];
+    if (!day) return;
+    const col = layoutOf(rackServers(w, day), slots)[rack];
     let slot = Number(slotStr);
     if (kind === 'rack') slot = DEFAULT_ORDER.find((i) => col[i] === null) ?? -1;
     if (slot < 0 || col[slot]) {
@@ -115,8 +121,8 @@ export function RackGame() {
 
   const { drag, bind } = useDragDrop<string>(place);
 
-  if (!world) return null;
-  const servers = rackServers(world);
+  if (!world || !day) return null;
+  const servers = rackServers(world, day);
   const layout = layoutOf(servers, slots);
   const onCart = servers.filter((d) => !d.installed);
   const done = onCart.length === 0;
