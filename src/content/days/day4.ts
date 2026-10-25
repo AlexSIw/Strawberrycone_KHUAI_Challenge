@@ -6,7 +6,7 @@
 import { snapshot } from '../../sim/ios/config';
 import { readyPods } from '../../sim/k8s';
 import { campusDelivery, studentDelivery, sviUp } from '../../sim/network';
-import type { Device, Health, World } from '../../sim/types';
+import type { Device, Health, PlayContext, World } from '../../sim/types';
 import { k8sHealth, k8sLayer } from '../k8sWorld';
 import { ADDR } from '../topology';
 import type { DaySpec } from '../types';
@@ -53,7 +53,22 @@ const CHECKS: [string, (e: string) => boolean][] = [
   ['lacp', (e) => e === 'ios:TOR-01:show etherchannel summary'],
   ['psu', (e) => e === 'noc:fms'],
 ];
-const checked = (events: string[]) => CHECKS.filter(([, ok]) => events.some(ok));
+/** World time the checklist opened (stamped when the mission before it completes). */
+const CHECKLIST_AT = 'checklist:openedAt';
+/** Checklist items looked at since the checklist opened (a look during an earlier mission doesn't count). */
+function checked(w: World, c: PlayContext) {
+  const since = Number(w.flags[CHECKLIST_AT] ?? Infinity);
+  return CHECKS.filter(([, ok]) => c.events.some((e) => ok(e) && (c.eventTimes[e] ?? -1) >= since));
+}
+
+/** `pods` was run once (at least) two enroll pods existed (not an earlier look at an empty list), and they are Running. */
+function podsSeen(w: World, c: PlayContext): boolean {
+  const ready = w.k8s ? readyPods(w.k8s, 'enroll') : [];
+  const at = c.eventTimes['k8s_get_pods'];
+  if (ready.length < 2 || at === undefined) return false;
+  const born = ready.map((p) => p.born).sort((a, b) => a - b);
+  return at >= born[1];
+}
 
 function health(w: World): Health {
   if (!w.k8s) return emptyHealth(w);
@@ -80,11 +95,11 @@ export const day4: DaySpec = {
   mapDevices: ['web', 'web2', 'db', 'srv-new', 'srv-db', 'n1', 'n2'],
   title: '점검 · 이중화',
   subtitle: 'k8s · HSRP · 화재 훈련',
-  topics: ['Cluster · Node · Pod', '원하는 상태와 Self-healing', 'HSRP 이중화(Active / Standby)', '냉각과 drain', '이중화는 시험해 봐야 안다'],
+  topics: ['Cluster · Node · Pod', '원하는 상태와 Self-healing', 'HSRP 이중화(Active / Standby)', '냉각과 drain', '이중화는 직접 꺼 봐야 안다'],
   intro: [
     { who: 'boss', text: 'D-1! 내일이 수강신청이다. 오늘은 리허설: 학생 접속을 하루 종일 1초에 1,500건(1,500 rps) 흘려 볼 거야.' },
-    { who: 'mentor', text: '오늘부터 신청 앱은 쿠버네티스(서버 여러 대를 대신 돌봐 주는 관리 프로그램)가 K8S-01~04(노드 n1~n4) 위에서 돌려. 우리는 "원하는 상태"만 적으면 돼. 지금은 신청 pod가 0개라 사이트가 안 열려. 설계 보드부터!' },
-    { who: 'mentor', text: 'D-4에 만든 게이트웨이 기억나? CORE-01 혼자 맡고 있어서 Standby가 unknown이었지. 선배가 다른 VLAN은 짝을 세워 뒀으니, WEB(10)·K8S(40) 두 개는 오늘 우리가 CORE-02에 세우자.' },
+    { who: 'mentor', text: '오늘부터 신청 앱은 쿠버네티스(서버 여러 대를 대신 돌봐 주는 관리 프로그램)가 K8S-01~04(노드: 일하는 서버 n1~n4) 위에서 돌려. 우리는 "원하는 상태"만 적으면 돼. 지금은 신청 pod(앱이 실제로 도는 가장 작은 단위)가 0개라 사이트가 안 열려. 설계 보드부터!' },
+    { who: 'mentor', text: 'D-4에 만든 게이트웨이 기억나? 그때는 CORE-01 혼자 맡아서 Standby가 unknown이었지. 그사이 선배가 DB(20) 같은 다른 VLAN은 CORE-02에 짝을 세워 뒀는데, WEB(10)·K8S(40) 두 개는 아직 CORE-01 혼자야. 오늘 우리가 CORE-02에 세우자.' },
     { who: 'boss', text: '마지막으로 이중화 점검표. 둘씩 있다고 끝이 아니야. 퇴근 전에 하나씩 눈으로 확인해.' },
     { who: 'lion', text: '원하는 상태 쓰고, 짝 세우고, 점검표! 내일을 위해!', mood: 'happy' },
   ],
@@ -106,7 +121,7 @@ export const day4: DaySpec = {
       id: 'observe',
       text: '관리 PC 터미널에서 pods 로 신청 pod가 Running인지 확인하기',
       spot: 'desk',
-      done: (w, c) => c.events.includes('k8s_get_pods') && !!w.k8s && readyPods(w.k8s, 'enroll').length >= 2,
+      done: podsSeen,
       after: ['desired'],
       concept: 'selfHealing',
       lesson: '적어 둔 개수만큼 pod가 떴어요. 쿠버네티스는 원하는 상태와 실제 상태를 계속 비교해서 맞춰요. pod가 죽으면 사람이 손대기 전에 새 pod를 띄워요(Self-healing).',
@@ -119,24 +134,29 @@ export const day4: DaySpec = {
       progress: (w) => `${standbys(w).length}/${STANDBY_VLANS.length}`,
       after: ['observe'],
       concept: 'hsrp',
-      lesson: '이제 가상 게이트웨이(.1)를 두 코어가 같이 맡아요. 평소엔 우선순위가 높은 CORE-01이 Active, CORE-02는 Standby. preempt를 켜 두면 CORE-01이 돌아왔을 때 Active를 되찾아요.',
+      lesson: '이제 가상 게이트웨이(.1)를 두 코어가 같이 맡아요. 평소엔 우선순위가 높은 CORE-01(110)이 Active, CORE-02(100)는 Standby. preempt는 "내 우선순위가 더 높으면 Active를 되찾기"라서, 돌아오는 CORE-01에 켜져 있어야(show standby brief 의 P) 의미가 있어요. CORE-02에도 똑같이 켜 두면 나중에 우선순위를 바꿔도 짝이 같은 규칙으로 움직여요.',
     },
     {
       id: 'uncordon',
       text: '냉각이 돌아오면 비웠던 노드를 다시 열기 (nodes 로 확인 → uncordon)',
       spot: 'desk',
-      done: (w) => !!w.k8s && Object.values(w.k8s.nodes).every((n) => n.ready && !n.cordoned),
+      done: (w) => {
+        const ok = !!w.k8s && Object.values(w.k8s.nodes).every((n) => n.ready && !n.cordoned);
+        // The checklist opens now: only looks from here on count for it.
+        if (ok && w.flags[CHECKLIST_AT] === undefined) w.flags[CHECKLIST_AT] = w.t;
+        return ok;
+      },
       after: ['hsrp'],
       afterIncidents: ['d1-heat:0'],
       concept: 'drain',
-      lesson: 'drain은 노드에 "점검 중" 팻말을 거는 일이에요. 새 pod를 막고, 있던 pod는 다른 노드에 새로 띄워요. 점검이 끝나면 uncordon으로 팻말을 떼요.',
+      lesson: 'drain은 노드에 "점검 중" 팻말을 거는 일이에요. 새 pod를 막고, 남아 있던 pod는 다른 노드에 새로 띄워요. 노드가 다시 Ready가 돼도 팻말은 그대로라, 점검이 끝나면 uncordon으로 떼야 다시 일을 받아요.',
     },
     {
       id: 'checklist',
       text: '이중화 점검표: 코어 HSRP(show standby brief) · TOR-01 묶음(show etherchannel summary) · FMS 전원 A/B',
       spot: 'desk',
-      done: (_w, c) => checked(c.events).length === CHECKS.length,
-      progress: (_w, c) => `${checked(c.events).length}/${CHECKS.length}`,
+      done: (w, c) => checked(w, c).length === CHECKS.length,
+      progress: (w, c) => `${checked(w, c).length}/${CHECKS.length}`,
       after: ['uncordon'],
       concept: 'spof',
       lesson: '게이트웨이 둘(HSRP), 업링크 두 줄(LACP), 전원 두 줄(A/B). 점검표로는 "둘 다 있다"까지 확인했어요. 하지만 "하나가 죽어도 된다"는 다른 얘기예요.',

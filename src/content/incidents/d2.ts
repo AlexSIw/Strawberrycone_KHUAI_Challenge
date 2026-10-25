@@ -2,7 +2,7 @@
 // Every check looks at what the network / containers actually do (delivery, utilization, STP, port-channel
 // state, what answers on a port), never at a flag the solution sets.
 import { appDb, BAD_IMAGE_FLAG, dataOnVolume, dbRows, enrollPublished, isDb, isEnroll, nextContainerId } from '../../sim/commands/docker';
-import { listening, log, logicalLinks, poState, resolve, runsStp, stpView, studentDelivery, utilization } from '../../sim/network';
+import { listening, log, logicalLinks, poNumber, poState, resolve, runsStp, stpView, studentDelivery, utilization } from '../../sim/network';
 import type { IncidentTemplate } from '../../sim/scenario';
 import type { World } from '../../sim/types';
 import { own } from '../../sim/util';
@@ -35,15 +35,21 @@ const torUplinks = (w: World) =>
 /** Students get through at full speed and none of TOR-01's uplinks is congested. */
 export const uplinkRelaxed = (w: World): boolean => studentDelivery(w).ok >= 0.99 && torUplinks(w).every((l) => utilization(w, l.key) <= BUSY);
 
+/**
+ * The port-channel joining TOR-01 and CORE-01 with (at least) both cables bundled (2 × 10G). Each end
+ * numbers its Po on its own (Po1 on one switch may face Po2 on the other, as on real IOS).
+ */
+const torCorePo = (w: World) =>
+  logicalLinks(w).find((l) => l.kind === 'po' && l.up && l.cables.length >= 2 && [l.a.dev, l.b.dev].sort().join() === 'CORE-01,TOR-01');
+
 /** TOR-01 ↔ CORE-01 run as one port-channel with (at least) both cables bundled (2 × 10G). */
-export function poBundled(w: World): boolean {
-  const po = logicalLinks(w).find((l) => l.kind === 'po' && l.key === 'CORE-01:Po1~TOR-01:Po1');
-  return !!po && po.up && po.cables.length >= 2;
-}
+export const poBundled = (w: World): boolean => !!torCorePo(w);
 
 /** …and every member configured on either end is in it (flag P): nothing down or suspended. */
-export const poWhole = (w: World): boolean =>
-  poBundled(w) && ['TOR-01', 'CORE-01'].every((d) => poState(w, d, 1).members.every((m) => m.flag === 'P'));
+export function poWhole(w: World): boolean {
+  const po = torCorePo(w);
+  return !!po && [po.a, po.b].every((p) => poState(w, p.dev, poNumber(p.ifn) ?? 1).members.every((m) => m.flag === 'P'));
+}
 
 /** The app container on APP-01 that students can reach: web port outside → the app's port inside. */
 export const appContainer = (w: World) => w.docker?.containers.find((c) => c.host === APP_HOST && enrollPublished(c));
@@ -66,6 +72,7 @@ export const templates: IncidentTemplate[] = [
     // The afternoon load test sends 8,000 rps to the app on APP-01 (behind TOR-01). TOR-01 has two cables
     // to CORE-01, but they aren't bundled, so spanning tree blocks one and a single 10G link carries
     // 12.8 Gbps. Fix: bundle both ends (LACP). D-2 only: from D-1 on the bundle already exists.
+    // A player who bundled the second cable before the load test simply sees it hold (resolved at once).
     id: 'd2-uplink',
     day: 3,
     until: 3,
@@ -74,7 +81,7 @@ export const templates: IncidentTemplate[] = [
       title: '부하 테스트 중 수강신청 응답 느림',
       alert: '모의 부하 테스트를 시작했더니 수강신청 페이지가 엄청 느려졌어요! 그런데 APP-01 서버는 한가하대요.',
       severity: 'major',
-      alarm: { source: 'poll', device: 'TOR-01', text: 'TOR-01 업링크 사용률 100% 초과' },
+      alarm: { source: 'poll', device: 'TOR-01', text: 'TOR-01 업링크 사용률 100% (포화)' },
       room: 'network',
       inject: (w) => {
         w.traffic.rps = Number(v.rps);
@@ -85,7 +92,7 @@ export const templates: IncidentTemplate[] = [
         '그 스위치에서 코어로 가는 케이블은 몇 개 꽂혀 있고, 지금 일하는 건 몇 개야? 고리(루프)를 막으려고 STP가 하나를 막아 두고 있을 거야. 막힌 걸 억지로 열지 말고, 두 줄을 한 줄처럼 쓰는 방법은 없을까?',
         '여러 케이블을 한 묶음으로 만드는 설정(LACP)이 있어. 묶음은 양쪽 장비에 똑같이 해 줘야 해. 다 하고 나면 묶음 상태를 한 줄씩 보여주는 show 명령으로 확인!',
       ],
-      bannedPhrases: ['channel-group', 'mode active', 'interface range', ...['Te1/1/1', 'Te1/1/2', 'Te1/0/3', 'Te1/0/4'].flatMap(ifPhrases)],
+      bannedPhrases: ['channel-group', 'channel group', '채널 그룹', 'mode active', 'interface range', ...['Te1/1/1', 'Te1/1/2', 'Te1/0/3', 'Te1/0/4'].flatMap(ifPhrases)],
       solution:
         'TOR-01 → CORE-01 케이블이 두 개(Te1/1/1·Te1/1/2 ↔ Te1/0/3·Te1/0/4) 있는데 묶여 있지 않아서, STP가 고리를 막으려고 TOR-01 Te1/1/2를 막고(BLK) 있었다. 그래서 10G 한 줄로 부하 테스트 트래픽(약 12.8Gbps)을 받다가 넘쳤다. 양쪽을 LACP로 묶는다. TOR-01: enable → configure terminal → interface range te1/1/1 - 2 → channel-group 1 mode active → end → write memory / CORE-01: enable → configure terminal → interface range te1/0/3 - 4 → channel-group 1 mode active → end → write memory. show etherchannel summary 에서 Po1(SU)와 멤버 (P) 확인.',
       solutionSteps: [
@@ -138,11 +145,24 @@ export const templates: IncidentTemplate[] = [
         check: (w) =>
           !stpView(w, VLAN).storm && (runsStp(w, 'TOR-01', VLAN) || runsStp(w, 'TOR-02', VLAN)) && resolve(w, 'sugang', 'ops').ip !== null,
         hints: [
-          '서버 한두 대가 아니라 여러 곳이 한꺼번에 이상해. 관제 화면(NMS)의 선 색과 스위치 일기장(show logging)을 봐. 같은 기기 주소(MAC)가 두 포트 사이를 왔다 갔다 한다는 줄이 보여?',
+          '서버 한두 대가 아니라 여러 곳이 한꺼번에 이상해. 관제 화면(NMS)의 선 색과 스위치 일기장(장비 로그)을 봐. 같은 기기 주소(MAC)가 두 포트 사이를 왔다 갔다 한다는 줄이 보여?',
           '같은 신호가 두 길로 돌고 돌면 고리(루프)가 생겨서 방송이 끝없이 불어나(브로드캐스트 스톰). 원래 이런 고리는 STP가 하나를 막아 줘야 해. 그 스위치들에서 STP가 그 VLAN에 지금 켜져 있는지 확인해봐.',
           'STP 상태를 보는 show 명령에서 그 VLAN이 "없다"고 나오면 누가 꺼 둔 거야(일기장에 흔적이 있어). 설정 모드에서 VLAN별로 STP를 다시 켜는 명령을 떠올려봐. 한쪽만 켜도 고리는 끊겨.',
         ],
-        bannedPhrases: ['spanning-tree vlan', 'no spanning-tree', `VLAN ${VLAN}`, `vlan ${VLAN}`, `vlan${VLAN}`, `Vlan${VLAN}`, ...ifPhrases(a), ...ifPhrases(b)],
+        bannedPhrases: [
+          'spanning-tree vlan',
+          'no spanning-tree',
+          `VLAN ${VLAN}`,
+          `vlan ${VLAN}`,
+          `vlan${VLAN}`,
+          `Vlan${VLAN}`,
+          // The number-first Korean order and the VLAN's name give the same value away.
+          `${VLAN}번 vlan`,
+          `${VLAN}번 브이랜`,
+          'infra vlan',
+          ...ifPhrases(a),
+          ...ifPhrases(b),
+        ],
         solution: `야간 작업자가 TOR-01 ${a}와 TOR-02 ${b}를 VLAN ${VLAN}(DNS·DHCP가 있는 INFRA VLAN)에 넣고 케이블로 이은 다음, 두 스위치 모두 VLAN ${VLAN}의 STP를 꺼 둔 채(no spanning-tree vlan ${VLAN}) 퇴근했다. 고리가 생겼는데 막아 줄 STP가 없어서 방송이 끝없이 돌았다(브로드캐스트 스톰). show logging(MACFLAP, 설정 변경), show spanning-tree vlan ${VLAN}("does not exist")로 확인. TOR-01: enable → configure terminal → spanning-tree vlan ${VLAN} → end → write memory (TOR-02도 같이 켜 둔다). STP가 켜지면 고리 포트가 막히고(bpduguard가 그 포트를 err-disabled로 막기도 한다) 스톰이 멈춘다.`,
         solutionSteps: [
           { ios: ['enable', 'configure terminal', `spanning-tree vlan ${VLAN}`, 'end', 'write memory'], host: 'TOR-01' },
@@ -170,11 +190,12 @@ export const templates: IncidentTemplate[] = [
       inject: () => {},
       check: (w) => !!appContainer(w) && listening(w, APP_HOST, 80),
       hints: [
-        '컨테이너 목록(docker ps)의 PORTS 칸을 봐. 포트는 서버로 들어오는 문 번호야. 앱 로그(docker logs)가 말하는 번호와 비교해봐.',
+        '컨테이너 목록의 PORTS 칸을 봐. 포트는 서버로 들어오는 문 번호야. 앱 로그가 말하는 번호와 비교해봐.',
         '컨테이너는 잠긴 방이야. 학생들이 오는 길가 문(웹 기본 포트)과, 앱이 방 안에서 기다리는 창구 번호를 이어줘야 손님이 들어와.',
         '이미 뜬 컨테이너는 문을 바꿀 수 없어. 지우고, 바깥 문과 안쪽 창구를 잇는 실행 옵션을 붙여서 다시 실행해봐.',
       ],
-      bannedPhrases: ['-p 80:8000', '80->8000', '80 -> 8000', '80→8000', '80 → 8000', '80번과 8000번', '80번을 8000번', '80번에서 8000번', '80번 문과 8000번'],
+      // '8000' alone: the inner port is the answer value ('안쪽 창구는 8000번이야').
+      bannedPhrases: ['-p 80:8000', '80->8000', '80 -> 8000', '80→8000', '80 → 8000', '8000'],
       solution: '포트 매핑(바깥 문과 안쪽 창구 잇기)이 없거나 안쪽 번호가 앱 창구(8000)와 달랐다. (srv-new에서) docker rm -f enroll → docker run -p 80:8000 enroll:1.0',
       solutionSteps: [
         { cmd: 'docker rm -f enroll', host: APP_HOST },
@@ -200,9 +221,9 @@ export const templates: IncidentTemplate[] = [
       const shut = v.kind === 'shut';
       return {
         title: 'TOR-01 업링크 묶음 일부 빠짐',
-        alert: '관제 화면에 TOR-01 업링크 경보가 떴어요. 서비스는 일단 돌아가는 것 같은데… 지금 봐야 해요?',
+        alert: '관제 화면에 TOR-01 업링크 경보가 떴어요. 수강신청은 일단 열리는데… 지금 봐야 해요?',
         severity: 'major',
-        alarm: { source: 'syslog', device: 'TOR-01', text: 'TOR-01 Port-channel 1 멤버 이탈 (EC-5-UNBUNDLE)' },
+        alarm: { source: 'syslog', device: 'TOR-01', text: 'TOR-01 업링크 묶음 멤버 이탈 (EC-5-UNBUNDLE)' },
         room: 'network',
         inject: (w) => {
           const f = w.devices[dev]?.nd?.ifs[port];
@@ -216,14 +237,14 @@ export const templates: IncidentTemplate[] = [
         },
         check: poWhole,
         hints: [
-          '서비스가 멀쩡한데 경보가 떴다면 여유나 예비가 줄어든 거야. 그 스위치에서 묶음 상태를 한 줄씩 보여주는 show 명령으로, 멤버마다 어떤 글자가 붙어 있는지 봐.',
-          '묶음 멤버 옆 글자가 P면 묶여서 일하는 중, D는 꺼짐, s는 상대가 같이 안 묶어 줘서 대기 중이야. 빠진 멤버의 양쪽 끝 장비를 다 확인해. 일기장(show logging)에 누가 설정을 바꿨는지도 남아 있어.',
-          '꺼진 포트라면 그 포트 설정 모드에서 다시 켜고, 한쪽만 묶여 있다면 반대쪽도 같은 묶음 번호로 묶어 줘. 그다음 저장!',
+          '서비스가 아직 돌아가는데 경보가 떴다면 여유나 예비가 줄어든 거야. 그 스위치에서 묶음 상태를 한 줄씩 보여주는 show 명령으로, 멤버마다 어떤 글자가 붙어 있는지 봐.',
+          '묶음 멤버 옆 글자가 P면 묶여서 일하는 중, D는 꺼짐, s는 묶음에서 빠져 멈춘 것(suspended: 상대가 같이 안 묶어 줌)이야. 빠진 멤버의 양쪽 끝 장비를 다 확인해. 장비 일기장(로그)에 누가 설정을 바꿨는지도 남아 있어.',
+          '꺼진 포트라면 그 포트 설정 모드에서 다시 켜고, 한쪽만 묶여 있다면 빠진 쪽 포트도 그 장비의 묶음에 다시 넣어 줘. 그다음 저장!',
         ],
-        bannedPhrases: [...ifPhrases(port), 'channel-group', 'mode active', 'no shutdown', 'no shut'],
+        bannedPhrases: [...ifPhrases(port), 'channel-group', 'channel group', '채널 그룹', 'mode active', 'no shutdown', 'no shut'],
         solution: shut
           ? `누군가 TOR-01 ${port}(묶음 Po1의 멤버)를 shutdown 해서 묶음이 10G 한 줄로 줄었다 (show etherchannel summary → ${port}(D), show logging). TOR-01: enable → configure terminal → interface ${port} → no shutdown → end → write memory`
-          : `누군가 CORE-01 ${port}를 묶음에서 빼서(no channel-group) 한쪽만 묶인 상태가 됐다. 반대편 TOR-01 Te1/1/2가 대기(s)로 빠져 묶음이 10G 한 줄로 줄었다 (show etherchannel summary, show logging). CORE-01: enable → configure terminal → interface ${port} → channel-group 1 mode active → end → write memory`,
+          : `누군가 CORE-01 ${port}를 묶음에서 빼서(no channel-group) 한쪽만 묶인 상태가 됐다. 반대편 TOR-01 Te1/1/2가 묶음에서 빠져 멈춤(s, suspended) 상태가 되어 묶음이 10G 한 줄로 줄었다 (show etherchannel summary, show logging). CORE-01: enable → configure terminal → interface ${port} → channel-group 1 mode active → end → write memory`,
         solutionSteps: shut
           ? [{ ios: ['enable', 'configure terminal', `interface ${port}`, 'no shutdown', 'end', 'write memory'], host: dev }]
           : [{ ios: ['enable', 'configure terminal', `interface ${port}`, 'channel-group 1 mode active', 'end', 'write memory'], host: dev }],
@@ -240,7 +261,7 @@ export const templates: IncidentTemplate[] = [
     until: 3,
     variants: [{ bad: 'enroll:1.1', alt: 'enroll:1.2' }],
     make: (v) => ({
-      title: '새 버전 배포 후 신청 에러 급증',
+      title: '수강신청 500 에러 급증',
       alert: '방금 전까지 멀쩡했는데, 신청 버튼을 누르면 500 에러(서버 안에서 처리하다 터졌다는 표시)가 뜬대요!',
       severity: 'critical',
       alarm: { source: 'poll', device: APP_HOST, text: 'APP-01 HTTP 500 응답 급증' },
@@ -268,7 +289,8 @@ export const templates: IncidentTemplate[] = [
         '컨테이너 로그를 보면 새 버전이 요청을 처리하다 터지고 있어. 고칠 때까지 학생들을 기다리게 할 순 없어. 예전 버전 이미지는 아직 냉동고(레지스트리)에 있지?',
         '버전 이름표(태그)를 아침에 쓰던 것으로 바꿔서 컨테이너를 새로 띄워봐. 이미 뜬 컨테이너는 이미지를 바꿀 수 없어서 지우고 다시 실행해야 해.',
       ],
-      bannedPhrases: ['enroll:1.0', 'docker rm -f enroll', 'docker run -p'],
+      // '1.0' alone: the rollback tag ('1.0 태그로 다시 띄워').
+      bannedPhrases: ['enroll:1.0', '1.0', 'docker rm -f enroll', 'docker run -p'],
       solution:
         '동료가 버그 있는 새 이미지(enroll:1.1)로 APP-01 컨테이너를 다시 만들었다 (docker ps 의 IMAGE, docker logs 의 500 에러로 확인). 아침에 만든 이전 태그로 되돌린다: (srv-new에서) docker rm -f enroll → docker run -p 80:8000 enroll:1.0 (컨테이너 이름은 docker ps, 태그는 docker images 로 확인)',
       solutionSteps: [
@@ -307,7 +329,8 @@ export const templates: IncidentTemplate[] = [
         'DB 로그에서 데이터를 어디에 쓰고 있는지(data dir) 봐. 사물함(볼륨)은 지워지지 않았어. 새 컨테이너가 그 사물함을 안 쓰고 있을 뿐이야.',
         '사물함을 DB가 데이터를 쓰는 폴더에 다시 붙여서 DB 컨테이너를 새로 실행해봐. 신청 앱이 찾아오는 포트도 그대로 열어야 해.',
       ],
-      bannedPhrases: ['-v dbdata', 'docker volume create', ':/var/lib/mysql', '/var/lib/mysql에 붙', '/var/lib/mysql 에 붙', '/var/lib/mysql에 볼륨', '볼륨을 /var/lib/mysql'],
+      // The data-dir path and the morning's volume name are the answer values on their own.
+      bannedPhrases: ['-v dbdata', 'docker volume create', '/var/lib/mysql', 'dbdata'],
       solution:
         'DB 업데이트 스크립트가 볼륨 옵션(-v) 없이 DB 컨테이너를 새로 만들어서, 새 컨테이너는 빈 자기 안쪽에 데이터를 쓰고 있다. 데이터는 아침에 만든 볼륨에 그대로 있다. (srv-db에서) docker rm -f db → docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8 (볼륨 이름은 docker volume ls 로 확인한 아침의 것)',
       solutionSteps: [

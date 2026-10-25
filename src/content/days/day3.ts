@@ -5,15 +5,18 @@
 // Teaching incidents: uplink saturation → LACP; loop / broadcast storm → STP back on. Optional: no -p.
 import { snapshot } from '../../sim/ios/config';
 import { appDb, dbRows } from '../../sim/commands/docker';
-import { campusDelivery, lbView, studentDelivery } from '../../sim/network';
+import { campusDelivery, lbView, reach, studentDelivery } from '../../sim/network';
 import type { Device, DockerState, Health, World } from '../../sim/types';
 import { APP_HOST, appContainer, badImage, DB_HOST, dbOnVolume, enrollUnreachable, poBundled, UPLINK_PORTS } from '../incidents/d2';
+import { ipOf } from '../incidents/d4';
 import type { DaySpec } from '../types';
 import { emptyHealth } from '../worlds';
 import { BASE_INTERACTIONS, WEEKDAY_CLOCK } from './common';
 
 /** Enrollment rows in last night's DB backup (restored into an empty volume). */
 const BACKUP_ROWS = 1520;
+/** The DB VLAN, whose CORE-02 standby gateway 선배 adds only after D-2. */
+const DB_VLAN = 20;
 
 type Status = 'up' | 'degraded' | 'down';
 const status = (ok: number): Status => (ok >= 0.99 ? 'up' : ok > 0 ? 'degraded' : 'down');
@@ -60,14 +63,17 @@ function health(w: World): Health {
   if (!app) notes.push('APP-01의 신청 앱이 응답하지 않아요');
   else if (bad) notes.push('신청 요청이 500 에러(서버 안 처리 오류)로 실패해요');
   const db = appDb(w);
+  // The app reaches its DB over the network: APP-01 (VLAN 10) → DB-02 (VLAN 20) through the core's gateway.
+  const dbReached = !!db && (!app || reach(w, APP_HOST, ipOf(DB_HOST)).ok);
   const rows = db ? dbRows(w, db) : 0;
-  const dataOk = !db ? 0 : rows > 0 ? 1 : 0.3;
+  const dataOk = !db || !dbReached ? 0 : rows > 0 ? 1 : 0.3;
   if (!db) notes.push('DB 응답 없음 (신청 앱 → DB-02:3306)');
-  else if (rows === 0) notes.push('신청 내역 0건! 데이터 유실');
+  else if (!dbReached) notes.push('신청 앱이 DB-02에 연결하지 못해요');
+  else if (rows === 0) notes.push('신청 내역이 0건으로 보여요 (DB가 비어 있어요)');
   const ok = path.ok * appOk * dataOk;
   services['수강신청'] = status(ok);
   services['APP-01 (신청 앱)'] = !app ? 'down' : bad ? 'degraded' : 'up';
-  services['DB-02 (DB)'] = !db ? 'down' : rows === 0 ? 'degraded' : 'up';
+  services['DB-02 (DB)'] = !db || !dbReached ? 'down' : rows === 0 ? 'degraded' : 'up';
   services['캠퍼스 인터넷'] = status(campus.ok);
   notes.push(...campus.notes);
   for (const c of Object.values(w.campus ?? {})) {
@@ -176,7 +182,11 @@ export const day3: DaySpec = {
   },
   health,
   panels: ['traffic', 'services', 'links'],
-  /** What D-2 builds, taken back out: the TOR-01 ↔ CORE-01 bundle (the second cable stays, unbundled). */
+  /**
+   * What D-2 builds, taken back out: the TOR-01 ↔ CORE-01 bundle (the second cable stays, unbundled).
+   * Also CORE-02's VLAN 20 gateway: 선배 sets that standby up after D-2 (D-1 starts with it), so up to D-2
+   * the VLAN 10/20 gateways live on CORE-01 alone (D-4's gateway-down incident needs that).
+   */
   unbuild: (w) => {
     for (const [dev, ports] of Object.entries(UPLINK_PORTS)) {
       const n = w.devices[dev]?.nd;
@@ -189,6 +199,9 @@ export const day3: DaySpec = {
       delete n.ifs.Po1;
       resave(w.devices[dev]);
     }
+    const c2 = w.devices['CORE-02']?.nd;
+    if (c2) delete c2.svis[DB_VLAN];
+    resave(w.devices['CORE-02']);
   },
   /** Docker on APP-01 / DB-02, the L4 pointed at APP-01:80 (/health), and no students during the morning maintenance. */
   setup: (w) => {

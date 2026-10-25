@@ -26,6 +26,7 @@ import {
 import { USER_MODE } from '../sim/ios';
 import { newSeed } from '../sim/scheduler';
 import { LAST_DAY, type IosMode, type StageId, type World } from '../sim/types';
+import { placeName } from '../ui/noc/facility';
 
 // ---------- types ----------
 
@@ -498,7 +499,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
       for (const id of raised) {
         const a = run.alarms.find((x) => x.id === id);
         if (!a || (a.scenarioId && run.scenarios.find((r) => r.id === a.scenarioId)?.state === 'resolved')) continue;
-        toast('alert', alarmLine(a, run.world.devices[a.device]?.label ?? a.device), a.scenarioId ?? undefined, 'nms');
+        // Facility alarms name a place, not a device ('rack2' → '랙 2'), as the alarm list and the FMS do.
+        toast('alert', alarmLine(a, run.world.devices[a.device]?.label ?? placeName(a.device)), a.scenarioId ?? undefined, 'nms');
       }
       awardCards(
         resolved.map((id) => {

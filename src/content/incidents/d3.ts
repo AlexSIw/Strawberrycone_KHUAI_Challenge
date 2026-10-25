@@ -55,8 +55,11 @@ export const templates: IncidentTemplate[] = [
   {
     // One of TOR-01's links to the cores is cut. Spanning tree opens the other one, so students notice
     // nothing; but there is no spare left (major), and the NMS gets a link-down trap at once.
+    // Not an extra on D-2/D-1: the cable game there lists only server cables (no way to replace this
+    // one), and under D-2's load test losing an uplink is no longer invisible to students.
     id: 'd3-uplink',
     day: 2,
+    until: 2,
     variants: [
       { cable: 'tor1-up1', port: 'Te1/1/1' },
       { cable: 'tor1-up3', port: 'Te1/1/3' },

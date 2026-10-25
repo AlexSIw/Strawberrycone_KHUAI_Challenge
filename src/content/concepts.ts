@@ -54,9 +54,9 @@ export const CONCEPTS: Record<string, Concept> = {
   escalation: { id: 'escalation', name: '담당팀 이관 (에스컬레이션)', analogy: '우리 가게 일이 아니면 건물 관리실에 연락', definition: '내 담당이 아닌 시스템(다른 팀이 운영하는 교내 서비스 등)의 장애는 확인한 증상을 정리해 담당팀에 넘긴다. 직접 손대지 않고, 넘긴 뒤에도 해결될 때까지 지켜본다' },
   // ---- v2 · D-2 컨테이너 · 링크 ----
   oversubscription: { id: 'oversubscription', name: '업링크 · 오버서브스크립션', analogy: '골목 여러 개가 모이는 큰길 하나', definition: '랙의 서버들이 내보내는 트래픽은 랙 스위치(ToR)의 위쪽 길(업링크)로 모인다. 서버 쪽 포트를 다 합친 폭이 업링크 폭보다 크게 설계하는 걸 오버서브스크립션이라 하고, 평소엔 괜찮지만 몰리면 업링크가 먼저 막힌다. 관제 화면의 링크 사용률로 본다' },
-  lacp: { id: 'lacp', name: 'LACP · 포트 묶음(EtherChannel)', analogy: '두 차선을 한 도로로 합치기', definition: '장비 사이 케이블 여러 줄을 하나의 논리 링크(Port-channel)로 묶는다. 폭이 합쳐지고 한 줄이 끊겨도 나머지로 버틴다. 양쪽 장비가 똑같이 묶어야 하고(LACP로 서로 확인), show etherchannel summary 에서 P = 묶여서 일하는 중, s = 대기, D = 꺼짐' },
+  lacp: { id: 'lacp', name: 'LACP · 포트 묶음(EtherChannel)', analogy: '두 차선을 한 도로로 합치기', definition: '장비 사이 케이블 여러 줄을 하나의 논리 링크(Port-channel)로 묶는다. 폭이 합쳐지고 한 줄이 끊겨도 나머지로 버틴다. 양쪽 장비가 똑같이 묶어야 하고(LACP로 서로 확인), show etherchannel summary 에서 P = 묶여서 일하는 중, s = 묶음에서 빠져 멈춤(suspended: 상대가 같이 안 묶어 줌), D = 꺼짐' },
   stp: { id: 'stp', name: 'STP · 루프 · 브로드캐스트 스톰', analogy: '빙빙 도는 회전교차로에 차단봉 하나', definition: '스위치 사이 길이 고리(루프)를 이루면 방송(broadcast) 프레임이 끝없이 돌며 불어나 네트워크 전체가 마비된다(브로드캐스트 스톰). STP(Spanning Tree Protocol)는 고리마다 포트 하나를 막아(BLK) 나무 모양으로 만든다. VLAN별로 켜고 끈다' },
   // ---- v2 · D-1 점검 · 이중화 ----
   drain: { id: 'drain', name: 'cordon · drain (노드 비우기)', analogy: '매장 문에 "점검 중" 팻말 걸기', definition: 'cordon은 노드에 새 pod가 오지 못하게 막고, drain은 거기에 더해 있던 pod를 내보낸다(다른 노드에 새 pod로 다시 뜬다). 점검·고장 전에 노드를 미리 비울 때 쓰고, 끝나면 uncordon으로 다시 연다' },
-  failover: { id: 'failover', name: '장애 조치(Failover) 시험 · 숨은 SPOF', analogy: '소방 훈련: 비상구가 진짜 열리는지 직접 열어 보기', definition: '예비 장비가 있어도, 예비로 가는 길이 끝까지 이어져 있는지는 실제로 하나를 꺼 봐야 안다. trunk에 빠진 VLAN 하나 같은 작은 설정이 숨은 단일 장애점(SPOF)이 된다. 그래서 데이터센터는 정기적으로 이중화 시험(DR 훈련)을 한다' },
+  failover: { id: 'failover', name: '장애 조치(Failover) 훈련 · 숨은 SPOF', analogy: '소방 훈련: 비상구가 진짜 열리는지 직접 열어 보기', definition: '예비 장비가 있어도, 예비로 가는 길이 끝까지 이어져 있는지는 실제로 하나를 꺼 봐야 안다. trunk에 빠진 VLAN 하나 같은 작은 설정이 숨은 단일 장애점(SPOF)이 된다. 그래서 데이터센터는 정기적으로 하나를 일부러 꺼 보는 이중화 훈련(DR 훈련)을 한다' },
 };

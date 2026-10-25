@@ -17,6 +17,8 @@ import {
   studentDelivery,
   utilization,
 } from '../src/sim/network';
+import { reachesHost } from '../src/content/incidents/d4';
+import { poBundled, poWhole } from '../src/content/incidents/d2';
 import { initRuntime } from '../src/sim/scenario';
 import type { World } from '../src/sim/types';
 import { apply, AUTOPLAY, RED } from './autoplay';
@@ -248,7 +250,7 @@ describe('d2-volume: the update script recreates the DB without its volume', () 
     expect(db.volume).toBeNull();
     expect(dbRows(run.world, db)).toBe(0);
     expect(run.world.docker!.hosts['srv-db'].volumes.dbdata).toBe(1520);
-    expect(run.health.notes).toContain('신청 내역 0건! 데이터 유실');
+    expect(run.health.notes).toContain('신청 내역이 0건으로 보여요 (DB가 비어 있어요)');
   });
 
   it('restart does not fix it; reattaching the volume does', () => {
@@ -312,6 +314,10 @@ describe('d2-uplink: the load test fills one 10G uplink; LACP makes it 20G', () 
     expect(studentDelivery(w).notes).toContain('수강신청 응답이 느려요');
     expect(studentDelivery(w).ok).toBeLessThan(0.9);
     expect(ios(run, 'TOR-01', ['enable', 'show spanning-tree vlan 10']).text).toMatch(/Te1\/1\/2\s+Altn BLK/);
+    // A 10G port can't send more than 10G: the rest waits or is dropped (txload is pinned at 255).
+    const te = ios(run, 'TOR-01', ['enable', 'show interfaces te1/1/1']).text;
+    expect(te).toContain('5 minute output rate 10000000000 bits/sec');
+    expect(te).toContain('txload 255/255');
   });
 
   it('bundling one side only does not help (members suspended, traffic detours via CORE-02)', () => {
@@ -329,8 +335,66 @@ describe('d2-uplink: the load test fills one 10G uplink; LACP makes it 20G', () 
     expect(po.capMbps).toBe(20000);
     expect(utilization(run.world, po.key)).toBeLessThan(0.9);
     expect(ios(run, 'TOR-01', ['enable', 'show etherchannel summary']).text).toMatch(/Po1\(SU\)\s+LACP\s+Te1\/1\/1\(P\)\s+Te1\/1\/2\(P\)/);
+    // The bundle's width is the sum of its members, as the lesson says.
+    expect(ios(run, 'TOR-01', ['enable', 'show interfaces po1']).text).toContain('BW 20000000 Kbit/sec');
     const logs = run.world.devices['TOR-01'].nd!.log.map((e) => e.tag);
     expect(logs).toContain('EC-5-BUNDLE');
+  });
+
+  const bundle = (run: StageRun, tor: string, core: string, extra: string[] = []) => {
+    run = ios(run, 'TOR-01', ['enable', 'configure terminal', 'interface range te1/1/1 - 2', tor, 'end', ...extra]).run;
+    return ios(run, 'CORE-01', ['enable', 'configure terminal', 'interface range te1/0/3 - 4', core, 'end', ...extra]).run;
+  };
+
+  it('each end numbers its Po on its own: Po1 facing Po2 is a bundle, and the mission counts it', () => {
+    let run = bundle(atIncident(), 'channel-group 1 mode active', 'channel-group 2 mode active', ['write memory', 'show etherchannel summary']);
+    run = ticks(run, 2);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(poBundled(run.world)).toBe(true);
+    expect(poWhole(run.world)).toBe(true);
+    expect(run.objectivesDone).toHaveProperty('lacp');
+  });
+
+  it.each([
+    ['passive', 'passive'],
+    ['active', 'on'],
+    ['on', 'passive'],
+  ])('%s facing %s never bundles: the members are suspended', (a, b) => {
+    let run = bundle(atIncident(), `channel-group 1 mode ${a}`, `channel-group 1 mode ${b}`);
+    run = ticks(run, 2);
+    expect(poState(run.world, 'TOR-01', 1).members.map((m) => m.flag)).toEqual(['s', 's']);
+    expect(poState(run.world, 'CORE-01', 1).members.map((m) => m.flag)).toEqual(['s', 's']);
+    expect(poBundled(run.world)).toBe(false);
+    expect(run.scenarios[0].state).toBe('active');
+  });
+
+  it.each([
+    ['active', 'passive', 'LACP'],
+    ['on', 'on', '-'],
+  ])('%s facing %s bundles', (a, b, proto) => {
+    let run = bundle(atIncident(), `channel-group 1 mode ${a}`, `channel-group 1 mode ${b}`);
+    run = ticks(run, 2);
+    expect(poBundled(run.world)).toBe(true);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(ios(run, 'CORE-01', ['enable', 'show etherchannel summary']).text).toMatch(new RegExp(`Po1\\(SU\\)\\s+${proto === '-' ? '-' : 'LACP'}\\s+Te1/0/3\\(P\\)`));
+  });
+});
+
+describe('extras on D-2', () => {
+  it('never the cut uplink cable: no D-2/D-1 mini-game can replace an uplink cable', () => {
+    for (const d of [3, 4] as const) expect(getStage(d).scenarios.some((s) => s.id.startsWith('d3-uplink:'))).toBe(false);
+  });
+
+  it('the DB VLAN gateway is CORE-01 alone until D-2 (선배 adds CORE-02 for D-1), so shutting it is felt', () => {
+    expect(startStage(D2).world.devices['CORE-02'].nd!.svis[20]).toBeUndefined();
+    expect(startStage(4).world.devices['CORE-02'].nd!.svis[20]?.hsrp).toBeDefined();
+    let run = only(dockerDone(), 'd4-svi:1');
+    run = ticks(run, 2);
+    expect(reachesHost(run.world, 'web', 'db')).toBe(false);
+    expect(run.health.availability).toBeLessThan(1);
+    run = ticks(solve(run, 'd4-svi:1'), 2);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(isGreen(run)).toBe(true);
   });
 });
 

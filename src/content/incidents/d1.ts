@@ -62,19 +62,20 @@ export const templates: IncidentTemplate[] = [
       // Facilities (they got the same FMS alarm) finish the CRAC repair once our workloads are safe.
       onResolve: repairCrac,
       hints: [
-        'FMS(시설 관제) 화면과 nodes 결과를 같이 봐. 어느 랙이 뜨겁고, 그 랙에 있는 노드는 어떤 상태야? 거기 있던 pod들은 지금 어디서 돌고 있어?',
+        'FMS(시설 관제) 화면과 노드 목록을 같이 봐. 어느 랙이 뜨겁고, 그 랙에 있는 노드는 어떤 상태야? 거기 있던 pod들은 지금 어디서 돌고 있어?',
         '방을 식히는 건 시설팀 몫이야. FMS에서 시설팀에 알려. 우리 몫은 뜨거운 노드에서 일을 빼고, 다시는 거기로 pod가 안 가게 막아 두는 거야.',
         '노드에 "점검 중" 팻말을 걸어서 새 pod를 막고, 있던 pod를 다른 노드로 내보내는 kubectl 명령이 있어. 뜨거운 랙의 노드마다 해 줘.',
       ],
-      bannedPhrases: ['kubectl drain', 'drain n1', 'drain n2', 'cordon n1', 'cordon n2'],
+      // Naming the hot nodes next to the verb gives the whole command away too ('n1, n2를 drain 해').
+      bannedPhrases: ['kubectl drain', 'drain n1', 'drain n2', 'cordon n1', 'cordon n2', 'n1, n2', 'n1·n2', 'n1과 n2', 'k8s-01·02', 'k8s-01, k8s-02', '를 drain'],
       solution:
-        '항온항습기(CRAC)가 멈춰 랙 1·2 온도가 오르고 있다. 랙 2의 K8S-01·02(n1·n2)는 45°C를 넘으면 NotReady가 된다(nodes 의 TEMP·STATUS, FMS 랙 온도로 확인). 우리 몫: kubectl drain n1 → kubectl drain n2 로 노드를 비우고(새 pod 금지 + 있던 pod는 다른 노드에 새로 뜸), FMS에서 "시설팀 통보". 시설팀이 냉각을 고치면 온도가 내려가고, 다 식으면 uncordon 으로 다시 연다.',
+        '항온항습기(CRAC)가 멈춰 랙 1·2 온도가 오르고 있다. 랙 2의 K8S-01·02(n1·n2)는 45°C를 넘으면 NotReady가 되고, 쿠버네티스가 그 위 pod를 다른 노드에 새로 띄운다(nodes 의 TEMP·STATUS, pods 의 NODE·AGE, FMS 랙 온도로 확인. 보통 경보를 볼 즈음엔 이미 옮겨져 있다). 우리 몫: kubectl drain n1 → kubectl drain n2 로 "점검 중" 팻말을 걸어 냉각이 불안한 동안 새 pod가 그 노드로 다시 가지 않게 막고(남은 pod가 있으면 다른 노드로 내보냄), FMS에서 "시설팀 통보". 시설팀이 냉각을 고치면 온도가 내려가고, 다 식으면 uncordon 으로 다시 연다.',
       solutionSteps: [
         { cmd: 'kubectl drain n1', host: 'ops' },
         { cmd: 'kubectl drain n2', host: 'ops' },
       ],
       concept: 'reschedule',
-      lesson: '노드를 비우면(drain) 그 위 pod는 사라지고 다른 노드에 새 pod(새 이름·새 IP)가 떠요(재스케줄링). 쿠버네티스는 일을 다른 자리로 보낼 수는 있어도 방을 식혀 주진 못해요. 냉각은 시설팀 몫!',
+      lesson: '노드가 쓰러지거나(NotReady) 비워지면(drain) 그 위 pod는 사라지고 다른 노드에 새 pod(새 이름·새 IP)가 떠요(재스케줄링). drain의 "점검 중" 팻말은 냉각이 불안한 동안 새 pod가 그 노드로 다시 가지 않게 막아 줘요. 하지만 쿠버네티스는 방을 식혀 주진 못해요. 냉각은 시설팀 몫!',
     }),
   },
   {
@@ -111,11 +112,23 @@ export const templates: IncidentTemplate[] = [
           '끊긴 노드들이 꽂힌 스위치에서 살아남은 코어까지 가는 길을 따라가 봐. 선 불빛은 초록인데, 그 길이 그 노드들의 VLAN을 실어 나르고 있어? trunk 포트가 실어 나르는 VLAN 목록을 보여주는 show 명령이 있어.',
           '빠진 VLAN이 있으면 그 trunk 포트 설정 모드에서 허용 VLAN 목록에 더해(add) 줘. 다른 VLAN이 지워지지 않게 조심! 그다음 저장.',
         ],
-        bannedPhrases: [...ifPhrases(port), 'allowed vlan add', `vlan add ${vlan}`, `VLAN ${vlan}`, `vlan ${vlan}`, `vlan${vlan}`, `Vlan${vlan}`],
+        bannedPhrases: [
+          ...ifPhrases(port),
+          'allowed vlan add',
+          `vlan add ${vlan}`,
+          `VLAN ${vlan}`,
+          `vlan ${vlan}`,
+          `vlan${vlan}`,
+          `Vlan${vlan}`,
+          // The number-first Korean order and the VLAN's name give the same value away.
+          `${vlan}번 vlan`,
+          `${vlan}번 브이랜`,
+          'k8s vlan',
+        ],
         solution: `네트워크실 1번 랙(CORE-01·BR-01·FW-01·L4-01)이 꺼지자 HSRP로 CORE-02가 게이트웨이를 이어받았다(오늘 만든 짝 덕분). 그런데 ${tor} → CORE-02 업링크(${port}) trunk에 K8S VLAN ${vlan}이 빠져 있어서, ${tor}에 꽂힌 K8S-03·04(n3·n4)는 살아남은 코어로 가는 길이 없었다(숨은 단일 장애점). ${tor}에서 show interfaces trunk 로 확인 → enable → configure terminal → interface ${port} → switchport trunk allowed vlan add ${vlan} → end → write memory`,
         solutionSteps: [{ ios: ['enable', 'configure terminal', `interface ${port}`, `switchport trunk allowed vlan add ${vlan}`, 'end', 'write memory'], host: tor }],
         concept: 'failover',
-        lesson: '예비(CORE-02)가 있어도 그 길이 끝까지 이어져 있어야 이중화예요. trunk에 VLAN 하나 빠진 게 숨은 단일 장애점이었어요. 이중화는 하나를 실제로 꺼 봐야(failover 시험) 진짜인지 알 수 있어요.',
+        lesson: '예비(CORE-02)가 있어도 그 길이 끝까지 이어져 있어야 이중화예요. trunk에 VLAN 하나 빠진 게 숨은 단일 장애점이었어요. 이중화는 하나를 실제로 꺼 봐야(failover 훈련) 진짜인지 알 수 있어요.',
       };
     },
   },

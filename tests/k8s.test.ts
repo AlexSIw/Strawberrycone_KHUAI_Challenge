@@ -7,7 +7,7 @@ import { k8sHealth, k8sLayer } from '../src/content/k8sWorld';
 import { getStage } from '../src/content/stages';
 import { applyDesired, repairCrac } from '../src/sim/actions';
 import { runCommand } from '../src/sim/commands';
-import { applyAction, applyCommand, scenarioOf, startStage, tickRun, type StageRun } from '../src/sim/engine';
+import { applyAction, applyCommand, recordEvents, scenarioOf, startStage, tickRun, type StageRun } from '../src/sim/engine';
 import { podsOf, readyPods, reconcile, setImage, unscheduled } from '../src/sim/k8s';
 import { hostDelivery, hsrpActiveFor, lbView, reach, studentDelivery } from '../src/sim/network';
 import { initRuntime } from '../src/sim/scenario';
@@ -383,5 +383,36 @@ describe('the desired-state board', () => {
     expect(run.objectivesDone).not.toHaveProperty('desired');
     run = applyAction(run, (w) => applyDesired(w, 'enroll', 2)).run;
     expect(run.objectivesDone).toHaveProperty('desired');
+  });
+});
+
+describe('missions count what the player does once they are shown', () => {
+  const objective = (id: string) => getStage(D1).objectives.find((o) => o.id === id)!;
+
+  it('a `pods` look at the empty list before the desired state does not finish observe', () => {
+    let run = cmd(startStage(D1), 'pods').run;
+    run = applyAction(run, (w) => applyDesired(w, 'enroll', 3, 'enroll:v1')).run;
+    run = ticks(run, 10);
+    expect(readyPods(run.world.k8s!, 'enroll')).toHaveLength(3);
+    expect(run.objectivesDone).toHaveProperty('desired');
+    expect(run.objectivesDone).not.toHaveProperty('observe');
+    run = cmd(run, 'pods').run;
+    expect(run.objectivesDone).toHaveProperty('observe');
+  });
+
+  it('the checklist opens at 0/3: looks during the HSRP mission or the heat incident do not count', () => {
+    let run = morning();
+    run = ios(run, 'CORE-02', ['enable', 'show standby brief']).run;
+    run = ios(run, 'TOR-01', ['enable', 'show etherchannel summary']).run;
+    run = recordEvents(run, ['noc:fms']).run;
+    run = ticks(solve(only(run, 'd1-heat:0'), 'd1-heat:0'), 4);
+    run = until(run, (r) => r.world.k8s!.nodes.n1.ready && r.world.k8s!.nodes.n2.ready);
+    for (const st of AUTOPLAY[D1].uncordon) run = apply(run, st, null);
+    expect(run.objectivesDone).toHaveProperty('uncordon');
+    run = ticks(run, 2);
+    expect(run.objectivesDone).not.toHaveProperty('checklist');
+    expect(objective('checklist').progress!(run.world, run.ctx)).toBe('0/3');
+    for (const st of AUTOPLAY[D1].checklist) run = apply(run, st, null);
+    expect(run.objectivesDone).toHaveProperty('checklist');
   });
 });
