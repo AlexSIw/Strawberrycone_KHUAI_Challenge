@@ -8,8 +8,11 @@ import type { Health, PlayContext, RoomId, StageId, World } from './types';
 export const INCIDENT_GAP = 10;
 
 export type Trigger =
-  /** Fires `delay` seconds into the stage (stage time starts after the intro dialogue) */
-  | { type: 'stageStart'; delay?: number }
+  /**
+   * Fires `delay` seconds into the day (day time starts after the briefing). Waits for the 10 s
+   * breather after the last fix unless `overlap` is set (the D-Day timeline runs on the clock).
+   */
+  | { type: 'stageStart'; delay?: number; overlap?: boolean }
   /**
    * Fires `delay` seconds (default INCIDENT_GAP) after every listed scenario is resolved AND every
    * listed objective is done; the timer starts at the latest of those moments. This is how incidents
@@ -37,30 +40,60 @@ export function gateOpenedAt(
   return latest;
 }
 
-/** A step that solves the scenario: either a terminal command run on a host, or a direct world action. */
+/**
+ * A step that solves the scenario: a shell command on a host, an IOS keystroke script typed on a
+ * network device (starting at the `>` prompt; the runner threads the mode line by line), or a direct
+ * world action (a mini-game, a NOC button).
+ */
 export type SolutionStep =
   | { cmd: string; host: string }
+  | { ios: string[]; host: string }
   | { action: (w: World) => void; label: string };
+
+/** NOC alarm severity (the doc's four levels). */
+export type AlarmSev = 'critical' | 'major' | 'minor' | 'warning';
+
+/**
+ * How the NOC learns about an incident:
+ * - trap / syslog: the device says so itself → the alarm shows up at once;
+ * - poll: only the next SNMP poll notices (utilization, CRC counters, temperature) → it shows up late.
+ */
+export interface AlarmSpec {
+  source: 'trap' | 'syslog' | 'poll';
+  /** Device id the NMS pins the alarm on */
+  device: string;
+  /** Alarm-list line: what the monitoring system sees, never the cause */
+  text: string;
+}
 
 export interface Scenario {
   id: string;
+  /** Day this incident is first taught (its manual section lives in that day's manual) */
   stage: StageId;
   title: string;
-  /** What the player hears first: a symptom, never the cause */
+  /** What users / the 팀장 report: a symptom, never the cause */
   alert: string;
-  severity: 'critical' | 'warning';
-  /** Room that is worth checking first (shown on the minimap) */
+  severity: AlarmSev;
+  alarm: AlarmSpec;
+  /** Room worth checking first (map marker only; never shown with the alarm) */
   room: RoomId;
   trigger: Trigger;
   inject: (w: World) => void;
   check: (w: World, ctx: PlayContext, h: Health) => boolean;
-  /** Called once on resolve, e.g. to restore mains after a UPS fix */
+  /** Called once on resolve */
   onResolve?: (w: World) => void;
-  /** Optional scenarios only fire on a condition and don't block stage clear if they never happen */
+  /** Optional scenarios only fire on a condition and don't block the day if they never happen */
   optional?: boolean;
+  /**
+   * Shallow-area incidents (campus services, campus links) can be handed to the team that owns them.
+   * `fix` runs `delay` seconds after the player escalates; the normal `check` then resolves it.
+   */
+  escalate?: { delay: number; team: string; fix: (w: World) => void };
   hints: [string, string, string];
   /** Strings the AI 사수 must never say (they give the answer away) */
   bannedPhrases: string[];
+  /** IOS answer lines to ban in every abbreviated form (beyond those derived from `solutionSteps`) */
+  bannedIos?: string[];
   /** Answer text for "정답 보기" */
   solution: string;
   solutionSteps: SolutionStep[];
@@ -69,25 +102,54 @@ export interface Scenario {
   lesson: string;
 }
 
+/**
+ * A kind of incident that can happen on its first day and any later day. Variants change parameters
+ * only (which port, which VLAN, which rack) — never the text a player reads, so hints stay valid.
+ * Instance ids are `${id}:${variantIndex}`.
+ */
+export interface IncidentTemplate {
+  id: string;
+  /** First day it can happen (it is taught that day) */
+  day: StageId;
+  /** Last day it can happen (default: D-Day). Set it when a later world lacks the layer it breaks. */
+  until?: StageId;
+  variants: Record<string, string | number>[];
+  /** Build the scenario for one variant. Must work on the world of `day` and every later day. */
+  make: (v: Record<string, string | number>) => Omit<Scenario, 'id' | 'stage' | 'trigger'>;
+  /** Relative draw weight as an extra (default 1); 0 = never drawn as an extra */
+  weight?: number;
+}
+
 export interface ScenarioRuntime {
   id: string;
   state: 'waiting' | 'active' | 'resolved';
+  /** Trigger for this run (the day's scheduler may replace the scenario's own) */
+  trigger: Trigger;
   /** Stage time when it becomes active (waiting) or became active */
   at: number | null;
   activatedAt: number | null;
   resolvedAt: number | null;
+  /** Stage time the player handed it to another team (담당팀 이관) */
+  escalatedAt: number | null;
 }
 
-export function initRuntime(scenarios: Scenario[]): ScenarioRuntime[] {
-  return scenarios.map((s) => ({ id: s.id, state: 'waiting', at: null, activatedAt: null, resolvedAt: null }));
+/** A planned incident: which scenario instance, with which trigger. */
+export interface PlannedIncident {
+  id: string;
+  trigger: Trigger;
+}
+
+export function initRuntime(plan: PlannedIncident[]): ScenarioRuntime[] {
+  return plan.map((p) => ({ id: p.id, state: 'waiting', trigger: p.trigger, at: null, activatedAt: null, resolvedAt: null, escalatedAt: null }));
 }
 
 /**
  * Advance scenario state: schedule, activate (inject), and resolve (check).
+ * Only the scenarios planned for this run (`rt`) take part; `registry` looks their definitions up.
  * Mutates `w` and `rt`; returns ids that activated and resolved this tick.
  */
 export function tickScenarios(
-  scenarios: Scenario[],
+  registry: (id: string) => Scenario,
   rt: ScenarioRuntime[],
   w: World,
   ctx: PlayContext,
@@ -102,11 +164,11 @@ export function tickScenarios(
     return dep?.state === 'resolved' ? dep.resolvedAt : null;
   };
 
-  for (const s of scenarios) {
-    const r = byId.get(s.id)!;
+  for (const r of rt) {
+    const s = registry(r.id);
     if (r.state === 'waiting') {
+      const tr = r.trigger;
       if (r.at === null) {
-        const tr = s.trigger;
         if (tr.type === 'stageStart') r.at = tr.delay ?? 0;
         else if (tr.type === 'gate') {
           const opened = gateOpenedAt(tr, resolvedAt, objectivesDone);
@@ -115,8 +177,8 @@ export function tickScenarios(
       }
       if (r.at !== null && ctx.stageTime >= r.at) {
         // Timed incidents keep the 10 s breather after a fix, unless another incident is still running
-        // (overlap is intended then, e.g. the stage 7 finale).
-        if (s.trigger.type === 'stageStart' && !rt.some((x) => x.state === 'active')) {
+        // or the timeline says they overlap on purpose (D-Day).
+        if (tr.type === 'stageStart' && !tr.overlap && !rt.some((x) => x.state === 'active')) {
           const lastFix = Math.max(-Infinity, ...rt.map((x) => x.resolvedAt ?? -Infinity));
           if (ctx.stageTime < lastFix + INCIDENT_GAP) continue;
         }

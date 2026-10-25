@@ -1,50 +1,59 @@
+import { runIos, USER_MODE } from '../ios';
+import { syncNet } from '../net/sync';
 import { clone } from '../step';
-import type { StageId, World } from '../types';
+import type { IosMode, StageId, World } from '../types';
+import { own } from '../util';
 import { dockerCommands } from './docker';
 import { k8sCommands } from './k8s';
 import { netCommands } from './net';
 import { svcCommands } from './svc';
-import type { Command, CmdResult } from './types';
+import type { Command, CmdResult, HostOs } from './types';
 import { bold, dim, err, red } from './types';
 import { webCommands } from './web';
 
 /** Terminal width of a string: wide (Hangul/CJK) characters take two cells. */
 export function cellWidth(s: string): number {
   let n = 0;
-  for (const ch of s) n += /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(ch) ? 2 : 1;
+  for (const ch of s) n += /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/.test(ch) ? 2 : 1;
   return n;
 }
 
 export const padCells = (s: string, width: number) => s + ' '.repeat(Math.max(1, width - cellWidth(s)));
 
+/** The CLI a host speaks. */
+export function osOf(w: World, host: string): HostOs {
+  return own(w.devices, host)?.nd?.os ?? 'linux';
+}
+
 const base: Command[] = [
   {
     name: 'help',
     minStage: 0,
+    os: ['linux', 'lb', 'fw'],
     usage: 'help',
     summary: '쓸 수 있는 명령어 보기',
-    run: (_a, { stage }) => ({
+    run: (_a, { w, host, stage }) => ({
       lines: [
         bold('쓸 수 있는 명령어'),
-        ...available(stage).map((c) => `  ${padCells(c.usage, 40)} ${dim(c.summary)}`),
+        ...available(stage, osOf(w, host)).map((c) => `  ${padCells(c.usage, 40)} ${dim(c.summary)}`),
         dim('막히면 hint를 입력하거나 쿠사수에게 물어보세요.'),
       ],
     }),
   },
-  { name: 'clear', aliases: ['cls'], minStage: 0, usage: 'clear', summary: '화면 지우기', run: () => ({ lines: [], clear: true }) },
-  { name: 'hint', minStage: 0, usage: 'hint', summary: '쿠사수에게 힌트 요청', run: () => ({ lines: [dim('쿠사수를 불렀어요…')], openHint: true }) },
+  { name: 'clear', aliases: ['cls'], minStage: 0, os: ['linux', 'lb', 'fw'], usage: 'clear', summary: '화면 지우기', run: () => ({ lines: [], clear: true }) },
+  { name: 'hint', minStage: 0, os: ['linux', 'lb', 'fw'], usage: 'hint', summary: '쿠사수에게 힌트 요청', run: () => ({ lines: [dim('쿠사수를 불렀어요…')], openHint: true }) },
 ];
 
 export const ALL_COMMANDS: Command[] = [...base, ...netCommands, ...webCommands, ...svcCommands, ...dockerCommands, ...k8sCommands];
 
-export function available(stage: StageId): Command[] {
-  return ALL_COMMANDS.filter((c) => c.minStage <= stage && (c.maxStage === undefined || stage <= c.maxStage));
+export function available(stage: StageId, os: HostOs = 'linux'): Command[] {
+  return ALL_COMMANDS.filter((c) => (c.os ?? ['linux']).includes(os) && c.minStage <= stage && (c.maxStage === undefined || stage <= c.maxStage));
 }
 
 /** Longest matching command name wins, so "docker run" beats "docker". */
-function match(tokens: string[], stage: StageId): { cmd: Command; args: string[] } | null {
+function match(tokens: string[], stage: StageId, os: HostOs): { cmd: Command; args: string[] } | null {
   let best: { cmd: Command; args: string[]; len: number } | null = null;
-  for (const cmd of available(stage)) {
+  for (const cmd of available(stage, os)) {
     for (const name of [cmd.name, ...(cmd.aliases ?? [])]) {
       const words = name.split(' ');
       if (words.length > tokens.length) continue;
@@ -60,26 +69,44 @@ export interface RunOutput extends CmdResult {
   world: World;
 }
 
-/** Run one terminal line against a copy of the world. */
-export function runCommand(line: string, world: World, host: string, stage: StageId): RunOutput {
+/**
+ * Run one terminal line against a copy of the world. Network gear (os 'ios') goes to the IOS CLI in
+ * `mode`; everything else to the shell commands for that host's OS. The network caches and syslog are
+ * refreshed after every line.
+ */
+export function runCommand(line: string, world: World, host: string, stage: StageId, mode?: IosMode | null): RunOutput {
+  const os = osOf(world, host);
+  if (os === 'ios') {
+    const w = clone(world);
+    try {
+      const res = runIos(line, w, host, mode ?? USER_MODE, stage);
+      if (w.net) syncNet(w, 0);
+      // Leaving the device (exit at the top) drops back to the admin PC.
+      return { lines: res.lines, events: res.events, mode: res.mode, host: res.mode === null ? 'ops' : host, world: w };
+    } catch (e) {
+      console.error(e);
+      return { ...err('% 이 명령을 처리하지 못했어요.'), mode, world };
+    }
+  }
   let tokens = line.trim().split(/\s+/).filter(Boolean);
   if (tokens[0] === 'sudo') tokens = tokens.slice(1);
   if (tokens[0] === 'kubectl' || tokens[0] === 'k') tokens = tokens.slice(1);
   if (!tokens.length) return { lines: [], world };
-  const m = match(tokens, stage);
+  const m = match(tokens, stage, os);
   if (!m) {
-    const same = ALL_COMMANDS.filter((c) => c.name.split(' ')[0] === tokens[0]);
-    const usable = available(stage).filter((c) => c.name.split(' ')[0] === tokens[0]);
-    // The word exists in this stage: show its forms instead of claiming it's unavailable.
+    const same = ALL_COMMANDS.filter((c) => c.name.split(' ')[0] === tokens[0] && (c.os ?? ['linux']).includes(os));
+    const usable = available(stage, os).filter((c) => c.name.split(' ')[0] === tokens[0]);
+    // The word exists today: show its forms instead of claiming it's unavailable.
     if (usable.length) return { lines: [red(`${tokens[0]}: 사용법이 달라요. 이렇게 써보세요:`), ...usable.map((c) => dim(`  ${c.usage}`))], world };
     let msg = `${tokens[0]}: 그런 명령어는 아직 몰라요. help를 쳐보세요.`;
-    if (same.length && same.every((c) => c.minStage > stage)) msg = `${tokens[0]}: 이 명령어는 아직 안 열렸어요. 다음 Stage에서 쓸 수 있어요. (help)`;
-    else if (same.length) msg = `${tokens[0]}: 이 단계에서는 쓰지 않는 명령어예요. help로 지금 쓸 수 있는 명령어를 보세요.`;
+    if (same.length && same.every((c) => c.minStage > stage)) msg = `${tokens[0]}: 이 명령어는 아직 안 열렸어요. 다음 날에 쓸 수 있어요. (help)`;
+    else if (same.length) msg = `${tokens[0]}: 오늘은 쓰지 않는 명령어예요. help로 지금 쓸 수 있는 명령어를 보세요.`;
     return { ...err(msg), world };
   }
   const w = clone(world);
   try {
-    const res = m.cmd.run(m.args, { w, host, stage });
+    const res = m.cmd.run(m.args, { w, host, stage, mode });
+    if (w.net) syncNet(w, 0);
     return { ...res, world: w };
   } catch (e) {
     // A bad name must never crash the terminal; keep the world unchanged.
@@ -88,6 +115,12 @@ export function runCommand(line: string, world: World, host: string, stage: Stag
   }
 }
 
-export function promptFor(host: string): string {
+/** Shell prompt, or the IOS prompt ('CORE-01(config-if)# ') when the session is on network gear. */
+export function promptFor(host: string, mode?: IosMode | null, w?: World): string {
+  if (mode && w) {
+    const label = own(w.devices, host)?.label ?? host;
+    const suffix = { user: '>', exec: '#', config: '(config)#', 'config-if': '(config-if)#', 'config-vlan': '(config-vlan)#' }[mode.level];
+    return `\x1b[1;36m${label}${suffix}\x1b[0m `;
+  }
   return `\x1b[1;31m${host}\x1b[0m@khu-dc:~$ `;
 }

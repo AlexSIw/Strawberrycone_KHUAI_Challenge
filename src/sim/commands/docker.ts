@@ -218,8 +218,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker build',
     aliases: ['docker image build'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker build -t <이미지:태그> .',
     summary: 'Dockerfile(레시피 카드)로 이미지(밀키트 원본) 만들기',
     run(raw, { w, host }) {
@@ -258,8 +258,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker push',
     aliases: ['docker image push'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker push <이미지:태그>',
     summary: '이미지를 레지스트리(마트 냉동고)에 올리기',
     run(args, { w, host }) {
@@ -275,8 +275,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker pull',
     aliases: ['docker image pull'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker pull <이미지:태그>',
     summary: '레지스트리에서 이미지 받아오기',
     run(args, { w, host }) {
@@ -293,8 +293,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker images',
     aliases: ['docker image ls', 'docker image list'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker images',
     summary: '이 장비에 있는 이미지 목록',
     run(_a, { w, host }) {
@@ -307,8 +307,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker run',
     aliases: ['docker container run'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker run [-p 바깥포트:안쪽포트] [-v 볼륨:/폴더] [--name 이름] <이미지>',
     summary: '이미지로 컨테이너(한 끼) 실행',
     run(args, { w, host }) {
@@ -355,8 +355,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker ps',
     aliases: ['docker container ls', 'docker container list', 'docker container ps'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker ps [-a]',
     summary: '실행 중인 컨테이너 보기 (-a: 멈춘 것까지)',
     run(args, { w, host }) {
@@ -376,8 +376,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker rm',
     aliases: ['docker container rm'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker rm -f <이름>',
     summary: '컨테이너 지우기 (-f: 실행 중이어도 강제로)',
     run(raw, { w, host }) {
@@ -407,8 +407,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker stop',
     aliases: ['docker container stop'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker stop <이름>',
     summary: '컨테이너 멈추기 (지우지는 않음)',
     run(args, { w, host }) {
@@ -424,8 +424,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker start',
     aliases: ['docker container start'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker start <이름>',
     summary: '멈춘 컨테이너 다시 켜기',
     run(args, { w, host }) {
@@ -443,8 +443,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker restart',
     aliases: ['docker container restart'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker restart <이름>',
     summary: '컨테이너 재시작 (같은 컨테이너를 껐다 켜기)',
     run(args, { w, host }) {
@@ -464,8 +464,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker logs',
     aliases: ['docker container logs'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker logs <이름>',
     summary: '컨테이너 로그 보기',
     run(args, { w, host }) {
@@ -498,8 +498,8 @@ export const dockerCommands: Command[] = [
   },
   {
     name: 'docker volume',
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker volume create <이름> | docker volume ls',
     summary: '볼륨(식당 전용 사물함) 만들기·보기',
     run(args, { w, host }) {
@@ -522,9 +522,9 @@ export const dockerCommands: Command[] = [
   },
   {
     name: 'python --version',
-    maxStage: 5,
+    maxStage: 3,
     aliases: ['python3 --version', 'python -V'],
-    minStage: 5,
+    minStage: 3,
     usage: 'python --version',
     summary: '이 서버에 설치된 Python(앱을 만든 프로그래밍 언어) 버전',
     run(_a, { w, host }) {
@@ -534,9 +534,9 @@ export const dockerCommands: Command[] = [
   },
   {
     name: 'deploy log',
-    maxStage: 5,
+    maxStage: 3,
     aliases: ['cat deploy.log'],
-    minStage: 5,
+    minStage: 3,
     usage: 'deploy log',
     summary: '손으로 한 배포(앱 설치·실행) 기록 보기',
     run(_a, { w, host }) {

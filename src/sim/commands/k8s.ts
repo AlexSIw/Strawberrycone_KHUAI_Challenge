@@ -43,7 +43,7 @@ export const k8sCommands: Command[] = [
   {
     name: 'get pods',
     aliases: ['pods', 'get po', 'get pod'],
-    minStage: 6,
+    minStage: 4,
     usage: 'pods',
     summary: 'pod(가장 작은 실행 단위) 목록',
     run(_a, { w }) {
@@ -69,7 +69,7 @@ export const k8sCommands: Command[] = [
   {
     name: 'get nodes',
     aliases: ['nodes', 'get node', 'get no'],
-    minStage: 6,
+    minStage: 4,
     usage: 'nodes',
     summary: '노드(일하는 서버) 상태',
     run(_a, { w }) {
@@ -89,7 +89,7 @@ export const k8sCommands: Command[] = [
   {
     name: 'get deploy',
     aliases: ['deploys', 'get deployments', 'get deployment'],
-    minStage: 6,
+    minStage: 4,
     usage: 'deploys',
     summary: '원하는 상태(Deployment) 목록',
     run(_a, { w }) {
@@ -108,7 +108,7 @@ export const k8sCommands: Command[] = [
   {
     name: 'get svc',
     aliases: ['svcs', 'get services', 'get service'],
-    minStage: 6,
+    minStage: 4,
     usage: 'svcs',
     summary: 'Service(바뀌지 않는 대표 번호) 목록',
     run(_a, { w }) {
@@ -123,7 +123,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'scale',
-    minStage: 6,
+    minStage: 4,
     usage: 'scale <앱> <개수>',
     summary: '원하는 pod 개수 바꾸기',
     run(args, { w }) {
@@ -142,7 +142,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'rollout status',
-    minStage: 6,
+    minStage: 4,
     usage: 'rollout status <앱>',
     summary: '배포(새 버전 올리기) 진행 상황',
     run(args, { w }) {
@@ -156,7 +156,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'rollout history',
-    minStage: 6,
+    minStage: 4,
     usage: 'rollout history <앱>',
     summary: '이전 버전 기록',
     run(args, { w }) {
@@ -167,7 +167,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'rollout undo',
-    minStage: 6,
+    minStage: 4,
     usage: 'rollout undo <앱>',
     summary: '이전 버전으로 되돌리기',
     run(args, { w }) {
@@ -180,7 +180,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'set image',
-    minStage: 6,
+    minStage: 4,
     usage: 'set image <앱> <앱:태그>',
     summary: '다른 버전 배포 (하나씩 차례로 교체하는 rolling update)',
     run(args, { w }) {
@@ -204,7 +204,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'logs',
-    minStage: 6,
+    minStage: 4,
     usage: 'logs <pod 이름>',
     summary: 'pod 로그(앱이 남긴 기록) 보기',
     run(args, { w }) {
@@ -257,7 +257,7 @@ export const k8sCommands: Command[] = [
   {
     name: 'env',
     aliases: ['set env'],
-    minStage: 6,
+    minStage: 4,
     usage: 'env <앱> | env set <앱> KEY=VALUE',
     summary: '앱 환경변수(설정) 보기·바꾸기',
     run(args, { w }) {

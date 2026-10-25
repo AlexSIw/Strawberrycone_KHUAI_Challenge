@@ -5,9 +5,9 @@ import { bold, dim, err, green, ok, out, red, yellow } from './types';
 export const svcCommands: Command[] = [
   {
     name: 'svc list',
-    maxStage: 4,
+    maxStage: 2,
     aliases: ['svc', 'svc ls'],
-    minStage: 4,
+    minStage: 2,
     usage: 'svc list',
     summary: '서비스 상태 보기',
     run(_a, { w }) {
@@ -25,8 +25,8 @@ export const svcCommands: Command[] = [
   },
   {
     name: 'svc restart',
-    maxStage: 4,
-    minStage: 4,
+    maxStage: 2,
+    minStage: 2,
     usage: 'svc restart <서비스>',
     summary: '서비스 재시작',
     run(args, { w }) {
@@ -37,8 +37,8 @@ export const svcCommands: Command[] = [
   },
   {
     name: 'svc scale',
-    maxStage: 4,
-    minStage: 4,
+    maxStage: 2,
+    minStage: 2,
     usage: 'svc scale <서비스> <서버 수>',
     summary: '서비스 서버 수 늘리기/줄이기 (손으로 설치라 오래 걸림)',
     run(args, { w }) {
@@ -54,8 +54,8 @@ export const svcCommands: Command[] = [
   },
   {
     name: 'svc deps',
-    maxStage: 4,
-    minStage: 4,
+    maxStage: 2,
+    minStage: 2,
     usage: 'svc deps <서비스>',
     summary: '서비스가 누구를 부르고 어떤 DB를 쓰는지',
     run(args, { w }) {
@@ -72,8 +72,8 @@ export const svcCommands: Command[] = [
   },
   {
     name: 'svc config',
-    maxStage: 4,
-    minStage: 4,
+    maxStage: 2,
+    minStage: 2,
     usage: 'svc config <서비스> course-source api|db',
     summary: '과목 정보를 API로 받을지, DB에서 직접 읽을지 설정',
     run(args, { w }) {

@@ -1,10 +1,10 @@
 // Regression tests for the network / power / stage 0–4 fixes (cluster net-stages0-4).
 import { describe, expect, it } from 'vitest';
-import { getStage } from '../src/content/stages';
-import { cabledWorld, networkedWorld } from '../src/content/worlds';
-import { connectCable, decompose, mount, setFeeds, setUps } from '../src/sim/actions';
-import { scaleService, tickApp } from '../src/sim/app';
-import { runCommand } from '../src/sim/commands';
+import { getStage } from '../../src/content/stages';
+import { cabledWorld, networkedWorld } from '../../src/content/worlds';
+import { connectCable, decompose, mount, setFeeds, setUps } from '../../src/sim/actions';
+import { scaleService, tickApp } from '../../src/sim/app';
+import { runCommand } from '../../src/sim/commands';
 import {
   applyAction,
   applyCommand,
@@ -15,10 +15,10 @@ import {
   tickRun,
   visibleObjectives,
   type StageRun,
-} from '../src/sim/engine';
-import { applyDhcp, duplicateIps, ping, powered } from '../src/sim/network';
-import { INCIDENT_GAP, type SolutionStep } from '../src/sim/scenario';
-import type { StageId, World } from '../src/sim/types';
+} from '../../src/sim/engine';
+import { applyDhcp, duplicateIps, ping, powered } from '../../src/sim/network';
+import { INCIDENT_GAP, type SolutionStep } from '../../src/sim/scenario';
+import type { StageId, World } from '../../src/sim/types';
 
 const SERVERS = ['web', 'db', 'spare'];
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');

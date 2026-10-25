@@ -285,7 +285,7 @@ function ServicesPanel({ h, w, half }: { h: Health; w: World; half: boolean }) {
 
 const visibleDevices = (w: World): Device[] => Object.values(w.devices).filter((d) => d.kind !== 'internet');
 
-const KIND_ICON: Record<Device['kind'], string> = { server: '🖥️', switch: '🔀', router: '🌐', internet: '☁️' };
+const KIND_ICON: Record<Device['kind'], string> = { server: '🖥️', switch: '🔀', router: '🌐', internet: '☁️', firewall: '🧱', lb: '⚖️' };
 
 function LinksPanel({ w }: { w: World }) {
   return (

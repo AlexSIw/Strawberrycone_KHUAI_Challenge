@@ -1,14 +1,14 @@
 // Regression tests for the Kubernetes sim and stages 6–7 (cluster k8s-stages6-7).
 import { describe, expect, it } from 'vitest';
-import { k8sHealth, k8sWorld } from '../src/content/k8sWorld';
-import { getStage } from '../src/content/stages';
-import { applyDesired, repairCrac, replaceCable } from '../src/sim/actions';
-import { runCommand } from '../src/sim/commands';
-import { applyAction, applyCommand, isCleared, recordEvents, startStage, tickRun, type StageRun } from '../src/sim/engine';
-import { podsOf, readyPods, reconcile, setImage, unscheduled } from '../src/sim/k8s';
-import type { SolutionStep } from '../src/sim/scenario';
-import { step } from '../src/sim/step';
-import type { World } from '../src/sim/types';
+import { k8sHealth, k8sWorld } from '../../src/content/k8sWorld';
+import { getStage } from '../../src/content/stages';
+import { applyDesired, repairCrac, replaceCable } from '../../src/sim/actions';
+import { runCommand } from '../../src/sim/commands';
+import { applyAction, applyCommand, isCleared, recordEvents, startStage, tickRun, type StageRun } from '../../src/sim/engine';
+import { podsOf, readyPods, reconcile, setImage, unscheduled } from '../../src/sim/k8s';
+import type { SolutionStep } from '../../src/sim/scenario';
+import { step } from '../../src/sim/step';
+import type { World } from '../../src/sim/types';
 
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 const RED = '\x1b[31m';

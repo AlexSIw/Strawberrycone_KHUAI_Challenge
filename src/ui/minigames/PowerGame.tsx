@@ -9,8 +9,8 @@ import './PowerGame.css';
 
 type Feed = 'A' | 'B';
 
-const KIND_ORDER: Record<Device['kind'], number> = { server: 0, switch: 1, router: 2, internet: 3 };
-const KIND_ICON: Record<Device['kind'], string> = { server: '🖥️', switch: '🔀', router: '🌐', internet: '☁️' };
+const KIND_ORDER: Record<Device['kind'], number> = { server: 0, switch: 1, router: 2, internet: 5, firewall: 3, lb: 4 };
+const KIND_ICON: Record<Device['kind'], string> = { server: '🖥️', switch: '🔀', router: '🌐', internet: '☁️', firewall: '🧱', lb: '⚖️' };
 
 function feedText(feeds: Feed[]): string {
   if (feeds.length === 0) return '없음';

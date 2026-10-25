@@ -15,10 +15,10 @@ const storage = vi.hoisted(() => {
   return data;
 });
 
-import { getStage } from '../src/content/stages';
-import { applyCommand, startStage, tickRun, type StageRun } from '../src/sim/engine';
-import { gameStore, nextMoveSpeed, pushWindow, SPEED_KEY, windowKey, type Modal } from '../src/store/game';
-import { lockedText, nextStepText, objectiveStatus, waitingText } from '../src/ui/objectiveStatus';
+import { getStage } from '../../src/content/stages';
+import { applyCommand, startStage, tickRun, type StageRun } from '../../src/sim/engine';
+import { gameStore, nextMoveSpeed, pushWindow, SPEED_KEY, windowKey, type Modal } from '../../src/store/game';
+import { lockedText, nextStepText, objectiveStatus, waitingText } from '../../src/ui/objectiveStatus';
 
 const S = () => gameStore.getState();
 /** The open window and the ones waiting under it, top first, as window keys. */

@@ -2,10 +2,10 @@
 // ports have two sides, data lives in a container's writable layer or on a volume, restart keeps data,
 // one host port = one program — and the dashboard agrees with the incidents.
 import { describe, expect, it } from 'vitest';
-import { getStage } from '../src/content/stages';
-import { writeDockerfile } from '../src/sim/actions';
-import { appDb, dbRows, ENROLL_DOCKERFILE } from '../src/sim/commands/docker';
-import { applyAction, applyCommand, isCleared, startStage, tickRun, type StageRun } from '../src/sim/engine';
+import { getStage } from '../../src/content/stages';
+import { writeDockerfile } from '../../src/sim/actions';
+import { appDb, dbRows, ENROLL_DOCKERFILE } from '../../src/sim/commands/docker';
+import { applyAction, applyCommand, isCleared, startStage, tickRun, type StageRun } from '../../src/sim/engine';
 
 const RED = '\x1b[31m';
 // eslint-disable-next-line no-control-regex

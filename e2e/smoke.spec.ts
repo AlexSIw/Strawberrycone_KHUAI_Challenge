@@ -1,11 +1,13 @@
 // Smoke test: start a new game, get through the intro, walk a little,
 // open/close the dashboard and the concept book, and make sure nothing logs an error.
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { stage0 } from '../src/content/stages/stage0';
+import { getStage } from '../src/content/stages';
+
+const stage0 = getStage(0);
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Short, distinctive prefixes of the Stage 0 intro lines. */
+/** Short, distinctive prefixes of the D-5 briefing lines. */
 const INTRO = stage0.intro.map((l) => l.text.slice(0, 12).trim());
 const INTRO_RE = new RegExp(INTRO.map(escapeRe).join('|'));
 

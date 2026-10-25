@@ -1,4 +1,5 @@
-import type { Scenario } from '../sim/scenario';
+import type { ClockDef } from '../sim/clock';
+import type { Scenario, Trigger } from '../sim/scenario';
 import type { Health, PlayContext, RoomId, StageId, World } from '../sim/types';
 
 export type Speaker = 'lion' | 'mentor' | 'boss' | 'system';
@@ -41,9 +42,15 @@ export type InteractionKind =
   | { kind: 'dashboard' }
   | { kind: 'mentor' }
   | { kind: 'repair'; target: 'crac' }
+  /** The NOC console (NMS / SMS / FMS / NAC tabs) */
+  | { kind: 'noc'; tab?: NocTab }
+  /** A facility unit's gauges: read-only (facilities are the facility team's job) */
+  | { kind: 'gauge'; target: 'ups' | 'pdu' | 'crac' }
   | { kind: 'board'; board: 'decompose' | 'dockerfile' | 'desired' | 'postmortem' }
   | { kind: 'quiz' }
   | { kind: 'inspect'; text: string };
+
+export type NocTab = 'nms' | 'sms' | 'fms' | 'nac';
 
 export type SpotId =
   | 'rack1' | 'rack2' | 'rack3' | 'rack4'
@@ -59,8 +66,33 @@ export interface Quiz {
   explain: string;
 }
 
+/** An always-on incident of the day: template id + trigger (the scheduler picks the variant by seed). */
+export interface FixedIncident {
+  template: string;
+  trigger: Trigger;
+}
+
+/**
+ * One day (the v1 name StageDef is kept so its ~30 users don't churn; DayDef is the same type).
+ * `scenarios` is the REGISTRY of every incident instance that may happen today — the run's scheduler
+ * picks which ones actually do (see sim/scheduler.ts). days/index.ts fills it from the templates.
+ */
 export interface StageDef {
   id: StageId;
+  /** 'D-4' */
+  label: string;
+  /** 'MM-DD' (syslog stamps, calendar) */
+  date: string;
+  clock: ClockDef;
+  /** Seconds between SNMP polls (default 15) */
+  pollEvery?: number;
+  /** Incidents that always happen today (the ones it teaches; the D-Day timeline; optional mistakes) */
+  fixed: FixedIncident[];
+  /** How many extra incidents to draw from earlier days (and today's non-fixed templates) */
+  extras: [number, number];
+  /** Device ids the cable / power / rack mini-games and the map show today; the switch the cable game plugs into */
+  mapSwitch?: string;
+  mapDevices?: string[];
   title: string;
   subtitle: string;
   /** What the stage teaches, shown on stage select */
@@ -79,4 +111,16 @@ export interface StageDef {
   survive?: number;
   /** Rooms shown on the map (others are dim) */
   rooms?: RoomId[];
+  /** Called every tick before incidents (traffic curves, e.g. D-Day's open spike) */
+  onTick?: (w: World, t: number) => void;
+}
+
+export type DayDef = StageDef;
+
+/** What a day file exports. days/index.ts adds the incident registry and the starting world. */
+export interface DaySpec extends Omit<StageDef, 'scenarios' | 'initialWorld'> {
+  /** Remove from the D-Day topology what this day's missions build (applied for this day and every earlier day) */
+  unbuild?: (w: World) => void;
+  /** Add this day's own layers / settings to its starting world (web app, docker, traffic …) */
+  setup?: (w: World) => void;
 }

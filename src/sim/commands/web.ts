@@ -14,9 +14,9 @@ const CURL_VALUE_FLAGS = new Set(['-o', '-X', '-H', '-d', '--data', '-m', '--max
 export const webCommands: Command[] = [
   {
     name: 'server status',
-    maxStage: 3,
+    maxStage: 2,
     aliases: ['server config', 'server'],
-    minStage: 3,
+    minStage: 2,
     usage: 'server status',
     summary: '웹 서버 설정 보기 (포트, 스레드, 경로)',
     run(_a, { w, host }) {
@@ -33,9 +33,9 @@ export const webCommands: Command[] = [
   },
   {
     name: 'server start',
-    maxStage: 3,
+    maxStage: 2,
     aliases: ['server restart'],
-    minStage: 3,
+    minStage: 2,
     usage: 'server start',
     summary: '웹 서버 실행',
     run(_a, { w, host }) {
@@ -47,8 +47,8 @@ export const webCommands: Command[] = [
   },
   {
     name: 'server stop',
-    maxStage: 3,
-    minStage: 3,
+    maxStage: 2,
+    minStage: 2,
     usage: 'server stop',
     summary: '웹 서버 중지',
     run(_a, { w, host }) {
@@ -60,8 +60,8 @@ export const webCommands: Command[] = [
   },
   {
     name: 'server set',
-    maxStage: 3,
-    minStage: 3,
+    maxStage: 2,
+    minStage: 2,
     usage: 'server set port <번호> | server set threads single|multi',
     summary: '웹 서버 포트·스레드 방식 바꾸기',
     run(args, { w, host }) {
@@ -81,9 +81,9 @@ export const webCommands: Command[] = [
   },
   {
     name: 'ports',
-    maxStage: 3,
+    maxStage: 2,
     aliases: ['ss -lt', 'netstat', 'ss'],
-    minStage: 3,
+    minStage: 2,
     usage: 'ports',
     summary: '이 장비에서 열려 있는(손님을 기다리는) 포트 보기',
     run(_a, { w, host }) {
@@ -96,8 +96,8 @@ export const webCommands: Command[] = [
   },
   {
     name: 'curl',
-    maxStage: 3,
-    minStage: 3,
+    maxStage: 2,
+    minStage: 2,
     usage: 'curl [-v] http://<이름>[:포트]/<경로>',
     summary: '로봇 손님처럼 웹 요청(HTTP) 보내기',
     run(args, { w, host }) {
@@ -153,9 +153,9 @@ export const webCommands: Command[] = [
   },
   {
     name: 'notice show',
-    maxStage: 3,
+    maxStage: 2,
     aliases: ['notice'],
-    minStage: 3,
+    minStage: 2,
     usage: 'notice show',
     summary: '학생 공지에 적힌 수강신청 주소 보기',
     run(_a, { w }) {
@@ -165,8 +165,8 @@ export const webCommands: Command[] = [
   },
   {
     name: 'notice set',
-    maxStage: 3,
-    minStage: 3,
+    maxStage: 2,
+    minStage: 2,
     usage: 'notice set <경로>',
     summary: '학생 공지의 주소 고치기',
     run(args, { w }) {

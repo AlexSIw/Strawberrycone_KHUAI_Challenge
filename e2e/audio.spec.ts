@@ -276,7 +276,7 @@ test('스테이지 클리어 결과 창과 엔딩 수료증에서 징글, 목표
   await page.evaluate(() => {
     const gameStore = (window as unknown as Win).__store;
     const run = gameStore.getState().run!;
-    gameStore.setState({ run: { ...run, stage: 7 } });
+    gameStore.setState({ run: { ...run, stage: 5 } });
     gameStore.getState().finishResults('next');
   });
   await expect(page.getByRole('heading', { name: '수료증' })).toBeVisible();

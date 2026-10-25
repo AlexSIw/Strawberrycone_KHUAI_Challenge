@@ -3,10 +3,10 @@
 // solved. These tests play every stage with prompt, slow and random-timing players to prove it, and that no stage
 // can deadlock on an objective that needs an incident (or the other way round).
 import { describe, expect, it } from 'vitest';
-import { STAGES, getStage } from '../src/content/stages';
-import { isCleared, startStage, tickRun, visibleObjectives, type StageRun } from '../src/sim/engine';
-import { gateOpenedAt, INCIDENT_GAP, type Trigger } from '../src/sim/scenario';
-import type { StageId } from '../src/sim/types';
+import { STAGES, getStage } from '../../src/content/stages';
+import { isCleared, startStage, tickRun, visibleObjectives, type StageRun } from '../../src/sim/engine';
+import { gateOpenedAt, INCIDENT_GAP, type Trigger } from '../../src/sim/scenario';
+import type { StageId } from '../../src/sim/types';
 import { apply, AUTOPLAY, type Step } from './autoplay';
 
 interface PlayOpts {

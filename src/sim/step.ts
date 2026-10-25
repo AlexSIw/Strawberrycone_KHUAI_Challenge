@@ -1,6 +1,7 @@
 import { tickApp } from './app';
 import { reconcile, updateNodes } from './k8s';
-import { applyDhcp, powered } from './network';
+import { powered } from './net/basics';
+import { syncNet } from './net/sync';
 import type { World } from './types';
 
 export const clone = (w: World): World => structuredClone(w);
@@ -19,13 +20,14 @@ function tickCooling(w: World, dt: number): void {
 export function step(prev: World, dt = 1): World {
   const w = clone(prev);
   w.t += dt;
-  applyDhcp(w);
   tickCooling(w, dt);
   if (w.k8s) {
     updateNodes(w);
     reconcile(w.k8s);
   }
   tickApp(w, dt);
+  // Last: links, HSRP, STP, load and syslog follow from everything above.
+  if (w.net) syncNet(w, dt);
   return w;
 }
 

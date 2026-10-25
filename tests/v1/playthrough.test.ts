@@ -1,10 +1,10 @@
 // Plays every stage from start to clear: completes objectives the way a player would,
 // and when an incident fires, checks it is really broken and that its documented solution fixes it.
 import { describe, expect, it } from 'vitest';
-import { STAGES, getStage } from '../src/content/stages';
-import { writeDockerfile } from '../src/sim/actions';
-import { isCleared, startStage, tickRun, visibleObjectives } from '../src/sim/engine';
-import type { StageId } from '../src/sim/types';
+import { STAGES, getStage } from '../../src/content/stages';
+import { writeDockerfile } from '../../src/sim/actions';
+import { isCleared, startStage, tickRun, visibleObjectives } from '../../src/sim/engine';
+import type { StageId } from '../../src/sim/types';
 import { apply, AUTOPLAY, type Step } from './autoplay';
 
 function playStage(id: StageId) {

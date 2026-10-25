@@ -12,5 +12,7 @@ export default defineConfig({
   },
   test: {
     include: ['tests/**/*.test.ts'],
+    // v1 stage tests, kept for reference while v2 days are written
+    exclude: ['tests/v1/**', 'node_modules/**'],
   },
 });

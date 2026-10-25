@@ -3,12 +3,14 @@ import { createStore } from 'zustand/vanilla';
 import { requestHintText } from '../ai/client';
 import { CONCEPTS } from '../content/concepts';
 import { getStage, STAGES } from '../content/stages';
-import type { DialogueLine, InteractionKind, SpotId } from '../content/types';
+import type { DialogueLine, InteractionKind, NocTab, SpotId } from '../content/types';
 import {
+  ackAlarm,
   activeScenarios,
   applyAction,
   applyCommand,
   bumpHint,
+  escalate,
   isCleared,
   recordEvents,
   revealSolution,
@@ -18,7 +20,8 @@ import {
   type Score,
   type StageRun,
 } from '../sim/engine';
-import type { StageId, World } from '../sim/types';
+import { newSeed } from '../sim/scheduler';
+import { LAST_DAY, type IosMode, type StageId, type World } from '../sim/types';
 
 // ---------- types ----------
 
@@ -35,7 +38,11 @@ export type Modal =
   | { type: 'board'; board: 'decompose' | 'dockerfile' | 'desired' | 'postmortem' }
   | { type: 'quiz' }
   | { type: 'inspect'; text: string }
-  | { type: 'concepts' };
+  | { type: 'concepts' }
+  /** The NOC console (NMS / SMS / FMS / NAC) */
+  | { type: 'noc'; tab?: NocTab }
+  /** A facility unit's read-only gauges */
+  | { type: 'gauge'; target: 'ups' | 'pdu' | 'crac' };
 
 export interface Toast {
   id: number;
@@ -63,7 +70,10 @@ export interface ConceptPopup {
 }
 
 export interface SaveData {
+  /** Highest day reached (every day is playable from the calendar; this only drives 이어하기) */
   unlocked: number;
+  /** Seed of this save's incident plans: the same save replays the same surprises */
+  seed: number;
   best: Record<number, { stars: number; points: number }>;
   cards: string[];
 }
@@ -84,6 +94,8 @@ export interface TerminalSession {
   history?: string[];
   /** The half-typed input line */
   draft?: string;
+  /** IOS mode while the session is on network gear (CORE-01#), null on a shell */
+  mode?: IosMode | null;
 }
 
 /** Terminal sessions and window progress are kept until the stage starts again; these are their bounds. */
@@ -135,6 +147,8 @@ export interface GameState {
   goTitle(): void;
   goSelect(): void;
   play(stage: StageId): void;
+  /** Start over: a fresh save seed (new surprises), progress kept */
+  newGame(): void;
   finishResults(next: 'next' | 'retry' | 'select'): void;
 
   // loop
@@ -169,12 +183,16 @@ export interface GameState {
   dismissToast(id: number): void;
   askHint(scenarioId: string, question?: string): Promise<void>;
   reveal(scenarioId: string): void;
+  /** NOC: acknowledge an alarm (MTTD stops here) */
+  ackAlarm(alarmId: string): void;
+  /** NOC: hand a shallow-area incident to its owning team */
+  escalate(scenarioId: string): void;
 }
 
 // ---------- persistence ----------
 
-const SAVE_KEY = 'khu-dc-save-v1';
-const emptySave = (): SaveData => ({ unlocked: 0, best: {}, cards: [] });
+const SAVE_KEY = 'khu-dc-save-v2';
+const emptySave = (): SaveData => ({ unlocked: 0, seed: newSeed(), best: {}, cards: [] });
 
 function loadSave(): SaveData {
   try {
@@ -239,6 +257,10 @@ function interactionToModal(k: InteractionKind): Modal {
       return { type: 'repair', target: k.target };
     case 'inspect':
       return { type: 'inspect', text: k.text };
+    case 'noc':
+      return { type: 'noc', tab: k.tab };
+    case 'gauge':
+      return { type: 'gauge', target: k.target };
     case 'dashboard':
     case 'rack':
     case 'power':
@@ -378,12 +400,18 @@ export const gameStore = createStore<GameState>()((set, get) => {
 
     goTitle: () => set({ screen: 'title', run: null, ...NO_WINDOWS, dialogue: null, toasts: [] }),
     goSelect: () => set({ screen: 'select', run: null, ...NO_WINDOWS, dialogue: null, toasts: [] }),
+    newGame: () => {
+      const save = { ...get().save, seed: newSeed() };
+      writeSave(save);
+      set({ save });
+      get().play(0);
+    },
 
     play: (stage) => {
       const def = getStage(stage);
       set({
         screen: 'playing',
-        run: startStage(stage),
+        run: startStage(stage, get().save.seed),
         ...NO_WINDOWS,
         concepts: [],
         toasts: [],
@@ -407,7 +435,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
       if (!run) return get().goSelect();
       if (next === 'retry') return get().play(run.stage);
       if (next === 'next') {
-        if (run.stage === 7) return set({ screen: 'ending', ...NO_WINDOWS });
+        if (run.stage === LAST_DAY) return set({ screen: 'ending', ...NO_WINDOWS });
         return get().play((run.stage + 1) as StageId);
       }
       get().goSelect();
@@ -474,13 +502,13 @@ export const gameStore = createStore<GameState>()((set, get) => {
     command: (line) => {
       const s = get();
       if (!s.run) return { lines: [], clear: false };
-      const res = applyCommand(s.run, line, s.terminal.host);
+      const res = applyCommand(s.run, line, s.terminal.host, s.terminal.mode ?? null);
       const trimmed = line.trim();
       set((st) => {
         const history = st.terminal.history ?? [];
         // No repeats in a row, like a shell.
         const next = trimmed && history[history.length - 1] !== trimmed ? [...history, trimmed].slice(-MAX_HISTORY) : history;
-        return { run: res.run, terminal: { ...st.terminal, host: res.host, history: next } };
+        return { run: res.run, terminal: { ...st.terminal, host: res.host, mode: res.mode, history: next } };
       });
       objectiveToasts(res.run, res.completed);
       if (res.openHint) {
@@ -561,6 +589,20 @@ export const gameStore = createStore<GameState>()((set, get) => {
       const run = revealSolution(s.run, scenarioId);
       const thread = [...(s.hints[scenarioId] ?? []), { from: 'system' as const, text: `정답: ${sc.solution}`, source: 'solution' as const }];
       set({ run, hints: { ...s.hints, [scenarioId]: thread } });
+    },
+
+    ackAlarm: (alarmId) => {
+      const s = get();
+      if (s.run) set({ run: ackAlarm(s.run, alarmId) });
+    },
+
+    escalate: (scenarioId) => {
+      const s = get();
+      if (!s.run) return;
+      const run = escalate(s.run, scenarioId);
+      set({ run });
+      const sc = getStage(run.stage).scenarios.find((x) => x.id === scenarioId);
+      if (sc?.escalate) toast('info', `📨 ${sc.escalate.team}에 이관했어요. 처리될 때까지 지켜봐요.`);
     },
   };
 });

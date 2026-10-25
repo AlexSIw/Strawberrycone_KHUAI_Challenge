@@ -94,6 +94,8 @@ const VERB: Record<InteractionKind['kind'], string> = {
   board: '열기',
   quiz: '퀴즈 풀기',
   inspect: '살펴보기',
+  noc: '관제 화면 보기',
+  gauge: '계기판 보기',
 };
 
 function verbFor(k: InteractionKind, cracWorking: boolean): string {
@@ -795,7 +797,7 @@ export class DataCenter extends Phaser.Scene {
         const y = Math.round(at.y * TILE);
         let m = this.markers.get(a.rt.id);
         if (!m) {
-          m = this.createMarker(a.def.title, a.def.severity);
+          m = this.createMarker(a.def.title, a.def.severity === 'critical' || a.def.severity === 'major' ? 'critical' : 'warning');
           this.markers.set(a.rt.id, m);
         }
         m.x = x;

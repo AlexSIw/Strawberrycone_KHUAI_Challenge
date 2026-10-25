@@ -8,14 +8,12 @@
 import { CONCEPTS } from '../../src/content/concepts';
 import { ALL_SCENARIOS } from '../../src/content/stages';
 import type { Scenario } from '../../src/sim/scenario';
-import manual0 from '../../src/content/manual/stage0.md';
-import manual1 from '../../src/content/manual/stage1.md';
-import manual2 from '../../src/content/manual/stage2.md';
-import manual3 from '../../src/content/manual/stage3.md';
-import manual4 from '../../src/content/manual/stage4.md';
-import manual5 from '../../src/content/manual/stage5.md';
-import manual6 from '../../src/content/manual/stage6.md';
-import manual7 from '../../src/content/manual/stage7.md';
+import manual0 from '../../src/content/manual/day0.md';
+import manual1 from '../../src/content/manual/day1.md';
+import manual2 from '../../src/content/manual/day2.md';
+import manual3 from '../../src/content/manual/day3.md';
+import manual4 from '../../src/content/manual/day4.md';
+import manual5 from '../../src/content/manual/day5.md';
 
 interface Env {
   CHATKHU_API_KEY?: string;
@@ -36,7 +34,8 @@ const MAX_REPLY = 600;
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 
-const MANUALS = [manual0, manual1, manual2, manual3, manual4, manual5, manual6, manual7];
+/** Operations manual per day (an incident uses the manual of the day it is first taught). */
+const MANUALS = [manual0, manual1, manual2, manual3, manual4, manual5];
 const SCENARIOS = new Map<string, Scenario>(ALL_SCENARIOS.map((s) => [s.id, s]));
 const LEAK_RETRY = '방금 답은 정답을 너무 직접 말했어. 정답 없이 힌트만. 같은 JSON 형식으로 다시.';
 

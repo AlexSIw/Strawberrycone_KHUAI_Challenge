@@ -1,4 +1,7 @@
-import type { StageId, World } from '../types';
+import type { IosMode, StageId, World } from '../types';
+
+/** What kind of CLI a host speaks: a Linux shell, Cisco-IOS-style, the L4's CLI, or the firewall's. */
+export type HostOs = 'linux' | 'ios' | 'lb' | 'fw';
 
 export interface CmdCtx {
   /** Mutable copy of the world; changes are kept when the command returns */
@@ -6,6 +9,8 @@ export interface CmdCtx {
   /** Device the terminal is attached to ('ops' is the NOC admin PC) */
   host: string;
   stage: StageId;
+  /** IOS mode of the session (network gear only) */
+  mode?: IosMode | null;
 }
 
 export interface CmdResult {
@@ -16,6 +21,8 @@ export interface CmdResult {
   events?: string[];
   clear?: boolean;
   openHint?: boolean;
+  /** IOS mode after the line: ssh into a switch sets { level: 'user' }; leaving it sets null */
+  mode?: IosMode | null;
 }
 
 export interface Command {
@@ -23,6 +30,8 @@ export interface Command {
   name: string;
   aliases?: string[];
   minStage: StageId;
+  /** Hosts whose CLI has this command (default ['linux']) */
+  os?: HostOs[];
   /** Last stage where the command makes sense (defaults to forever) */
   maxStage?: StageId;
   usage: string;
