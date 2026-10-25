@@ -97,7 +97,19 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
   },
   3: { noc: [{ events: ['open:noc'] }] },
   4: { noc: [{ events: ['open:noc'] }] },
-  5: { noc: [{ events: ['open:noc'] }] },
+  // D-Day (WP7): the pre-check, then the clock; the postmortem board is a UI event.
+  5: {
+    noc: [{ events: ['open:noc', 'noc:nms'] }],
+    hsrp: [
+      { cmd: 'ssh CORE-01', host: 'ops' },
+      { ios: ['show standby brief'], host: 'CORE-01' },
+    ],
+    l4: [
+      { cmd: 'ssh L4-01', host: 'ops' },
+      { cmd: 'lb status', host: 'L4-01' },
+    ],
+    postmortem: [{ events: ['board:postmortem'] }],
+  },
 };
 
 /** Mission steps may print expected errors (e.g. a refused curl); solution steps must not (errors: non-null). */
