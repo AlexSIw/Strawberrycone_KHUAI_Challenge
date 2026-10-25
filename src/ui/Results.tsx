@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { CONCEPTS } from '../content/concepts';
-import { ddayAvailability } from '../content/days/day5';
 import { getStage } from '../content/stages';
 import { koDate } from '../sim/clock';
 import { LAST_DAY, type StageId } from '../sim/types';
@@ -89,10 +88,11 @@ export function Results() {
   const finish = gameStore.getState().finishResults;
   const hintPoints = score.hintPenalty * 5;
   const revealPoints = score.revealed * 15;
-  // D-Day: the same number as the postmortem (every second from the 10:00 open, incidents included).
-  // Weekdays: the score's own average, sampled only between incidents with students online (time during an
+  // D-Day (scoreAvailabilityFrom): every second from the 10:00 open, incidents included — the same number the
+  // postmortem and the stars use. Weekdays: sampled only between incidents with students online (time during an
   // incident is priced by MTTR instead), so the card says so; some days never have such a stretch.
-  const dday = isFinal ? ddayAvailability(run.world) : null;
+  const fromOpen = def.scoreAvailabilityFrom !== undefined;
+  const dday = fromOpen ? score.availability : null;
   const availability = dday ?? (run.ticks > 0 ? score.availability : null);
   const availLabel = dday !== null ? '가용성 (10:00 오픈부터)' : '장애 없을 때 가용성';
   const availGloss =
