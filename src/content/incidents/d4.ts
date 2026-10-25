@@ -198,11 +198,11 @@ export const templates: IncidentTemplate[] = [
     // A core VLAN interface (the VLAN's gateway) shut down by hand. With CORE-01 as the only gateway for
     // VLANs 10/20 that cuts the VLAN off; once CORE-02 is its standby (D-1's build) the standby takes over
     // and nothing breaks. Checked by the symptom (web reaches db), so a world where the standby already
-    // exists fails the template matrix instead of passing quietly. Until D-3: D-3's world takes the CORE-02
-    // standby out (day2.ts); D-2 can join once its own world does too.
+    // exists fails the template matrix instead of passing quietly. Through D-2: CORE-01 is the only
+    // gateway for VLAN 10/20 until D-1 adds CORE-02 (day4's unbuild takes it out of D-2 and earlier).
     id: 'd4-svi',
     day: 1,
-    until: 2,
+    until: 3,
     variants: [{ vlan: 10 }, { vlan: 20 }],
     make: (v) => {
       const vlan = Number(v.vlan);
