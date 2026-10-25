@@ -9,7 +9,7 @@ import { LAST_DAY } from '../../sim/types';
 import { own } from '../../sim/util';
 import { gameStore } from '../../store/game';
 import { useStageState } from '../useStageState';
-import { placeName } from './facility';
+import { sourceName } from './facility';
 
 export const SEV_LABEL: Record<AlarmSev, string> = { critical: 'Critical', major: 'Major', minor: 'Minor', warning: 'Warning' };
 const SOURCE_LABEL: Record<Alarm['source'], string> = { trap: '트랩', syslog: 'syslog', poll: '폴링' };
@@ -22,7 +22,7 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
   const cleared = run.alarms.filter((a) => a.clearedAt !== null).sort((a, b) => (b.clearedAt ?? 0) - (a.clearedAt ?? 0));
   const at = (t: number) => fmtClock(gameSec(def.clock, t), run.stage === LAST_DAY);
   // A campus service (KHU LMS …) is no NMS device: its alarm points at the service's SMS card.
-  const devName = (id: string) => own(run.world.devices, id)?.label ?? own(run.world.campus, id)?.label ?? placeName(id);
+  const devName = (id: string) => sourceName(run.world, id);
   const isService = (id: string) => !own(run.world.devices, id) && !!own(run.world.campus, id);
   const every = def.pollEvery ?? POLL_EVERY;
 
@@ -72,17 +72,19 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
     );
   };
 
+  // Calm: one line, so the network map below it fits on a small screen.
+  const calm = open.length === 0;
   return (
-    <section className="nms-alarms" aria-label="경보 목록">
+    <section className={`nms-alarms${calm ? ' calm' : ''}`} aria-label="경보 목록">
       <header className="nms-sec-head">
         <h3>🔔 경보 (Alarm)</h3>
-        <p className="muted">장비와 감시 시스템이 이상하다고 알린 것들이에요. 위에 있을수록 급해요. 봤으면 확인(ACK)을 눌러요.</p>
+        {calm ? (
+          <p className="nms-calm">✅ 지금 울리는 경보가 없어요.</p>
+        ) : (
+          <p className="muted">장비와 감시 시스템이 이상하다고 알린 것들이에요. 위에 있을수록 급해요. 봤으면 확인(ACK)을 눌러요.</p>
+        )}
       </header>
-      {open.length === 0 ? (
-        <p className="nms-calm">✅ 지금 울리는 경보가 없어요.</p>
-      ) : (
-        <ol className="nms-alarm-list">{open.map(row)}</ol>
-      )}
+      {!calm && <ol className="nms-alarm-list">{open.map(row)}</ol>}
       {cleared.length > 0 && (
         <>
           <button type="button" className="nms-fold" onClick={() => setShowCleared((v) => !v)} aria-expanded={showCleared}>
@@ -91,7 +93,7 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
           {showCleared && <ol className="nms-alarm-list">{cleared.map(row)}</ol>}
         </>
       )}
-      <p className="nms-poll muted">📡 SNMP로 {every}초마다 장비 상태를 물어봐요. 그래서 어떤 경보는 늦게 떠요.</p>
+      {!calm && <p className="nms-poll muted">📡 SNMP로 {every}초마다 장비 상태를 물어봐요. 그래서 어떤 경보는 늦게 떠요.</p>}
     </section>
   );
 }

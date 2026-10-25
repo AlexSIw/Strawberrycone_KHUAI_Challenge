@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CONCEPTS } from '../content/concepts';
+import { ddayAvailability } from '../content/days/day5';
 import { getStage } from '../content/stages';
 import { koDate } from '../sim/clock';
 import { LAST_DAY, type StageId } from '../sim/types';
@@ -24,8 +25,8 @@ function useCountUp(to: number, delayMs = 250): number {
   return v;
 }
 
-function advice(stars: number, hintPenalty: number, revealed: number, mttd: number | null, mttr: number | null, availability: number | null): string {
-  if (stars === 3) return '완벽해요! 이 실력이면 수강신청 날도 문제없어요.';
+function advice(stars: number, hintPenalty: number, revealed: number, mttd: number | null, mttr: number | null, availability: number | null, final: boolean): string {
+  if (stars === 3) return final ? '완벽해요! 수강신청을 끝까지 지켜냈어요.' : '완벽해요! 이 실력이면 수강신청 날도 문제없어요.';
   if (revealed > 0) return '다음엔 "정답 보기" 전에 힌트를 한 단계씩 먼저 받아보세요.';
   if (hintPenalty > 2) return '힌트를 조금만 아끼면 별이 더 늘어나요.';
   if (mttd !== null && mttd > 30) return '경보가 뜨면 관제 화면(N)에서 바로 확인(ACK)부터 눌러보세요.';
@@ -88,8 +89,18 @@ export function Results() {
   const finish = gameStore.getState().finishResults;
   const hintPoints = score.hintPenalty * 5;
   const revealPoints = score.revealed * 15;
-  // Availability is only sampled between incidents with students online; some days never have such a stretch.
-  const availability = run.ticks > 0 ? score.availability : null;
+  // D-Day: the same number as the postmortem (every second from the 10:00 open, incidents included).
+  // Weekdays: the score's own average, sampled only between incidents with students online (time during an
+  // incident is priced by MTTR instead), so the card says so; some days never have such a stretch.
+  const dday = isFinal ? ddayAvailability(run.world) : null;
+  const availability = dday ?? (run.ticks > 0 ? score.availability : null);
+  const availLabel = dday !== null ? '가용성 (10:00 오픈부터)' : '장애 없을 때 가용성';
+  const availGloss =
+    dday !== null
+      ? '10시 오픈부터 마감까지, 학생 요청이 성공한 비율 (장애 보고서와 같은 숫자)'
+      : availability === null
+        ? '장애가 없던 시간에 서비스가 정상이었던 비율 (오늘은 잴 구간이 없었어요)'
+        : '장애가 없던 시간에 서비스가 정상이었던 비율 (장애 중 손실은 MTTR에 반영돼요)';
   const newRecord = prevBest === null || score.points > prevBest;
   const missionsDone = def.objectives.filter((o) => o.id in run.objectivesDone).length;
   const incidents = run.scenarios.filter((r) => r.activatedAt !== null).length;
@@ -120,10 +131,10 @@ export function Results() {
 
         <dl className="res-stats">
           <Stat
-            label="가용성"
+            label={availLabel}
             value={availability === null ? '—' : `${(availability * 100).toFixed(1)}%`}
             cls={availability === null ? '' : availLevel(availability)}
-            gloss={availability === null ? '서비스가 정상이었던 시간 비율 (오늘은 잴 구간이 없었어요)' : '서비스가 정상이었던 시간 비율'}
+            gloss={availGloss}
           />
           <Stat label="평균 탐지 시간 (MTTD)" value={secs(score.mttd, '장애 없음')} gloss="장애가 시작되고 경보를 확인(ACK)하기까지 걸린 시간" />
           <Stat label="평균 복구 시간 (MTTR)" value={secs(score.mttr, '장애 없음')} gloss="장애가 시작되고 다 고치기까지 걸린 시간" />
@@ -144,7 +155,7 @@ export function Results() {
           />
         </dl>
 
-        <p className="res-advice">💬 {advice(score.stars, score.hintPenalty, score.revealed, score.mttd, score.mttr, availability)}</p>
+        <p className="res-advice">💬 {advice(score.stars, score.hintPenalty, score.revealed, score.mttd, score.mttr, availability, isFinal)}</p>
 
         {tomorrow && (
           <p className="res-tomorrow">
@@ -168,18 +179,21 @@ export function Results() {
           )}
         </section>
 
-        <p className="res-next-hint">{isFinal ? 'Enter를 누르면 엔딩을 볼 수 있어요.' : 'Enter를 누르면 다음 날로 가요.'}</p>
+        {/* Sticks to the bottom of the screen while the report scrolls, so the buttons are on screen at 1280×720 too. */}
+        <div className="res-footer">
+          <p className="res-next-hint">{isFinal ? 'Enter를 누르면 엔딩을 볼 수 있어요.' : 'Enter를 누르면 다음 날로 가요.'}</p>
 
-        <div className="res-actions">
-          <button className="btn" onClick={() => finish('select')}>
-            📅 달력
-          </button>
-          <button className="btn" onClick={() => finish('retry')}>
-            다시 하기
-          </button>
-          <button className="btn primary res-primary" onClick={() => finish('next')}>
-            {isFinal ? '엔딩 보기 🏆' : '다음 날 출근 ▶'}
-          </button>
+          <div className="res-actions">
+            <button className="btn" onClick={() => finish('select')}>
+              📅 달력
+            </button>
+            <button className="btn" onClick={() => finish('retry')}>
+              다시 하기
+            </button>
+            <button className="btn primary res-primary" onClick={() => finish('next')}>
+              {isFinal ? '엔딩 보기 🏆' : '다음 날 출근 ▶'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

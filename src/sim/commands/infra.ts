@@ -251,7 +251,7 @@ const lbCommands: Command[] = [
       if (!dev || dev.kind !== 'server') return { lines: [red(`lb: unknown server '${name}'`), dim('(서버 이름을 확인해요)')] };
       if (findMember(w, dev.id)) return { lines: [red(`lb: ${dev.id} is already in the pool`), dim('(이미 멤버예요)')] };
       lb.members.push({ name: dev.id, host: dev.id, port, enabled: true });
-      return { lines: [green(`added ${dev.id}:${port} to the pool`)], events: [`lb:add:${dev.id}`] };
+      return { lines: [green(`풀에 추가했어요: ${dev.id}:${port}`)], events: [`lb:add:${dev.id}`] };
     },
   },
   {
@@ -319,13 +319,13 @@ const lbCommands: Command[] = [
       const [what, val] = args;
       if (what === 'path' && val && val.startsWith('/')) {
         lb.health.path = val;
-        return { lines: [green(`health check path: ${val}`)], events: ['lb:health'] };
+        return { lines: [green(`헬스체크 경로를 바꿨어요: ${val}`)], events: ['lb:health'] };
       }
       if (what === 'port' && val) {
         const p = Number(val);
         if (Number.isInteger(p) && p >= 1 && p <= 65535) {
           lb.health.port = p;
-          return { lines: [green(`health check port: ${p}`)], events: ['lb:health'] };
+          return { lines: [green(`헬스체크 포트를 바꿨어요: ${p}`)], events: ['lb:health'] };
         }
       }
       return err('사용법: lb health set path </경로>  또는  lb health set port <포트>');

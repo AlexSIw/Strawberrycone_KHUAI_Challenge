@@ -21,10 +21,13 @@ const LED_TEXT: Record<LedState, string> = {
 
 const KIND_TEXT = { server: '서버', switch: '스위치', router: '라우터', firewall: '방화벽', lb: 'L4 로드밸런서', internet: '인터넷' } as const;
 
-function modeText(f: Iface): string {
+/** `vlans`: the VLANs made on the switch (VLAN 1 always exists); an access port in a VLAN not made yet is inactive, as in IOS. */
+function modeText(f: Iface, vlans: Record<number, string>): string {
   const base =
     f.mode === 'access'
-      ? `VLAN ${f.accessVlan}`
+      ? f.accessVlan === 1 || f.accessVlan in vlans
+        ? `VLAN ${f.accessVlan}`
+        : `VLAN ${f.accessVlan} (아직 없는 VLAN · inactive)`
       : f.mode === 'trunk'
         ? `trunk ${f.allowed === 'all' ? 'all' : f.allowed.join(',')}`
         : f.ip
@@ -155,7 +158,7 @@ export function DevicePane({ run, id }: { run: StageRun; id: string }) {
                     <code>{p}</code>
                   </td>
                   <td className={OPER_CLS[oper]}>{OPER_TEXT[oper]}</td>
-                  <td>{f ? modeText(f) : '—'}</td>
+                  <td>{f ? modeText(f, nd.vlans) : '—'}</td>
                   <td className="muted">{peer ? `${w.devices[peer[0]]?.label ?? peer[0]} ${peer[1]}` : '—'}</td>
                   <td className={util === null ? 'muted' : util > 90 ? 'bad' : util > 70 ? 'warn' : ''}>{util === null ? '—' : `${util}%`}</td>
                   <td className={f?.crc ? 'bad' : 'muted'}>

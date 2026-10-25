@@ -97,7 +97,7 @@ export const day3: DaySpec = {
     { template: 'd2-uplink', trigger: { type: 'gate', objectives: ['volume'] } },
     { template: 'd2-storm', trigger: { type: 'gate', objectives: ['lacp'] } },
   ],
-  extras: [1, 2],
+  extras: [0, 1],
   mapSwitch: 'TOR-01',
   mapDevices: ['web', 'web2', 'db', APP_HOST, DB_HOST],
   title: '컨테이너 · 링크',

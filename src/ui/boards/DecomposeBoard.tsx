@@ -47,7 +47,7 @@ export function DecomposeBoard() {
   if (!app) {
     return (
       <ModalFrame title="설계 보드" icon="📋" size="narrow">
-        <p className="muted">이 단계에서는 설계 보드를 쓰지 않아요.</p>
+        <p className="muted">오늘은 설계 보드를 쓰지 않아요.</p>
       </ModalFrame>
     );
   }

@@ -70,7 +70,9 @@ export const webCommands: Command[] = [
       const [key, value] = args;
       if (key === 'port' && value && /^\d+$/.test(value)) {
         w.web!.port = parseInt(value, 10);
-        return { lines: [green(`포트를 ${value} 로 바꾸고 재시작했어요.`)], events: ['server_port'] };
+        // 80으로 · 8081로: the particle follows how the number is read (ends in 영/삼/육/십/백… → 으로).
+        const ro = /[036]$/.test(value) ? '으로' : '로';
+        return { lines: [green(`포트를 ${value}${ro} 바꾸고 재시작했어요.`)], events: ['server_port'] };
       }
       if (key === 'threads' && (value === 'single' || value === 'multi')) {
         w.web!.threads = value;

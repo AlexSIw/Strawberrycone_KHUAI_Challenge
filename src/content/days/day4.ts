@@ -90,7 +90,7 @@ export const day4: DaySpec = {
     { template: 'd1-heat', trigger: { type: 'gate', objectives: ['hsrp'] } },
     { template: 'd1-fire', trigger: { type: 'gate', objectives: ['checklist'] } },
   ],
-  extras: [1, 2],
+  extras: [0, 1],
   mapSwitch: 'TOR-01',
   mapDevices: ['web', 'web2', 'db', 'srv-new', 'srv-db', 'n1', 'n2'],
   title: '점검 · 이중화',
@@ -99,7 +99,7 @@ export const day4: DaySpec = {
   intro: [
     { who: 'boss', text: 'D-1! 내일이 수강신청이다. 오늘은 리허설: 학생 접속을 하루 종일 1초에 1,500건(1,500 rps) 흘려 볼 거야.' },
     { who: 'mentor', text: '오늘부터 신청 앱은 쿠버네티스(서버 여러 대를 대신 돌봐 주는 관리 프로그램)가 K8S-01~04(노드: 일하는 서버 n1~n4) 위에서 돌려. 우리는 "원하는 상태"만 적으면 돼. 지금은 신청 pod(앱이 실제로 도는 가장 작은 단위)가 0개라 사이트가 안 열려. 설계 보드부터!' },
-    { who: 'mentor', text: 'D-4에 만든 게이트웨이 기억나? 그때는 CORE-01 혼자 맡아서 Standby가 unknown이었지. 그사이 선배가 DB(20) 같은 다른 VLAN은 CORE-02에 짝을 세워 뒀는데, WEB(10)·K8S(40) 두 개는 아직 CORE-01 혼자야. 오늘 우리가 CORE-02에 세우자.' },
+    { who: 'mentor', text: 'D-4에 만든 게이트웨이 기억나? 그때는 CORE-01 혼자 맡아서 Standby가 unknown이었지. 그사이 선배가 CORE-01 쪽 우선순위(110)와 preempt를 맞추고, DB(20) 같은 다른 VLAN은 CORE-02에 짝을 세워 뒀어. WEB(10)·K8S(40) 두 개는 아직 CORE-01 혼자야. 오늘 우리가 CORE-02에 세우자.' },
     { who: 'boss', text: '마지막으로 이중화 점검표. 둘씩 있다고 끝이 아니야. 퇴근 전에 하나씩 눈으로 확인해.' },
     { who: 'lion', text: '원하는 상태 쓰고, 짝 세우고, 점검표! 내일을 위해!', mood: 'happy' },
   ],

@@ -35,6 +35,8 @@ export function Hud() {
   const modal = useGame((s) => s.modal?.type);
   const speed = useGame((s) => s.moveSpeed);
   const busy = useGame((s) => s.screen !== 'playing' || !!s.dialogue);
+  // Today's work is done: the exit button becomes 퇴근하기 (the outro also starts once every window is closed).
+  const dayDone = useGame((s) => s.dayDone && s.screen === 'playing' && !s.dialogue);
   const [confirmExit, setConfirmExit] = useState(false);
 
   // The stage ended (outro / results / next stage) while the exit question was open: drop it.
@@ -180,10 +182,17 @@ export function Hud() {
             <span aria-hidden>🏃</span>
             <span className="hud-speed-value">{speed}x</span>
           </button>
-          <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="달력 화면으로 나가기">
-            <span aria-hidden>🚪</span>
-            <span className="hud-btn-label">나가기</span>
-          </button>
+          {dayDone ? (
+            <button className="btn primary hud-btn hud-leave" onClick={press(() => store.leaveWork())} title="오늘 일을 마치고 일일 리포트 보기">
+              <span aria-hidden>🏠</span>
+              <span className="hud-btn-label">퇴근하기 ▶</span>
+            </button>
+          ) : (
+            <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="달력 화면으로 나가기">
+              <span aria-hidden>🚪</span>
+              <span className="hud-btn-label">나가기</span>
+            </button>
+          )}
         </nav>
       </header>
 

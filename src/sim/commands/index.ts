@@ -106,7 +106,14 @@ export function runCommand(line: string, world: World, host: string, stage: Stag
     const elsewhere = ALL_COMMANDS.filter((c) => c.name.split(' ')[0] === tokens[0] && !(c.os ?? ['linux']).includes(os) && c.name !== 'exit');
     if (same.length && same.every((c) => c.minStage > stage)) msg = `${tokens[0]}: 이 명령어는 아직 안 열렸어요. 다음 날에 쓸 수 있어요. (help)`;
     else if (same.length) msg = `${tokens[0]}: 오늘은 쓰지 않는 명령어예요. help로 지금 쓸 수 있는 명령어를 보세요.`;
-    else if (elsewhere.length) msg = `${tokens[0]}: 이 장비에서 쓰는 명령이 아니에요. ${WHERE[elsewhere[0].os?.[0] ?? 'linux']}에 접속해서 쓰세요.`;
+    else if (elsewhere.length) {
+      const where = elsewhere[0].os?.[0] ?? 'linux';
+      // On an appliance (L4, firewall) a shell command means going back to the 관리 PC, not to "a server".
+      msg =
+        where === 'linux' && os !== 'linux'
+          ? `${tokens[0]}: 이 장비에서 쓰는 명령이 아니에요. exit로 관리 PC(ops)에 돌아가서 쓰세요.`
+          : `${tokens[0]}: 이 장비에서 쓰는 명령이 아니에요. ${WHERE[where]}에 접속해서 쓰세요.`;
+    }
     return { ...err(msg), world };
   }
   const w = clone(world);

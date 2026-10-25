@@ -61,7 +61,7 @@ export const templates: IncidentTemplate[] = [
         hints: [
           '연락이 안 되는 서버는 어느 거야? 포트 불빛(링크)은 초록인데 ping만 안 된다면 케이블보다 위층 문제야. 그 서버가 꽂힌 스위치는 그 포트를 어떻게 보고 있을까?',
           '그 스위치의 서버 포트들이 각각 어느 동네(VLAN)에 들어 있는지 표로 보고, 오늘 만든 배정표와 비교해봐. 장비 일기장(로그)에 누가 설정을 건드린 흔적도 남아 있을 거야.',
-          'VLAN과 포트 배정을 한눈에 보여주는 show 명령이 있어. 고칠 때는 그 포트의 설정 모드로 들어가서 VLAN을 정해주는 명령을 떠올려봐. 고친 다음엔 저장도!',
+          'VLAN과 포트 배정을 한눈에 보여주는 show 명령이 있어. 고칠 때는 그 포트의 설정 모드로 들어가서 VLAN을 정해주는 명령을 떠올려봐. 고친 다음엔 저장도! 잘 고쳐졌는지는 관리 PC(ops)에서 ping 해 봐 (스위치에는 관리망 주소만 있어서 거기서는 서버로 ping이 안 가).',
         ],
         bannedPhrases: [...ifPhrases(port), `vlan ${vlan}`, `VLAN ${vlan}`, `vlan${vlan}`, `VLAN${vlan}`, 'access vlan', ipOf(host)],
         solution: `${v.label} 서버가 꽂힌 TOR-01 ${port} 포트가 누군가에 의해 VLAN ${v.wrong}으로 바뀌었다 (show vlan brief, show logging으로 확인). TOR-01: enable → configure terminal → interface ${port} → switchport access vlan ${vlan} → end → write memory`,

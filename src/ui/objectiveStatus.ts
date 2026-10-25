@@ -101,7 +101,7 @@ export function lockedText(st: ObjectiveStatus): string | null {
  */
 export function waitingText(st: ObjectiveStatus): string | null {
   if (st.incident || st.next) return null;
-  if (st.doneCount === st.total) return '목표 완료! 다음 상황을 기다리는 중이에요…';
+  if (st.doneCount === st.total) return '목표 완료! 관제 화면(N)을 지켜보며 다음 상황을 기다려요…';
   if (st.doneCount === 0) return '곧 상황이 시작돼요. 잠깐 기다려봐요…';
   return st.lockReason === 'incident'
     ? '지금 할 목표는 다 했어요! 다음 상황을 기다리는 중이에요…'

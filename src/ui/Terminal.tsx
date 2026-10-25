@@ -9,6 +9,7 @@ import { iosCheatSheet, iosComplete, iosHelp } from '../sim/ios';
 import type { IosMode, StageId } from '../sim/types';
 import { gameStore, useGame } from '../store/game';
 import { ModalFrame } from './ModalFrame';
+import { unsavedGear } from './noc/facility';
 import { lockedText, objectiveStatus, waitingText, type ObjectiveStatus } from './objectiveStatus';
 import './Terminal.css';
 
@@ -535,6 +536,8 @@ export function Terminal({ host }: { host: string }) {
   const storeHost = useGame((s) => s.terminal.host);
   const mode = useGame((s) => s.terminal.mode ?? null);
   const run = useGame((s) => s.run);
+  const heldCards = useGame((s) => s.heldConcepts.length);
+  const dayDone = useGame((s) => s.dayDone);
   const screenRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const editorRef = useRef<LineEditor | null>(null);
@@ -697,7 +700,11 @@ export function Terminal({ host }: { host: string }) {
                 {incidents.map(({ rt, def }) => (
                   <li key={rt.id}>
                     <span className="term-inc-title">
-                      {def.severity === 'critical' ? '🚨' : '⚠️'} {def.title}
+                      <span>
+                        {def.severity === 'critical' ? '🚨' : '⚠️'} {def.title}
+                      </span>
+                      {/* What the caller said (the toast with it may be hidden by this window). */}
+                      {def.alert && <small className="term-inc-alert">📞 {def.alert}</small>}
                     </span>
                     <button
                       type="button"
@@ -718,6 +725,23 @@ export function Terminal({ host }: { host: string }) {
                 </>
               )}
             </section>
+          ) : dayDone && run ? (
+            <section className="term-incidents term-goals term-done" aria-label="오늘 일 끝">
+              <h3>🎉 오늘 일 끝!</h3>
+              {unsavedGear(run.world).length > 0 ? (
+                <p className="term-calm">
+                  💾 저장 안 한 장비: <b>{unsavedGear(run.world).join(', ')}</b>
+                  <br />
+                  <span className="muted">그 장비에서 write memory 하면 재부팅해도 설정이 남아요.</span>
+                </p>
+              ) : (
+                <p className="term-calm muted">바꾼 설정은 다 저장돼 있어요.</p>
+              )}
+              <p className="term-goal-locked">창을 닫으면 퇴근해요.</p>
+              <button type="button" className="btn primary term-leave-btn" onClick={() => gameStore.getState().leaveWork()}>
+                🏠 퇴근하기 ▶
+              </button>
+            </section>
           ) : (
             <section className="term-incidents term-goals" aria-label="지금 목표">
               <h3>지금 목표</h3>
@@ -730,6 +754,11 @@ export function Terminal({ host }: { host: string }) {
                 </>
               )}
             </section>
+          )}
+          {heldCards > 0 && (
+            <p className="term-held" role="status">
+              🃏 새 개념 카드 {heldCards}장! 터미널을 닫으면 펼쳐져요.
+            </p>
           )}
         </aside>
       </div>

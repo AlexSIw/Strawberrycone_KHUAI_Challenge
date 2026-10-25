@@ -220,6 +220,16 @@
   from { transform: translateX(40px); opacity: 0.4; }
   to { transform: none; opacity: 1; }
 }
+/* The rack's own switch at the top (already installed, not a slot) */
+.rk-tor { cursor: default; height: 26px; }
+.rk-switch { height: 22px; background: linear-gradient(180deg, #3b5a74, #2a4257); }
+.rk-switch .rk-srv-label { font-size: 12px; }
+.rk-ports {
+  width: 46px;
+  height: 12px;
+  background: repeating-linear-gradient(90deg, #0d1117 0 4px, #8fb3cf 4px 6px);
+  border-radius: 2px;
+}
 .rk-grill {
   width: 34px;
   height: 16px;

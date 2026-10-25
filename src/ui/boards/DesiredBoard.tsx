@@ -28,7 +28,7 @@ export function DesiredBoard() {
   if (!k8s || !dep) {
     return (
       <ModalFrame title="설계 보드" icon="📋" size="narrow">
-        <p className="muted">이 단계에서는 원하는 상태 카드를 쓰지 않아요.</p>
+        <p className="muted">오늘은 원하는 상태 카드를 쓰지 않아요.</p>
       </ModalFrame>
     );
   }

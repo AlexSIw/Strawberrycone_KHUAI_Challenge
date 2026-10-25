@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CONCEPTS } from '../../content/concepts';
 import { getStage } from '../../content/stages';
-import { isCleared, recordEvents } from '../../sim/engine';
 import type { StageId } from '../../sim/types';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
@@ -28,12 +27,17 @@ export function Quiz() {
   // opened on top of the quiz (도감 with C, the radio with H) goes back to the explanation, not the question.
   const [pending, setPending] = useStageState('quiz:pending', false);
   const correct = solvedBefore || pending;
+  const explainRef = useRef<HTMLDivElement>(null);
+  // The explanation opens under the choices: bring it into view (on a small screen it starts below the fold).
+  useEffect(() => {
+    if (correct) explainRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [correct]);
 
   const quiz = stage === undefined ? undefined : getStage(stage).quiz;
   if (stage === undefined || !quiz) {
     return (
       <ModalFrame title="설계 보드 · 퀴즈" icon="❓" size="narrow">
-        <p className="muted">이 단계에는 퀴즈가 없어요.</p>
+        <p className="muted">오늘은 퀴즈가 없어요.</p>
       </ModalFrame>
     );
   }
@@ -45,11 +49,9 @@ export function Quiz() {
     if (correct) return;
     setLast(i);
     if (i === quiz.answer) {
-      // Record it now (objective toast right away) unless it is the stage's last objective:
-      // the stage would end and close this window before the explanation could be read.
-      const s = gameStore.getState();
-      if (s.run && !isCleared(recordEvents(s.run, ['quiz:correct']).run)) s.event('quiz:correct');
-      else setPending(true);
+      // Recorded when the window closes ("알겠어요!"): the mission's concept card would cover the
+      // explanation the moment it appears.
+      setPending(true);
     } else if (!wrong.includes(i)) {
       setWrong((w) => [...w, i]);
     }
@@ -120,7 +122,7 @@ export function Quiz() {
         </div>
       )}
       {correct && (
-        <div className="qz-mentor is-ok">
+        <div className="qz-mentor is-ok" ref={explainRef}>
           <Portrait who="mentor" size={44} />
           <div>
             <p>
@@ -128,7 +130,7 @@ export function Quiz() {
             </p>
             {cardName && (
               <p className="qz-card">
-                📖 개념 카드 <b>{cardName}</b> 획득! <span className="muted">(C 키 = 개념 도감)</span>
+                📖 "알겠어요!"를 누르면 개념 카드 <b>{cardName}</b>을(를) 받아요. <span className="muted">(C 키 = 개념 도감)</span>
               </p>
             )}
           </div>

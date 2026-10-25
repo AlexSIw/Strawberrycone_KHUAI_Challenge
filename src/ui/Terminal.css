@@ -139,8 +139,17 @@
   justify-content: space-between;
 }
 .term-inc-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   font-size: 13px;
   line-height: 1.35;
+}
+/* The caller's words, under the incident's title */
+.term-inc-alert {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #f1c9cb;
 }
 .term-hint-btn {
   font-size: 12px;
@@ -196,6 +205,23 @@
   margin: 6px 0 0;
   font-size: 12px;
   color: var(--muted);
+}
+/* Today's work is done: what is left to save, and the way home */
+.term-done {
+  border-color: var(--tan);
+}
+.term-leave-btn {
+  margin-top: 8px;
+  width: 100%;
+}
+/* Cards earned here wait until the window closes (a card never takes the keyboard mid-command) */
+.term-held {
+  margin: 0;
+  padding: 6px 10px;
+  border: 2px dashed var(--tan);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--tan);
 }
 
 @media (max-width: 760px) {

@@ -26,7 +26,7 @@ import {
 import { USER_MODE } from '../sim/ios';
 import { newSeed } from '../sim/scheduler';
 import { LAST_DAY, type IosMode, type StageId, type World } from '../sim/types';
-import { placeName } from '../ui/noc/facility';
+import { sourceName, unsavedGear } from '../ui/noc/facility';
 
 // ---------- types ----------
 
@@ -74,6 +74,8 @@ export interface ConceptPopup {
   lesson: string;
   /** Scenario id, or "objective:<id>" for cards from objectives */
   scenarioId: string;
+  /** The card was already in the collection (an earlier run, or earlier today): shown as a review, not as new */
+  review?: boolean;
 }
 
 export interface SaveData {
@@ -138,6 +140,18 @@ export interface GameState {
   cycleMoveSpeed(): void;
   dialogue: { lines: DialogueLine[]; index: number; then: 'play' | 'results' } | null;
   concepts: ConceptPopup[];
+  /**
+   * Cards earned while a terminal window is open. A card would take the keyboard in the middle of a
+   * command, so they wait here and pop up once no terminal is the open window.
+   */
+  heldConcepts: ConceptPopup[];
+  /**
+   * Today's work is all done. The day clock stops, and the outro starts once no window is open (or on
+   * 퇴근하기), so the player can finish what they were doing (e.g. `write memory`) and read the screen.
+   */
+  dayDone: boolean;
+  /** 퇴근하기: close every window and start the outro (only once today's work is done). */
+  leaveWork(): void;
   toasts: Toast[];
   /** Session of the terminal window that is open (or was opened last); commands run on its host */
   terminal: TerminalSession;
@@ -367,9 +381,25 @@ export const gameStore = createStore<GameState>()((set, get) => {
 
   const awardCards = (popups: ConceptPopup[]) => {
     if (!popups.length) return;
-    const save = { ...get().save, cards: [...new Set([...get().save.cards, ...popups.map((p) => p.concept)])] };
+    // A card already in the collection (from an earlier run, or earlier today) is a review, not a new card.
+    const owned = new Set(get().save.cards);
+    const cards = popups.map((p) => {
+      if (owned.has(p.concept)) return { ...p, review: true };
+      owned.add(p.concept);
+      return p;
+    });
+    const save = { ...get().save, cards: [...owned] };
     writeSave(save);
-    set((st) => ({ concepts: [...st.concepts, ...popups], save }));
+    // Never in the middle of a command: cards earned with a terminal open wait until it is closed.
+    if (get().modal?.type === 'terminal') set((st) => ({ heldConcepts: [...st.heldConcepts, ...cards], save }));
+    else set((st) => ({ concepts: [...st.concepts, ...cards], save }));
+  };
+
+  /** Cards held back while a terminal was open come up once it isn't the open window any more. */
+  const releaseCards = () => {
+    const s = get();
+    if (!s.heldConcepts.length || s.modal?.type === 'terminal') return;
+    set({ concepts: [...s.concepts, ...s.heldConcepts], heldConcepts: [] });
   };
 
   const objectiveToasts = (run: StageRun, ids: string[]) => {
@@ -384,8 +414,32 @@ export const gameStore = createStore<GameState>()((set, get) => {
     awardCards(popups);
   };
 
+  /**
+   * Today's work is done once every mission and incident is: the clock stops there. The outro waits
+   * until no window is open, so whatever the player was doing (a terminal mid-`write memory`, the FMS
+   * tab the last mission asked to look at) stays on screen; 퇴근하기 in the HUD ends the day at once.
+   */
   const afterChange = (run: StageRun) => {
-    if (isCleared(run) && get().screen === 'playing' && !get().dialogue) finishStage(run);
+    const s = get();
+    if (s.screen !== 'playing' || s.dialogue) return;
+    if (!s.dayDone) {
+      if (!isCleared(run)) return;
+      // The clock stops here, so the polls that would clear the alarms of fixed incidents never come: clear them now.
+      const fixed = new Set(run.scenarios.filter((r) => r.state === 'resolved').map((r) => r.id));
+      const alarms = run.alarms.map((a) => (a.clearedAt === null && a.scenarioId && fixed.has(a.scenarioId) ? { ...a, clearedAt: run.ctx.stageTime } : a));
+      run = { ...run, alarms };
+      set({ dayDone: true, run });
+      if (s.modal) {
+        const unsaved = unsavedGear(run.world);
+        toast(
+          'info',
+          unsaved.length
+            ? `🎉 오늘 일 끝! 저장 안 한 장비(${unsaved.join(', ')})는 write memory로 저장하고, 창을 닫거나 위의 '퇴근하기'를 누르면 퇴근해요.`
+            : `🎉 오늘 일 끝! 창을 닫거나 위의 '퇴근하기'를 누르면 퇴근해요.`,
+        );
+      }
+    }
+    if (!get().modal) finishStage(get().run ?? run);
   };
 
   const finishStage = (run: StageRun) => {
@@ -402,6 +456,10 @@ export const gameStore = createStore<GameState>()((set, get) => {
       lastScore: score,
       lastPrevBest: prev?.points ?? null,
       ...NO_WINDOWS,
+      // Cards held back for a terminal come up before the outro (DialogueBox waits for them).
+      concepts: [...get().concepts, ...get().heldConcepts],
+      heldConcepts: [],
+      dayDone: true,
       toasts: [],
       dialogue: { lines: def.outro, index: 0, then: 'results' },
     });
@@ -421,6 +479,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     },
     dialogue: null,
     concepts: [],
+    heldConcepts: [],
+    dayDone: false,
     toasts: [],
     terminal: freshSession('ops'),
     terminalOrigin: 'ops',
@@ -435,8 +495,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     paused: false,
     setPaused: (paused) => set({ paused }),
 
-    goTitle: () => set({ screen: 'title', run: null, ...NO_WINDOWS, dialogue: null, toasts: [] }),
-    goSelect: () => set({ screen: 'select', run: null, ...NO_WINDOWS, dialogue: null, toasts: [] }),
+    goTitle: () => set({ screen: 'title', run: null, ...NO_WINDOWS, dialogue: null, toasts: [], heldConcepts: [], dayDone: false }),
+    goSelect: () => set({ screen: 'select', run: null, ...NO_WINDOWS, dialogue: null, toasts: [], heldConcepts: [], dayDone: false }),
     newGame: () => {
       const save = { ...get().save, seed: newSeed() };
       writeSave(save);
@@ -452,6 +512,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
         run: startStage(stage, get().save.seed),
         ...NO_WINDOWS,
         concepts: [],
+        heldConcepts: [],
+        dayDone: false,
         toasts: [],
         hints: {},
         hintPending: false,
@@ -486,7 +548,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
 
     tick: () => {
       const s = get();
-      if (!s.run || s.isPaused()) return;
+      // Today's work is done: the clock stops while the player wraps up (no new incident, no score drift).
+      if (!s.run || s.isPaused() || s.dayDone) return;
       const { run, activated, resolved, completed, raised } = tickRun(s.run);
       const def = getStage(run.stage);
       set({ run });
@@ -499,8 +562,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
       for (const id of raised) {
         const a = run.alarms.find((x) => x.id === id);
         if (!a || (a.scenarioId && run.scenarios.find((r) => r.id === a.scenarioId)?.state === 'resolved')) continue;
-        // Facility alarms name a place, not a device ('rack2' → '랙 2'), as the alarm list and the FMS do.
-        toast('alert', alarmLine(a, run.world.devices[a.device]?.label ?? placeName(a.device)), a.scenarioId ?? undefined, 'nms');
+        // The same name the alarm list shows: a device's label, a campus service's name, or a place ('rack2' → '랙 2').
+        toast('alert', alarmLine(a, sourceName(run.world, a.device)), a.scenarioId ?? undefined, 'nms');
       }
       awardCards(
         resolved.map((id) => {
@@ -584,16 +647,31 @@ export const gameStore = createStore<GameState>()((set, get) => {
     openModal: (m) => {
       const s = get();
       set({ modal: m, modalStack: pushWindow(s.modal, s.modalStack, m), fixing: isFixing(m), ...sessionFor(s, m) });
+      releaseCards();
       get().event(openEvent(m));
     },
 
     closeModal: () => {
       const s = get();
       const back = s.modalStack[s.modalStack.length - 1] ?? null;
-      if (!back) return set(NO_WINDOWS);
+      if (!back) {
+        set(NO_WINDOWS);
+        releaseCards();
+        // Today's work was done with this window open: the last one closed, so the day ends now.
+        const run = get().run;
+        if (run && get().dayDone) afterChange(run);
+        return;
+      }
       // The terminal underneath gets its own place's session back (it is still the active one unless
       // another place's terminal was opened on top meanwhile).
       set({ modal: back, modalStack: s.modalStack.slice(0, -1), fixing: isFixing(back), ...sessionFor(s, back) });
+      releaseCards();
+    },
+
+    leaveWork: () => {
+      const s = get();
+      if (!s.run || !s.dayDone || s.screen !== 'playing' || s.dialogue) return;
+      finishStage(s.run);
     },
 
     nextDialogue: () => {

@@ -1,12 +1,30 @@
 import { APP_PORT, cordon, drain, endpointReaches, parseEndpoint, podAge, podsOf, readyPods, rollback, setImage, unscheduled } from '../k8s';
 import type { Command, CmdResult } from './types';
 import { bold, dim, err, green, ok, out, red, yellow } from './types';
-import type { Deployment, World } from '../types';
+import { LAST_DAY, type Deployment, type World } from '../types';
 import { own } from '../util';
 
 function cluster(w: World): CmdResult | null {
   return w.k8s ? null : err('이 데이터센터에는 아직 쿠버네티스가 없어요.');
 }
+
+/** What an enroll pod's log says about its DB-01 connections, or null when they are fine. */
+function dbTrouble(w: World): string | null {
+  const k = w.k8s;
+  const max = w.db?.maxConn;
+  if (!k || max === undefined) return null;
+  const raw = k.deployments.enroll?.env.DB_POOL;
+  const n = Number(raw);
+  if (raw === undefined || !Number.isInteger(n) || n < 1) {
+    return `ERROR DB-01 연결 실패: DB_POOL 값을 읽지 못했어요 ('${raw ?? ''}') — 1 이상의 정수여야 DB 연결을 열 수 있어요`;
+  }
+  const want = readyPods(k, 'enroll').length * n;
+  if (want <= max) return null;
+  return `ERROR DB-01 연결 실패: too many connections (${max}/${max}) — 이 pod도 연결 ${n}개를 미리 잡으려 해요 (pod 전체 ${want}개 > 한도 ${max})`;
+}
+
+/** `scale` never asks for more pods than this per app. */
+const MAX_REPLICAS = 16;
 
 /** Accepts "enroll", "deploy/enroll", "deployment/enroll". */
 const appName = (s: string | undefined) => (s ?? '').replace(/^(deploy|deployment|deployments)(\.apps)?\//, '');
@@ -78,14 +96,18 @@ export const k8sCommands: Command[] = [
     run(_a, { w }) {
       const bad = cluster(w);
       if (bad) return bad;
-      const rows = [bold('NAME  STATUS     RACK    TEMP   PODS')];
-      for (const [id, n] of Object.entries(w.k8s!.nodes)) {
+      const nodes = Object.entries(w.k8s!.nodes);
+      const status = (n: (typeof nodes)[number][1]) => (n.ready ? 'Ready' : 'NotReady') + (n.cordoned ? ',SchedulingDisabled' : '');
+      // The STATUS column is as wide as its longest value ("NotReady,SchedulingDisabled" while draining).
+      const width = Math.max(10, ...nodes.map(([, n]) => status(n).length + 1));
+      const rows = [bold(`NAME  ${'STATUS'.padEnd(width)} RACK    TEMP   PODS`)];
+      for (const [id, n] of nodes) {
         const temp = w.cooling?.temps[n.rack] ?? 24;
         // Pad before colouring: colour codes would otherwise count toward the width and shift PODS.
         const label = `${temp.toFixed(0)}°C`.padEnd(6);
         const t = temp >= 40 ? red(label) : temp >= 32 ? yellow(label) : label;
-        const st = (n.ready ? 'Ready' : 'NotReady') + (n.cordoned ? ',SchedulingDisabled' : '');
-        rows.push(`${id.padEnd(6)}${n.ready && !n.cordoned ? green(st.padEnd(10)) : n.ready ? yellow(st.padEnd(10)) : red(st.padEnd(10))} ${n.rack.padEnd(7)} ${t} ${w.k8s!.pods.filter((p) => p.node === id).length}`);
+        const st = status(n).padEnd(width);
+        rows.push(`${id.padEnd(6)}${n.ready && !n.cordoned ? green(st) : n.ready ? yellow(st) : red(st)} ${n.rack.padEnd(7)} ${t} ${w.k8s!.pods.filter((p) => p.node === id).length}`);
       }
       return { lines: rows, events: ['k8s_get_nodes'] };
     },
@@ -188,8 +210,10 @@ export const k8sCommands: Command[] = [
       const n = parseInt(nStr ?? '', 10);
       const dep = deploymentOf(w, name);
       if (!dep || Number.isNaN(n)) return err('사용법: scale <앱> <개수>  (예: scale login 3)');
-      dep.replicas = Math.max(0, Math.min(16, n));
-      return { lines: [green(`${name} 원하는 개수 → ${dep.replicas}. 쿠버네티스가 알아서 맞춰요.`)], events: [`k8s_scale:${name}`] };
+      dep.replicas = Math.max(0, Math.min(MAX_REPLICAS, n));
+      const lines = [green(`${name} 원하는 개수 → ${dep.replicas}. 쿠버네티스가 알아서 맞춰요.`)];
+      if (n > MAX_REPLICAS) lines.push(dim(`(앱 하나당 최대 ${MAX_REPLICAS}개까지라서 ${MAX_REPLICAS}개로 맞췄어요)`));
+      return { lines, events: [`k8s_scale:${name}`] };
     },
   },
   {
@@ -259,7 +283,7 @@ export const k8sCommands: Command[] = [
     minStage: 4,
     usage: 'logs <pod 이름>',
     summary: 'pod 로그(앱이 남긴 기록) 보기',
-    run(args, { w }) {
+    run(args, { w, stage }) {
       const bad = cluster(w);
       if (bad) return bad;
       const k = w.k8s!;
@@ -300,6 +324,13 @@ export const k8sCommands: Command[] = [
         if (k.badVersions.includes(p.version)) {
           failed = true;
           lines.push(red(`ERROR TypeError in /enroll (${p.version}) — 500 Internal Server Error (앱이 요청을 처리하다 오류로 멈췄어요)`));
+        }
+        // D-Day: every Running enroll pod opens its DB_POOL connections to DB-01 (the same model as the
+        // day's health and the dday-db incident: a pool that isn't a number ≥ 1, or pods × pool > the limit).
+        const db = stage === LAST_DAY ? dbTrouble(w) : null;
+        if (db) {
+          failed = true;
+          lines.push(red(db), dim(`DB_POOL=${k.deployments.enroll.env.DB_POOL ?? '(없음)'}`));
         }
         if (!failed) lines.push(green('GET /enroll 200'), green('POST /enroll 201'));
       } else lines.push(green('GET / 200'));

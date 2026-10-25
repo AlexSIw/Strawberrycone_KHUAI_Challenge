@@ -134,7 +134,8 @@ function tor(n: 1 | 2): Device {
   const vlans = n === 1 ? [10, 20, 40, 50] : [40, 50, 100];
   const ifs: Record<string, Iface> = {};
   for (let p = 1; p <= 12; p++) ifs[`Gi1/0/${p}`] = access(1);
-  for (const [, [label, , vlan, , sw, port]] of Object.entries(SERVERS)) if (sw === id) ifs[port] = access(vlan, { desc: label });
+  // Port descriptions are ASCII, as on real gear (and so `show interfaces status` columns line up).
+  for (const [sid, [label, , vlan, , sw, port]] of Object.entries(SERVERS)) if (sw === id) ifs[port] = access(vlan, { desc: sid === 'ops' ? 'NOC-PC' : label });
   ifs['Te1/1/1'] = trunk(vlans, 10000, { desc: 'UPLINK-CORE-01', ...(n === 1 ? { group: 1 } : {}) });
   // TOR-01: second member of Po1. TOR-02: a spare to CORE-01, cabled but shut and not bundled.
   ifs['Te1/1/2'] = trunk(vlans, 10000, n === 1 ? { group: 1, desc: 'UPLINK-CORE-01' } : { shutdown: true, desc: 'SPARE-CORE-01' });

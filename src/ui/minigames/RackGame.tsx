@@ -145,7 +145,7 @@ export function RackGame() {
   const nextStep = !allPowered
     ? 'LED가 꺼져 있죠? 아직 전기가 없어서예요. 다음은 전기실 PDU에서 전원을 꽂아 주세요.'
     : !allLinked
-      ? '전원 OK! 이제 네트워크실 스위치에 케이블을 연결하면 오른쪽 LED도 켜져요.'
+      ? '전원 OK! 이제 네트워크실 TOR 배선판에서 TOR-01에 케이블을 연결하면 오른쪽 LED도 켜져요.'
       : '전원도 케이블도 연결 끝! 서버들이 초록불로 반짝여요.';
 
   return (
@@ -202,6 +202,8 @@ export function RackGame() {
           {Object.entries(layout).map(([rack, col]) => {
             const mine = servers.filter((d) => d.rack === rack);
             const mounted = mine.filter((d) => d.installed).length;
+            // The rack's own top-of-rack switch (TOR-01 on rack 1): already there, not a slot to fill.
+            const tor = Object.values(world.devices).find((d) => d.kind === 'switch' && d.rack === rack);
             return (
               <div key={rack} className={`rk-rack${flash === rack ? ' flash' : ''}`} data-drop={`rack:${rack}`}>
                 <div className="rk-plate">
@@ -211,6 +213,15 @@ export function RackGame() {
                   </span>
                 </div>
                 <div className="rk-cabinet">
+                  {tor && (
+                    <div className="rk-slot rk-tor" title={`${tor.label}: 이 랙 서버들을 묶는 랙 스위치(Top of Rack). 케이블은 네트워크실 배선판에서 이 스위치 포트로 연결해요.`}>
+                      <span className="rk-u">맨 위</span>
+                      <span className="rk-server rk-switch">
+                        <span className="rk-ports" aria-hidden />
+                        <span className="rk-srv-label">{tor.label} · 랙 스위치</span>
+                      </span>
+                    </div>
+                  )}
                   {col.map((id, i) => {
                     const zone = `slot:${rack}:${i}`;
                     const d = id ? world.devices[id] : undefined;

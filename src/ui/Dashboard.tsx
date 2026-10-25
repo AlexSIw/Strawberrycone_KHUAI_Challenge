@@ -62,6 +62,8 @@ function Kpi({ label, value, explain, level }: { label: string; value: string; e
 export function KpiRow({ h }: { h: Health }) {
   // No students yet (stage 1): there are no requests to fail, so only the readiness number means something.
   const idle = h.rps <= 0;
+  // Nothing is served (a total outage): a "0 ms" would read as a fast, healthy answer (as the HUD shows "—").
+  const noAnswer = !idle && (h.availability < 0.05 || !Number.isFinite(h.latencyMs) || h.latencyMs <= 0);
   return (
     <div className="dash-kpis">
       <Kpi
@@ -72,9 +74,9 @@ export function KpiRow({ h }: { h: Health }) {
       />
       <Kpi
         label="응답시간"
-        value={idle ? '—' : `${fmtNum(h.latencyMs)} ms`}
-        explain="요청 하나에 답하는 데 걸린 시간"
-        level={idle ? undefined : levelOf('latency', h.latencyMs)}
+        value={idle || noAnswer ? '—' : `${fmtNum(h.latencyMs)} ms`}
+        explain={noAnswer ? '응답이 오지 않아요: 요청이 성공하지 못하고 있어요' : '요청 하나에 답하는 데 걸린 시간'}
+        level={idle ? undefined : noAnswer ? 'bad' : levelOf('latency', h.latencyMs)}
       />
       <Kpi
         label="에러율"
@@ -328,7 +330,7 @@ function PowerPanel({ w, h }: { w: World; h: Health }) {
   const p = w.power;
   if (!p) {
     return (
-      <Section title="전원 (Power)" hint="이 단계에서는 전원을 따로 보지 않아요.">
+      <Section title="전원 (Power)" hint="오늘은 전원을 따로 보지 않아요.">
         <p className="muted dash-empty">전원 정보 없음</p>
       </Section>
     );

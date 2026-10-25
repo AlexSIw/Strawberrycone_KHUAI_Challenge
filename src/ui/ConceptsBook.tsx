@@ -7,7 +7,6 @@ import './ConceptsBook.css';
 
 // 개념 도감: every concept card; collected ones are readable, the rest stay locked.
 
-
 export function ConceptsBook() {
   const cards = useGame((s) => s.save.cards);
   const all = Object.values(CONCEPTS);
@@ -17,7 +16,11 @@ export function ConceptsBook() {
   return (
     <ModalFrame title="개념 도감" icon="📖" size="wide">
       <div className="cbk-top">
-        <p className="cbk-todo">👉 장애를 해결할 때마다 개념 카드가 하나씩 모여요. <kbd>C</kbd> 키로 언제든 열 수 있어요.</p>
+        <p className="cbk-todo">
+          👉 미션을 끝내고 장애를 해결할 때마다 개념 카드가 하나씩 모여요. <kbd>C</kbd> 키로 언제든 열 수 있어요.
+          <br />
+          <span className="muted">일부 카드는 그날 운에 따라 생기는 장애에서 나와요. 새로 시작하면 다른 장애를 만날 수 있어요.</span>
+        </p>
         <div className="cbk-count" aria-label={`${all.length}개 중 ${count}개 수집`}>
           <span className="cbk-count-num">
             {count} / {all.length} 수집

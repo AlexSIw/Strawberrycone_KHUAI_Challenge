@@ -53,7 +53,8 @@
 /* ----- NMS layout ----- */
 .nms { display: flex; flex-direction: column; gap: 12px; }
 .nms-top { display: flex; flex-direction: column; gap: 12px; }
-.nms-map { max-height: 560px; }
+/* The whole map (down to the TOR rows) fits on a 720-px screen under a calm alarm box. */
+.nms-map { max-height: min(560px, calc(100vh - 380px)); min-height: 240px; }
 .nms-mapbox, .nms-detail, .nms-alarms {
   background: var(--panel-2);
   border: 2px solid var(--line);
@@ -71,6 +72,8 @@
 .nms-link.yellow { stroke: #ffb547; }
 .nms-link.red { stroke: #ff5a5f; animation: nms-flash 0.8s steps(2) infinite; }
 .nms-link.down { stroke: #5f5866; stroke-width: 2; }
+/* A spare switched off on purpose: thin and dotted, so it doesn't read as a broken (끊김) link */
+.nms-link.spare { stroke: #6f6878; stroke-width: 1.5; stroke-dasharray: 2 5; }
 .nms-link.blocked { stroke-dasharray: 7 6; opacity: 0.85; }
 @keyframes nms-flash {
   50% { stroke: #a52a2e; }
@@ -126,10 +129,15 @@
 .nms-legend .sw.yellow { background: #ffb547; }
 .nms-legend .sw.red { background: #ff5a5f; }
 .nms-legend .sw.down { background: #5f5866; }
+.nms-legend .sw.spare { height: 2px; background: repeating-linear-gradient(90deg, #8a8294 0 2px, transparent 2px 6px); }
 .nms-legend .sw.dashed { background: repeating-linear-gradient(90deg, #4fd17a 0 5px, transparent 5px 9px); }
 
 /* ----- alarm list ----- */
 .nms-calm { margin: 4px 0; font-size: 13px; color: var(--green); }
+/* No alarm: title and "no alarm" on one line */
+.nms-alarms.calm { padding: 8px 12px; }
+.nms-alarms.calm .nms-sec-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0; }
+.nms-alarms.calm .nms-calm { margin: 0; }
 .nms-alarm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .nms-alarm {
   display: grid;
@@ -300,6 +308,8 @@
   font-size: 13px;
 }
 .fms-gauges { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+/* A rack the facility cut off (fire): above the gauges, wide enough for its explanation */
+.fms-alert { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); margin-bottom: 12px; }
 .fms-gauge {
   display: flex;
   flex-direction: column;

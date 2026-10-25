@@ -118,9 +118,19 @@
 
 .hud-confirm-text { margin: 0; line-height: 1.6; }
 
+/* Today's work is done: 퇴근하기 takes the exit button's place and asks to be pressed. */
+.hud-leave { animation: hud-leave-pulse 1.4s ease-in-out infinite; }
+@keyframes hud-leave-pulse {
+  50% { box-shadow: 0 0 0 4px rgba(233, 183, 124, 0.45); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud-leave { animation: none; }
+}
+
 /* Narrow screens: icons only, then drop secondary chips */
 @media (max-width: 1100px) {
   .hud-btn-label { display: none; }
+  .hud-leave .hud-btn-label { display: inline; }
 }
 @media (max-width: 860px) {
   .hud { gap: 8px; padding: 0 8px; }

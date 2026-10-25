@@ -82,7 +82,8 @@ export const day1: DaySpec = {
     { template: 'd4-vlan', trigger: { type: 'gate', objectives: ['gateway'] } },
     { template: 'd4-dhcp', trigger: { type: 'gate', objectives: ['wr'] } },
   ],
-  extras: [0, 1],
+  // The typing-heaviest weekday: no random extra on top of its two teaching incidents.
+  extras: [0, 0],
   mapSwitch: 'TOR-01',
   mapDevices: ['web', 'web2', 'db'],
   title: '네트워크',
@@ -97,7 +98,7 @@ export const day1: DaySpec = {
   ],
   outro: [
     { who: 'mentor', text: 'VLAN은 동네, 코어의 VLAN 인터페이스는 동네 문, DNS는 전화번호부, write memory는 저장 버튼. 오늘 다 해봤네.' },
-    { who: 'mentor', text: '그런데 show standby brief 봤어? 오늘 만든 VLAN 10·20 줄만 Standby가 unknown이지. 그 두 동네는 문지기가 한 명뿐이라는 뜻이야. 그건 D-1에 고치자.' },
+    { who: 'mentor', text: '그런데 show standby brief 봤어? Standby가 unknown인 줄이 있지: 오늘 만든 VLAN 10·20, 그리고 K8S용 VLAN 40. 그 동네들은 문지기가 한 명뿐이라는 뜻이야. 짝은 D-1까지 세우자.' },
     { who: 'boss', text: '내일(D-3)은 드디어 수강신청 웹 서비스를 연다!' },
   ],
   objectives: [
@@ -179,7 +180,7 @@ export const day1: DaySpec = {
     rack4: { kind: 'inspect', text: '4번 랙: DHCP 서버(dhcp01)와 DNS 서버(ns1). 관리 PC에서 ssh로 들어갈 수 있어요.' },
     switch: { kind: 'cable', mode: 'repair' },
     router: { kind: 'consolePick', hosts: ['TOR-01', 'CORE-01'] },
-    patch: { kind: 'inspect', text: '패치 패널: 케이블이 모이는 곳. 어제 꽂은 서버 케이블은 바로 위 TOR-01으로 가요.' },
+    patch: { kind: 'inspect', text: '패치 패널: 케이블이 모이는 곳. 어제 꽂은 서버 케이블은 옆 TOR 배선판을 거쳐 1번 랙 위 TOR-01으로 가요.' },
     pdu: { kind: 'gauge', target: 'pdu' },
     board: {
       kind: 'inspect',
