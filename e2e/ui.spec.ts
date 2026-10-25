@@ -253,6 +253,8 @@ test('IOS 터미널: ssh로 장비 프롬프트, ?는 바로 도움말, Ctrl+Z, 
 
   // A switch's own console place starts at its `>` prompt, and exit there keeps the console on the switch.
   await page.keyboard.press('Escape');
+  // A card earned while typing (ssh → 'oob') waits until the terminal closes, then shows up: take it.
+  await dismissConcepts(page);
   await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'terminal', host: 'TOR-01' }));
   await expect(title(page)).toHaveText(/터미널 — TOR-01/);
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('콘솔에 연결했어요');
@@ -399,10 +401,8 @@ test('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로'
   await page.locator('.qz-choice').nth(answer).click();
   await expect(page.locator('.qz-todo')).toContainText('🎉 정답');
   await explained();
-  // The mission is done at once: its card pops up over the quiz, and 계속하기 goes back to it.
-  await page.getByRole('button', { name: /계속하기/ }).click();
+  // The mission (and its card) only completes on 알겠어요!, so nothing pops over the explanation now.
   await expect(page.locator('.ccard-backdrop')).toHaveCount(0);
-  await explained();
 
   // The quiz says "C 키 = 개념 도감": the 도감 opens on top, and closing it comes back to the explanation.
   await page.keyboard.press('c');
@@ -416,9 +416,11 @@ test('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로'
   await expect(title(page)).toHaveText(/퀴즈/);
   await explained();
 
-  // 알겠어요! closes it; the next mission (the rack) is up.
+  // 알겠어요! closes it and completes the mission: its card comes up, 계속하기 takes it, the next mission (the rack) is up.
   await page.getByRole('button', { name: '알겠어요!' }).click();
   await expect(page.locator('.modal-backdrop')).toHaveCount(0);
+  await page.getByRole('button', { name: /계속하기/ }).click();
+  await expect(page.locator('.ccard-backdrop')).toHaveCount(0);
   expect(await page.evaluate(() => 'quiz' in ((window as unknown as Win).__store.getState().run?.objectivesDone ?? {}))).toBe(true);
   await expect(page.locator('.obj-panel')).toContainText('1번 랙에 서버 3대 장착하기');
 
