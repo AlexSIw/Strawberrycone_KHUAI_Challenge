@@ -59,4 +59,8 @@ export const CONCEPTS: Record<string, Concept> = {
   // ---- v2 · D-1 점검 · 이중화 ----
   drain: { id: 'drain', name: 'cordon · drain (노드 비우기)', analogy: '매장 문에 "점검 중" 팻말 걸기', definition: 'cordon은 노드에 새 pod가 오지 못하게 막고, drain은 거기에 더해 있던 pod를 내보낸다(다른 노드에 새 pod로 다시 뜬다). 점검·고장 전에 노드를 미리 비울 때 쓰고, 끝나면 uncordon으로 다시 연다' },
   failover: { id: 'failover', name: '장애 조치(Failover) 훈련 · 숨은 SPOF', analogy: '소방 훈련: 비상구가 진짜 열리는지 직접 열어 보기', definition: '예비 장비가 있어도, 예비로 가는 길이 끝까지 이어져 있는지는 실제로 하나를 꺼 봐야 안다. trunk에 빠진 VLAN 하나 같은 작은 설정이 숨은 단일 장애점(SPOF)이 된다. 그래서 데이터센터는 정기적으로 하나를 일부러 꺼 보는 이중화 훈련(DR 훈련)을 한다' },
+  // ---- v2 · D-Day 수강신청 당일 ----
+  queue: { id: 'queue', name: '접속 대기열 · 연결 한도', analogy: '맛집 앞 번호표 · 식당 좌석 수', definition: 'L4·서버·DB는 동시에 붙잡을 수 있는 연결 수(좌석)가 정해져 있다. 좌석이 다 차면 새 손님은 거절되거나 줄을 선다. 수강신청 사이트의 접속 대기열(번호표 화면)은 감당할 만큼만 순서대로 들여보내는 장치다. 앱이 DB와 미리 열어 두는 연결 묶음은 커넥션 풀이라 하고, pod 수 × 풀 크기가 DB 좌석 수를 넘으면 안 된다' },
+  peak: { id: 'peak', name: '트래픽 피크 · 병목', analogy: '명절 고속도로: 가장 좁은 구간이 전체 속도를 정한다', definition: '평소의 수십 배가 한순간에 몰리는 때가 피크다. 이때 가장 먼저 꽉 차는 곳(병목)이 전체 성능을 정한다. 한 곳을 넓히면 그다음 좁은 곳이 병목이 되므로, 서버·DB·링크를 함께 보고 피크 전에 미리 늘려 둔다' },
+  triage: { id: 'triage', name: '장애 우선순위 (Triage)', analogy: '응급실 분류: 가장 위급한 환자부터', definition: '경보가 여러 개 겹치면 피해가 큰 것부터 처리한다. Critical(서비스가 멈추거나 깨짐) → Major(느려지거나 이중화가 깨짐) → Minor → Warning 순서. 경보를 보면 먼저 확인(ACK)해서 "누가 보고 있다"를 남기고, 같은 원인에서 나온 경보는 하나로 묶어 본다' },
 };

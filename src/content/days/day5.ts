@@ -1,22 +1,259 @@
-// D-Day: 수강신청 당일. WP7 owns this file (missions, briefing, unbuild/setup, health).
-import type { DaySpec } from '../types';
+// D-Day: 수강신청 당일 (v1 stage 7). Nothing to build: a short pre-check before 10:00, then hold the
+// service through the open spike, 신청 집중 and the macro bots until the 10:30 first close, then write the
+// postmortem. The traffic is a fixed curve on the D-Day clock (onTick); the incidents are the fixed
+// timeline in incidents/dday.ts (departure 9), each one what the curve does to the morning world.
+import { gameSec, parseHms, stageAt } from '../../sim/clock';
+import { lbView, studentDelivery, withNetMemo } from '../../sim/network';
+import type { Health, PlayContext, World } from '../../sim/types';
+import {
+  botsAllowed,
+  dbMax,
+  dbPool,
+  dbWanted,
+  enrollCapacity,
+  FOCUS_RPS,
+  LATE_RPS,
+  macroPress,
+  OPEN_RPS,
+  studentFwShare,
+  WOBBLE,
+} from '../incidents/dday';
+import { k8sHealth } from '../k8sWorld';
+import type { DaySpec, FixedIncident } from '../types';
 import { emptyHealth } from '../worlds';
-import { BASE_INTERACTIONS, DDAY_CLOCK, PLACEHOLDER } from './common';
+import { BASE_INTERACTIONS, DDAY_CLOCK } from './common';
+
+// ---------- the traffic curve ----------
+// Students per second at 10:00 open (OPEN_RPS), 신청 집중 10:05–10:15 (FOCUS_RPS) and 정정 10:15–10:20
+// (LATE_RPS) live with the incidents (incidents/dday.ts), whose checks hold the world to those peaks.
+
+/** (game time, students per second) points; linear in between, the last value after 10:30. */
+const CURVE: [number, number][] = (
+  [
+    ['09:50:00', 300],
+    ['09:59:00', 600],
+    ['10:00:00', 900],
+    ['10:00:20', OPEN_RPS],
+    ['10:05:00', OPEN_RPS],
+    ['10:06:00', FOCUS_RPS],
+    ['10:15:00', FOCUS_RPS],
+    ['10:16:00', LATE_RPS],
+    ['10:20:00', LATE_RPS],
+    ['10:20:30', 3000],
+    ['10:30:00', 1500],
+  ] as [string, number][]
+).map(([hms, rps]) => [parseHms(hms), rps]);
+
+/**
+ * Students hitting 수강신청 at day time `t`. Once the doors open it wobbles by ±1.5% so the graph looks
+ * alive; the peaks stay where the timeline needs them: open ≤ 10,962 (11+ pods needed, so any big enough
+ * scale-out passes DB-01's 200 connections; TOR-02 stays under 90%), 신청 집중 ≤ 14,616 (TOR-02 ~115%,
+ * yet the L4's 30,000 sessions hold until the bots come).
+ */
+export function studentRps(t: number): number {
+  const g = gameSec(DDAY_CLOCK, t);
+  let rps = CURVE[CURVE.length - 1][1];
+  if (g <= CURVE[0][0]) rps = CURVE[0][1];
+  else {
+    for (let i = 1; i < CURVE.length; i++) {
+      const [g1, r1] = CURVE[i];
+      if (g <= g1) {
+        const [g0, r0] = CURVE[i - 1];
+        rps = r0 + ((r1 - r0) * (g - g0)) / (g1 - g0);
+        break;
+      }
+    }
+  }
+  const wobble = g >= parseHms('10:00:20') ? 1 + WOBBLE * Math.sin(t * 0.9) : 1;
+  return Math.round(rps * wobble);
+}
+
+// ---------- missions ----------
+
+/** Day time of the 10:00 open and of the 10:30 first close. */
+const OPEN_AT = stageAt(DDAY_CLOCK, '10:00:00');
+export const HOLD_AT = stageAt(DDAY_CLOCK, '10:30:00');
+
+/** Students are served and no macro source is let in. */
+const serviceOk = (w: World, h: Health = health(w)): boolean => h.availability >= 0.95 && botsAllowed(w).length === 0;
+
+/** The timeline's own incidents (every run has them, all fired by 10:15:30), as opposed to the DB one. */
+const FIXED: FixedIncident[] = [
+  { template: 'dday-capacity', trigger: { type: 'stageStart', delay: stageAt(DDAY_CLOCK, '10:00:30'), overlap: true } },
+  // The scale-out's side effect: only if the pods ask DB-01 for more connections than it allows (or a
+  // DB_POOL that isn't a usable number leaves the running pods without any).
+  { template: 'dday-db', trigger: { type: 'condition', when: (w) => enrollCapacity(w) > 0 && (dbPool(w) === null || dbWanted(w) > dbMax(w)) } },
+  { template: 'dday-uplink', trigger: { type: 'stageStart', delay: stageAt(DDAY_CLOCK, '10:06:00'), overlap: true } },
+  { template: 'dday-macro', trigger: { type: 'stageStart', delay: stageAt(DDAY_CLOCK, '10:15:30'), overlap: true } },
+];
+const TIMELINE = FIXED.filter((f) => f.trigger.type === 'stageStart').map((f) => f.template);
+
+/**
+ * What `hold` waits for at 10:30: the service is fine and every timeline incident has been fixed. After
+ * 10:20:30 the traffic alone no longer shows a missing scale-out or bundle, but their incidents stay open
+ * (their checks hold the world to the day's peaks), so the report is never written over open incidents.
+ */
+const held = (w: World, c: PlayContext): boolean => TIMELINE.every((tpl) => c.resolved.some((id) => id.startsWith(`${tpl}:`))) && serviceOk(w);
+
+// ---------- 수강신청 availability from the open to the close ----------
+// The engine scores availability only between incidents, and on D-Day they overlap from 10:00:30 on.
+// So the day keeps its own average of every second from the 10:00 open until the service is fine again
+// after 10:30 (the postmortem board shows it).
+
+const AVAIL_SUM = 'dday:availSum';
+const AVAIL_SECS = 'dday:availSecs';
+const AVAIL_DONE = 'dday:availDone';
+
+/** Add the second that just ended (onTick runs before the students' rps moves on). */
+function scoreSecond(w: World, t: number): void {
+  const sec = t - 1;
+  if (sec < OPEN_AT || w.flags[AVAIL_DONE]) return;
+  const h = health(w);
+  w.flags[AVAIL_SUM] = Number(w.flags[AVAIL_SUM] ?? 0) + h.availability;
+  w.flags[AVAIL_SECS] = Number(w.flags[AVAIL_SECS] ?? 0) + 1;
+  if (sec >= HOLD_AT && serviceOk(w, h)) w.flags[AVAIL_DONE] = true;
+}
+
+/** Mean 수강신청 availability from the 10:00 open until the service was fine at/after 10:30 (null before the open). */
+export function ddayAvailability(w: World): number | null {
+  const secs = Number(w.flags[AVAIL_SECS] ?? 0);
+  return secs > 0 ? Number(w.flags[AVAIL_SUM] ?? 0) / secs : null;
+}
+
+// ---------- health ----------
+
+type Status = 'up' | 'degraded' | 'down';
+const status = (ok: number): Status => (ok >= 0.99 ? 'up' : ok > 0 ? 'degraded' : 'down');
+
+/**
+ * Students → firewall → L4 → links (studentDelivery, which sends every student from one address) × the
+ * share of student blocks the firewall lets in × enroll pods vs. students (k8sHealth) × DB-01
+ * connections: pods that can't get one fail their requests.
+ */
+function health(w: World): Health {
+  // One memo scope: the student path and the L4 view share the network's derived views.
+  return withNetMemo(w, () => measure(w));
+}
+
+function measure(w: World): Health {
+  const net = studentDelivery(w);
+  const app = k8sHealth(w);
+  const pool = dbPool(w);
+  const want = dbWanted(w);
+  const max = dbMax(w);
+  const dbOk = pool === null ? 0 : want > max ? max / want : 1;
+  // A firewall rule that catches a student block turns that share of the students away.
+  const netOk = net.ok * studentFwShare(w);
+  const notes = [...net.notes, ...app.notes];
+  if (netOk > 0 && netOk < 0.99 && !notes.includes('수강신청 접속이 일부 실패해요')) notes.unshift('수강신청 접속이 일부 실패해요');
+  if (pool === null) notes.push('신청 요청이 DB 연결 오류로 실패해요 (DB 연결 설정을 읽지 못함)');
+  else if (want > max) notes.push(`신청 요청 일부가 DB 연결 오류로 실패해요 (DB-01 연결 ${max}/${max})`);
+  const lb = lbView(w);
+  if (lb.over) notes.push(`L4 세션이 가득 찼어요 (${lb.sessions}/${w.net?.lb?.maxConn ?? lb.sessions}): 새 접속은 거부돼요`);
+  const ok = netOk * app.availability * dbOk;
+  const services: Record<string, Status> = { 수강신청: status(ok), ...app.services, 'DB-01': dbOk >= 1 ? 'up' : dbOk > 0 ? 'degraded' : 'down' };
+  for (const c of Object.values(w.campus ?? {})) {
+    services[c.label] = !c.up ? 'down' : c.latencyMs >= 1000 ? 'degraded' : 'up';
+    if (!c.up) notes.push(`${c.label} 응답 없음`);
+    else if (c.latencyMs >= 1000) notes.push(`${c.label} 응답 느림 (${(c.latencyMs / 1000).toFixed(1)}초)`);
+  }
+  const slow = net.notes.some((n) => n.includes('느려요'));
+  const latencyMs = ok === 0 ? 0 : app.latencyMs >= 1600 || dbOk < 1 ? 1600 : slow ? 900 : app.latencyMs;
+  return emptyHealth(w, { availability: ok, errorRate: 1 - ok, latencyMs, services, notes });
+}
+
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 export const day5: DaySpec = {
   id: 5,
   label: 'D-Day',
   date: '02-10',
   clock: DDAY_CLOCK,
-  fixed: [],
+  // The SNMP poll runs every 10 s on D-Day (weekdays 15).
+  pollEvery: 10,
+  fixed: FIXED,
   extras: [0, 0],
+  mapSwitch: 'TOR-01',
+  mapDevices: ['web', 'web2', 'db', 'srv-new', 'srv-db', 'n1', 'n2', 'ns2'],
   title: '수강신청 당일',
   subtitle: '10:00 오픈 · 실시간 관제',
   topics: ['접속 대기열과 트래픽 피크', '장애 우선순위(triage)', 'MTTD · MTTR', '장애 보고서'],
-  intro: [{ who: 'boss', text: '오늘은 만들지 않아요. 지켜보고, 터지면 막아요.' }],
-  outro: [{ who: 'lion', text: '오늘 일 끝! 퇴근합니다.', mood: 'happy' }],
-  objectives: [PLACEHOLDER],
-  interactions: { ...BASE_INTERACTIONS },
-  health: (w) => emptyHealth(w),
-  panels: ['traffic'],
+  intro: [
+    { who: 'boss', text: '드디어 D-Day. 10시 정각에 수강신청이 열린다. 오늘은 아무것도 새로 안 만들어. 지켜보고, 터지면 막는다.' },
+    { who: 'mentor', text: '지금은 1초에 요청 300건쯤(300 rps: 1초에 들어오는 요청 수). 10시 정각엔 1만 건이 넘게, 10시 5분 신청 집중 때는 1만 4천 건 넘게 몰릴 거야. 신청 pod(신청 앱이 돌아가는 작은 실행 단위)는 지금 4개, 하나가 1초에 1000건쯤 처리해.' },
+    { who: 'mentor', text: '경보가 한꺼번에 여러 개 뜰 수 있어. 경보를 보면 먼저 확인(ACK)을 누르고, 학생이 신청을 아예 못 하는 것(Critical)부터 막아.' },
+    { who: 'boss', text: '10시 전에 점검 한 바퀴 돌고, 10시 30분 1차 마감까지 버텨. 끝나면 장애 보고서 쓰고 퇴근!' },
+    { who: 'lion', text: '심장이 쿵쾅거려요… 그래도 5일 동안 만든 거니까, 지켜볼게요!', mood: 'worried' },
+  ],
+  outro: [
+    { who: 'boss', text: '10시 30분, 1차 마감! 큰 사고 없이 넘겼다. 수고했어!' },
+    { who: 'mentor', text: '케이블 꽂던 첫날부터 VLAN, L4, 컨테이너, 쿠버네티스, 이중화까지. 오늘 그걸 다 써서 버텼네. 이제 진짜 데이터센터 엔지니어야.' },
+    { who: 'lion', text: '다음 학기 수강신청도 맡겨주세요!', mood: 'happy' },
+  ],
+  objectives: [
+    {
+      id: 'noc',
+      text: '점검 ① 관제 화면(NMS)을 열어 열린 경보가 없는지 확인하기',
+      spot: 'monitor',
+      done: (_w, c) => c.events.includes('noc:nms'),
+    },
+    {
+      id: 'hsrp',
+      text: '점검 ② 코어 스위치에서 게이트웨이 이중화 상태 보기 (show standby brief)',
+      spot: 'desk',
+      done: (_w, c) => c.events.some((e) => /^ios:CORE-0[12]:(do )?show standby( brief)?$/.test(e)),
+      after: ['noc'],
+    },
+    {
+      id: 'l4',
+      text: '점검 ③ L4(접속을 서버들에 나눠 주는 장비)에서 세션(지금 붙어 있는 접속) 수와 서버 상태 보기 (lb status)',
+      spot: 'desk',
+      done: (_w, c) => (c.events.includes('ssh:L4-01') || c.events.includes('ssh:L4-02')) && c.commands.some((x) => /^lb(\s+status)?$/.test(x)),
+      after: ['hsrp'],
+    },
+    {
+      id: 'hold',
+      text: '10:30 1차 마감까지 수강신청 지키기',
+      done: (w, c) => c.stageTime >= HOLD_AT && held(w, c),
+      progress: (w, c) => (c.stageTime < HOLD_AT ? `남은 시간 ${mmss(HOLD_AT - c.stageTime)}` : held(w, c) ? '완료' : '남은 장애 해결하기'),
+      concept: 'triage',
+      lesson: '경보가 겹칠 때마다 "학생이 신청을 아예 못 하는 것"부터 막았어요. 피해가 큰 것부터 고르는 것, 그게 triage(우선순위 판단)예요.',
+    },
+    {
+      id: 'postmortem',
+      text: '관제실 설계 보드에서 장애 보고서 쓰기',
+      spot: 'board',
+      // Only a report filed after the 10:30 close counts (the board opens once `hold` is done).
+      done: (_w, c) => (c.eventTimes['board:postmortem'] ?? -1) >= HOLD_AT,
+      after: ['hold'],
+      concept: 'postmortem',
+      lesson: '무슨 일이, 언제, 왜 일어났고, 어떻게 고쳤고, 다음엔 어떻게 막을지 남겼어요. 사람 탓이 아니라 시스템을 고치는 기록이에요.',
+    },
+  ],
+  interactions: {
+    ...BASE_INTERACTIONS,
+    rack1: { kind: 'consolePick', hosts: ['TOR-01', 'db'] },
+    rack2: { kind: 'consolePick', hosts: ['n1', 'n2'] },
+    rack3: { kind: 'consolePick', hosts: ['TOR-02', 'n3', 'n4'] },
+    rack4: { kind: 'inspect', text: '4번 랙: DHCP 서버(dhcp01)와 DNS 서버(ns1). 오늘은 조용히 일하는 중이에요.' },
+    switch: { kind: 'cable', mode: 'repair' },
+    // The L4 is reached with ssh from the 관리 PC (the pre-check looks for that ssh); the firewall has a
+    // console here too, at the spot named after it.
+    router: { kind: 'consolePick', hosts: ['CORE-01', 'CORE-02', 'FW-01'] },
+    patch: { kind: 'inspect', text: '패치 패널: 케이블이 모이는 곳. 랙 스위치와 코어 사이 선들도 여기를 지나가요.' },
+    pdu: { kind: 'gauge', target: 'pdu' },
+    board: { kind: 'board', board: 'postmortem' },
+  },
+  health,
+  panels: ['traffic', 'services', 'pods', 'links'],
+  /** Before 10:00: the morning trickle, no bots. (The topology is the D-Day morning: nothing to take out.) */
+  setup: (w) => {
+    w.traffic.rps = studentRps(0);
+    w.traffic.sources = [];
+  },
+  onTick: (w, t) => {
+    scoreSecond(w, t);
+    w.traffic.rps = studentRps(t);
+    macroPress(w);
+  },
 };
