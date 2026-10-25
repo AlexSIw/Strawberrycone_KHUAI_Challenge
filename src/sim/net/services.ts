@@ -1,7 +1,7 @@
 // Infra services on top of reachability: DHCP scopes, firewall rules, the L4 load balancer, and
 // "is something listening on host:port". WP1 owns this file.
 import { readyPods } from '../k8s';
-import type { LbMember, World } from '../types';
+import type { Container, LbMember, World } from '../types';
 import { own } from '../util';
 import { addressOf, inCidr, powered } from './basics';
 import { hsrpActiveFor, sviUp } from './hsrp';
@@ -97,11 +97,20 @@ export function fwAllows(w: World, src: string, dst: string, port?: number): boo
 
 type Listener = 'web' | 'container' | 'nodeport' | 'sshd';
 
+/** Port the program in each image listens on inside its container (commands/docker.ts APP_PORT). */
+const IMAGE_PORT: Record<string, number> = { enroll: 8000, mysql: 3306 };
+
+/** A published container answers only if -p leads to the port its program really listens on inside. */
+const containerAnswers = (c: Container): boolean => {
+  const inner = own(IMAGE_PORT, c.image.split(':')[0]);
+  return inner === undefined || c.ports?.[1] === inner;
+};
+
 function listener(w: World, host: string, port: number): Listener | null {
   if (!powered(w, host)) return null;
   const web = w.web;
   if (web && web.host === host && web.running && web.port === port) return 'web';
-  if (w.docker?.containers.some((c) => c.host === host && c.running && c.ports?.[0] === port)) return 'container';
+  if (w.docker?.containers.some((c) => c.host === host && c.running && c.ports?.[0] === port && containerAnswers(c))) return 'container';
   const k = w.k8s;
   const svc = own(k?.services, NODE_PORT_SVC);
   if (port === NODE_PORT && k && own(k.nodes, host)?.ready && svc && readyPods(k, svc.selector).length > 0) return 'nodeport';

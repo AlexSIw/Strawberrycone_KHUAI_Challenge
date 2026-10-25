@@ -2,7 +2,7 @@
 // (Not a test file itself: vitest only collects tests/**/*.test.ts.)
 import { SERVERS } from '../src/content/topology';
 import { getStage } from '../src/content/stages';
-import { connectCable, decompose, mount, setFeeds } from '../src/sim/actions';
+import { applyDesired, connectCable, decompose, mount, setFeeds, writeDockerfile } from '../src/sim/actions';
 import {
   ackAlarm,
   applyAction,
@@ -95,8 +95,61 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
     sms: [{ events: ['noc:sms'] }],
     msa: [{ action: decompose, events: ['board:decompose'] }],
   },
-  3: { noc: [{ events: ['open:noc'] }] },
-  4: { noc: [{ events: ['open:noc'] }] },
+  // D-2 (WP6): containers on APP-01 / DB-02; the bundle itself is the load-test incident's fix.
+  3: {
+    log: [{ cmd: 'deploy log', host: 'srv-new' }],
+    recipe: [{ action: (w) => writeDockerfile(w, 'enroll'), events: ['board:dockerfile'] }],
+    image: [
+      { cmd: 'docker build -t enroll:1.0 .', host: 'ops' },
+      { cmd: 'docker push enroll:1.0', host: 'ops' },
+    ],
+    run: [{ cmd: 'docker run -p 80:8000 enroll:1.0', host: 'srv-new' }],
+    volume: [
+      { cmd: 'docker rm -f db', host: 'srv-db' },
+      { cmd: 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8', host: 'srv-db' },
+    ],
+    lacp: [
+      { ios: ['enable', 'show etherchannel summary', 'write memory'], host: 'TOR-01' },
+      { ios: ['enable', 'write memory'], host: 'CORE-01' },
+    ],
+  },
+  // D-1 (WP6): the cluster, CORE-02 as HSRP standby, the redundancy checklist.
+  4: {
+    desired: [{ action: (w) => applyDesired(w, 'enroll', 3, 'enroll:v1'), events: ['board:desired'] }],
+    observe: [{ cmd: 'pods', host: 'ops' }],
+    hsrp: [
+      {
+        ios: [
+          'enable',
+          'configure terminal',
+          'interface vlan 10',
+          'ip address 10.10.10.3 255.255.255.0',
+          'standby 1 ip 10.10.10.1',
+          'standby 1 priority 100',
+          'standby 1 preempt',
+          'no shutdown',
+          'interface vlan 40',
+          'ip address 10.10.40.3 255.255.255.0',
+          'standby 1 ip 10.10.40.1',
+          'standby 1 priority 100',
+          'standby 1 preempt',
+          'no shutdown',
+          'end',
+          'write memory',
+        ],
+        host: 'CORE-02',
+      },
+    ],
+    uncordon: [
+      { cmd: 'uncordon n1', host: 'ops' },
+      { cmd: 'uncordon n2', host: 'ops' },
+    ],
+    checklist: [
+      { ios: ['enable', 'show standby brief'], host: 'CORE-02' },
+      { ios: ['enable', 'show etherchannel summary'], host: 'TOR-01' },
+      { events: ['noc:fms'] },
+    ],
+  },
   5: { noc: [{ events: ['open:noc'] }] },
 };
 
