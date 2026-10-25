@@ -1,0 +1,145 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`show output > running-config (snapshot) 1`] = `
+"Building configuration...
+
+Current configuration : 2145 bytes
+!
+version 17.9
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname TOR-01
+!
+spanning-tree mode rapid-pvst
+spanning-tree extend system-id
+!
+vlan 10
+ name WEB
+!
+vlan 20
+ name DB
+!
+vlan 40
+ name K8S
+!
+vlan 50
+ name INFRA
+!
+interface Port-channel1
+ switchport trunk allowed vlan 10,20,40,50
+ switchport mode trunk
+!
+interface GigabitEthernet1/0/1
+ switchport access vlan 10
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/2
+ switchport access vlan 10
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/3
+ switchport access vlan 20
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/4
+ switchport access vlan 10
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/5
+ switchport access vlan 20
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/6
+ switchport access vlan 40
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/7
+ switchport access vlan 40
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/8
+ switchport access vlan 50
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/9
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/10
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/11
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface GigabitEthernet1/0/12
+ switchport mode access
+ spanning-tree bpduguard enable
+!
+interface TenGigabitEthernet1/1/1
+ switchport trunk allowed vlan 10,20,40,50
+ switchport mode trunk
+ channel-group 1 mode active
+!
+interface TenGigabitEthernet1/1/2
+ switchport trunk allowed vlan 10,20,40,50
+ switchport mode trunk
+ channel-group 1 mode active
+!
+interface TenGigabitEthernet1/1/3
+ switchport trunk allowed vlan 10,20,40,50
+ switchport mode trunk
+!
+interface TenGigabitEthernet1/1/4
+ switchport trunk allowed vlan 10,20,40,50
+ switchport mode trunk
+ shutdown
+!
+end"
+`;
+
+exports[`show output > running-config (snapshot) 2`] = `
+"Building configuration...
+
+Current configuration : 126 bytes
+!
+interface Vlan10
+ ip address 10.10.10.2 255.255.255.0
+ standby 1 ip 10.10.10.1
+ standby 1 priority 110
+ standby 1 preempt
+end"
+`;
+
+exports[`show output > standby brief (snapshot) 1`] = `
+"                     P indicates configured to preempt.
+                     |
+Interface   Grp  Pri P State   Active          Standby         Virtual IP
+Vl10        1    110 P Active  local           10.10.10.3      10.10.10.1
+Vl20        1    110 P Active  local           10.10.20.3      10.10.20.1
+Vl30        1    110 P Active  local           10.10.30.3      10.10.30.1
+Vl40        1    110 P Active  local           10.10.40.3      10.10.40.1
+Vl50        1    110 P Active  local           10.10.50.3      10.10.50.1
+Vl100       1    110 P Active  local           10.10.100.3     10.10.100.1"
+`;
+
+exports[`show output > vlan brief (snapshot) 1`] = `
+"VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Gi1/0/9, Gi1/0/10, Gi1/0/11, Gi1/0/12
+10   WEB                              active    Gi1/0/1, Gi1/0/2, Gi1/0/4
+20   DB                               active    Gi1/0/3, Gi1/0/5
+40   K8S                              active    Gi1/0/6, Gi1/0/7
+50   INFRA                            active    Gi1/0/8"
+`;

@@ -1,9 +1,10 @@
-import { runIos, USER_MODE } from '../ios';
+import { iosPrompt, runIos, USER_MODE } from '../ios';
 import { syncNet } from '../net/sync';
 import { clone } from '../step';
 import type { IosMode, StageId, World } from '../types';
 import { own } from '../util';
 import { dockerCommands } from './docker';
+import { infraCommands } from './infra';
 import { k8sCommands } from './k8s';
 import { netCommands } from './net';
 import { svcCommands } from './svc';
@@ -44,7 +45,10 @@ const base: Command[] = [
   { name: 'hint', minStage: 0, os: ['linux', 'lb', 'fw'], usage: 'hint', summary: '쿠사수에게 힌트 요청', run: () => ({ lines: [dim('쿠사수를 불렀어요…')], openHint: true }) },
 ];
 
-export const ALL_COMMANDS: Command[] = [...base, ...netCommands, ...webCommands, ...svcCommands, ...dockerCommands, ...k8sCommands];
+export const ALL_COMMANDS: Command[] = [...base, ...netCommands, ...infraCommands, ...webCommands, ...svcCommands, ...dockerCommands, ...k8sCommands];
+
+/** Where a command that belongs to another kind of host is used. */
+const WHERE: Record<HostOs, string> = { linux: '서버', ios: '스위치', lb: 'L4 장비(L4-01, L4-02)', fw: '방화벽(FW-01, FW-02)' };
 
 export function available(stage: StageId, os: HostOs = 'linux'): Command[] {
   return ALL_COMMANDS.filter((c) => (c.os ?? ['linux']).includes(os) && c.minStage <= stage && (c.maxStage === undefined || stage <= c.maxStage));
@@ -99,8 +103,10 @@ export function runCommand(line: string, world: World, host: string, stage: Stag
     // The word exists today: show its forms instead of claiming it's unavailable.
     if (usable.length) return { lines: [red(`${tokens[0]}: 사용법이 달라요. 이렇게 써보세요:`), ...usable.map((c) => dim(`  ${c.usage}`))], world };
     let msg = `${tokens[0]}: 그런 명령어는 아직 몰라요. help를 쳐보세요.`;
+    const elsewhere = ALL_COMMANDS.filter((c) => c.name.split(' ')[0] === tokens[0] && !(c.os ?? ['linux']).includes(os) && c.name !== 'exit');
     if (same.length && same.every((c) => c.minStage > stage)) msg = `${tokens[0]}: 이 명령어는 아직 안 열렸어요. 다음 날에 쓸 수 있어요. (help)`;
     else if (same.length) msg = `${tokens[0]}: 오늘은 쓰지 않는 명령어예요. help로 지금 쓸 수 있는 명령어를 보세요.`;
+    else if (elsewhere.length) msg = `${tokens[0]}: 이 장비에서 쓰는 명령이 아니에요. ${WHERE[elsewhere[0].os?.[0] ?? 'linux']}에 접속해서 쓰세요.`;
     return { ...err(msg), world };
   }
   const w = clone(world);
@@ -117,10 +123,6 @@ export function runCommand(line: string, world: World, host: string, stage: Stag
 
 /** Shell prompt, or the IOS prompt ('CORE-01(config-if)# ') when the session is on network gear. */
 export function promptFor(host: string, mode?: IosMode | null, w?: World): string {
-  if (mode && w) {
-    const label = own(w.devices, host)?.label ?? host;
-    const suffix = { user: '>', exec: '#', config: '(config)#', 'config-if': '(config-if)#', 'config-vlan': '(config-vlan)#' }[mode.level];
-    return `\x1b[1;36m${label}${suffix}\x1b[0m `;
-  }
+  if (mode && w) return `\x1b[1;36m${iosPrompt(w, host, mode)}\x1b[0m `;
   return `\x1b[1;31m${host}\x1b[0m@khu-dc:~$ `;
 }
