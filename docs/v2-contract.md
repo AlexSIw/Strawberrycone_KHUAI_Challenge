@@ -11,7 +11,7 @@ smallest possible change and list it in your final report.
 
 | Package | Owns |
 |---|---|
-| WP1 network core | `src/sim/net/{topo,stp,hsrp,reach,load,services,sync}.ts`, `src/sim/network.ts`, `src/sim/step.ts`, `src/sim/k8s.ts` (online predicate, cordon/drain), `src/sim/commands/net.ts` (ping, traceroute, nslookup, ssh, exit, ip addr, hostname, **dns list/add/del**), `src/sim/commands/web.ts` (curl via `listening`), `src/sim/commands/k8s.ts` (cordon/drain/uncordon only), `tests/net2.test.ts` |
+| WP1 network core | `src/sim/net/{topo,stp,hsrp,reach,load,services,sync,health}.ts`, `src/sim/network.ts`, `src/sim/step.ts`, `src/sim/k8s.ts` (online predicate, cordon/drain), `src/sim/commands/net.ts` (ping, traceroute, nslookup, ssh, exit, ip addr, hostname, **dns list/add/del**), `src/sim/commands/web.ts` (curl via `listening`), `src/sim/commands/k8s.ts` (cordon/drain/uncordon only), `tests/net2.test.ts` |
 | WP2 IOS + appliance CLIs | `src/sim/ios/*`, `src/sim/commands/index.ts`, new `src/sim/commands/infra.ts` (dhcp pool / lb / fw), `tests/ios.test.ts`, `tests/infra.test.ts` |
 | WP3 engine/store/terminal/AI | `src/sim/engine.ts`, `src/sim/{scenario,scheduler,clock,alarms}.ts`, `src/store/game.ts`, `src/ui/Terminal.tsx`, `src/ui/HintChat.tsx`, `src/ai/*`, `worker/*`, `tests/core.test.ts`, `tests/store.test.ts`, `tests/leak.test.ts`, `e2e/ui.spec.ts`, `e2e/persist.spec.ts`, `e2e/audio.spec.ts` |
 | WP4 UI + map | `src/ui/noc/*` (new), `src/ui/{ModalHost,Hud,ObjectivePanel,Results,TitleScreen,Ending,Toasts,Dashboard}.tsx`, `src/ui/Calendar.tsx` (replaces `StageSelect.tsx`), `src/ui/minigames/*`, `src/ui/boards/*`, `src/game/*`, `src/App.tsx`, `e2e/smoke.spec.ts` |
