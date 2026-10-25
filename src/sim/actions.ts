@@ -27,6 +27,7 @@ export function connectCable(w: World, a: string, b: string): string {
   return id;
 }
 
+/** A brand-new cable: neither cut (broken) nor half-damaged (degraded). */
 export function replaceCable(w: World, cableId: string): void {
   const c = own(w.cables, cableId);
   if (c) Object.assign(c, { broken: false, degraded: false });
