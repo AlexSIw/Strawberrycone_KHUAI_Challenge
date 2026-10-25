@@ -91,7 +91,8 @@ describe('window stack', () => {
   });
 
   it('the terminal comes back with its session (host, scrollback, history, half-typed line)', () => {
-    play(1);
+    // D-3: the servers are built and in their VLANs (on D-4 they only get there once the player does it).
+    play(2);
     S().openModal({ type: 'terminal', host: 'ops' });
     S().appendTerminal(['hello']);
     S().command('ssh web');
