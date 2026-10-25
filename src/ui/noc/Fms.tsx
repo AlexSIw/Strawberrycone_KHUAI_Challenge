@@ -108,7 +108,7 @@ export function FmsTab({ run }: { run: StageRun }) {
     <div className="fms">
       <p className="fms-note">🏢 시설은 시설팀 담당이에요. 우리는 지켜보고, 이상하면 알려요.</p>
       <div className="dash-grid">
-        <Section title="전기 (Power)" hint="한전 → UPS(배터리) → PDU(분전반) 순서로 전기가 와요. 막대가 길수록 많이 쓰는 중이에요.">
+        <Section title="전기 (Power)" hint="한전 → UPS(배터리) → PDU(랙 멀티탭) 순서로 전기가 와요. B줄은 UPS를 거치지 않아요. 막대가 길수록 많이 쓰는 중이에요.">
           <PowerGauges w={w} />
         </Section>
         <Section title="냉각 (Cooling)" hint="서버는 더위에 약해요. 35°C를 넘으면 주의, 45°C를 넘으면 위험이에요." half>

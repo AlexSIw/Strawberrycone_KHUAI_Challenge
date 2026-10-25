@@ -3,12 +3,13 @@
 // then split the monolith into services (DecomposeBoard).
 // Teaching incident: the L4 health check asks the wrong path or port.
 import { capacity } from '../../sim/app';
-import { lbView, listening, studentDelivery } from '../../sim/network';
-import type { AppService, Health, World } from '../../sim/types';
+import { hostDelivery, lbView, listening, studentDelivery } from '../../sim/network';
+import type { AppService, Health, PlayContext, World } from '../../sim/types';
 import { studentsServed } from '../incidents/d3';
 import type { DaySpec } from '../types';
 import { emptyHealth } from '../worlds';
 import { BASE_INTERACTIONS, WEEKDAY_CLOCK } from './common';
+import { resave } from './day1';
 
 /** Beta testers only: about 20 requests a second. */
 const BETA_RPS = 20;
@@ -42,23 +43,63 @@ function appState(w: World): { ok: number; services: Record<string, Status>; not
 function health(w: World): Health {
   const path = studentDelivery(w);
   const app = appState(w);
+  // The app on WEB-01 keeps its enrollment records on DB-01 (found by name, as D-4 set up).
+  const db = hostDelivery(w, 'web', 'db');
   const web = w.web;
   const cap = web?.threads === 'multi' ? MULTI_THREAD_RPS : SINGLE_THREAD_RPS;
   const threads = Math.min(1, cap / Math.max(1, w.traffic.rps));
-  const notes = [...path.notes, ...app.notes];
+  const notes = [...path.notes, ...db.notes, ...app.notes];
   if (threads < 1) notes.push('요청이 줄 서서 기다리는 중 (응답 지연)');
   for (const c of Object.values(w.campus ?? {})) {
     if (!c.up) notes.push(`${c.label} 응답 없음`);
     else if (c.latencyMs >= 1000) notes.push(`${c.label} 응답 느림 (${(c.latencyMs / 1000).toFixed(1)}초)`);
   }
-  const ok = path.ok * app.ok * threads;
-  const services: Record<string, Status> = { 수강신청: status(ok), ...app.services };
+  const ok = path.ok * db.ok * app.ok * threads;
+  const services: Record<string, Status> = { 수강신청: status(ok), 'web → db': status(db.ok), ...app.services };
   for (const c of Object.values(w.campus ?? {})) services[c.label] = !c.up ? 'down' : c.latencyMs >= 1000 ? 'degraded' : 'up';
   const latencyMs = ok === 0 ? 0 : threads < 1 ? Math.round(80 * (w.traffic.rps / SINGLE_THREAD_RPS)) : 60;
   return emptyHealth(w, { availability: ok, errorRate: 1 - ok, latencyMs, services, notes });
 }
 
 const healthyMembers = (w: World) => lbView(w).members.filter((m) => m.healthy);
+
+/**
+ * The player's latest curl asked for sugang and got a 200 back: the last curl line typed names sugang,
+ * and no other curl result (503, refused, a 200 from somewhere else earlier…) is newer than the latest 200.
+ */
+function curledSugang(c: PlayContext): boolean {
+  const last = [...c.commands].reverse().find((x) => /^curl\b/.test(x));
+  if (!last || !/sugang/i.test(last)) return false;
+  const results = Object.entries(c.eventTimes).filter(([e]) => e.startsWith('curl:'));
+  const ok = results.filter(([e]) => e.startsWith('curl:200:')).map(([, t]) => t);
+  if (!ok.length) return false;
+  const at = Math.max(...ok);
+  return results.every(([e, t]) => e.startsWith('curl:200:') || t < at);
+}
+
+/**
+ * The D-Day topology already has what D-2 and D-1 build; on D-5 … D-3 it isn't there yet:
+ * D-2's LACP bundle (Po1 = TOR-01 Te1/1/1-2 ↔ CORE-01 Te1/0/3-4: one plain uplink, the second cable not
+ * laid yet), D-1's standby gateways for VLANs 10/20 on CORE-02 (CORE-01 alone is the gateway), and the
+ * k8s cluster. Each step is a no-op when a later day's own unbuild already took it out.
+ */
+function laterDaysOut(w: World): void {
+  const bundle: [string, string[]][] = [
+    ['TOR-01', ['Te1/1/1', 'Te1/1/2']],
+    ['CORE-01', ['Te1/0/3', 'Te1/0/4']],
+  ];
+  for (const [id, members] of bundle) {
+    const n = w.devices[id]?.nd;
+    if (!n) continue;
+    for (const p of members) if (n.ifs[p]) delete n.ifs[p].group;
+    delete n.ifs.Po1;
+  }
+  delete w.cables['tor1-up2'];
+  const core2 = w.devices['CORE-02']?.nd;
+  if (core2) for (const v of [10, 20]) delete core2.svis[v];
+  delete w.k8s;
+  for (const id of ['TOR-01', 'CORE-01', 'CORE-02']) resave(w.devices[id]);
+}
 
 export const day2: DaySpec = {
   id: 2,
@@ -113,7 +154,7 @@ export const day2: DaySpec = {
       id: 'curl',
       text: '관리 PC에서 학생처럼 http://sugang/enroll 요청해 200 OK 받기',
       spot: 'desk',
-      done: (w, c) => studentsServed(w) && c.events.some((e) => e.startsWith('curl:200:')) && c.commands.some((x) => /^curl\b.*sugang/.test(x)),
+      done: (w, c) => studentsServed(w) && curledSugang(c),
       after: ['l4'],
       concept: 'tcp',
       lesson: 'curl -v로 보면 TCP는 먼저 SYN → SYN-ACK → ACK 세 번 인사(3-way handshake)를 나누고, 그다음 "GET /enroll"(이 페이지 주세요) 주문서가 가고 200 OK(여기 있어요)가 돌아와요.',
@@ -145,14 +186,15 @@ export const day2: DaySpec = {
     rack4: { kind: 'inspect', text: '4번 랙: DHCP·DNS 서버.' },
     switch: { kind: 'cable', mode: 'repair' },
     router: { kind: 'consolePick', hosts: ['TOR-01', 'CORE-01'] },
-    patch: { kind: 'inspect', text: '패치 패널: 케이블이 모이는 곳. 스위치 케이블은 바로 위 TOR-01에서 검사해요.' },
+    patch: { kind: 'inspect', text: '패치 패널: 케이블이 모이는 곳. TOR-01에 꽂힌 케이블(서버·코어로 가는 업링크)은 바로 위 스위치 자리에서 검사하고 바꿔요.' },
     pdu: { kind: 'gauge', target: 'pdu' },
     board: { kind: 'board', board: 'decompose' },
   },
   health,
   panels: ['traffic', 'services', 'links'],
-  /** What D-3 builds on the L4, taken back out: its pool members and the /health check. */
+  /** What D-3 builds on the L4, taken back out: its pool members and the /health check. And what later days build. */
   unbuild: (w) => {
+    laterDaysOut(w);
     const lb = w.net?.lb;
     if (!lb) return;
     lb.members = [];

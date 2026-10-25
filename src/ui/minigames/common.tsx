@@ -175,7 +175,8 @@ export function NoteLine({ note, idle }: { note: Note | null; idle?: ReactNode }
   );
 }
 
-export type LedState = 'off' | 'on' | 'blink' | 'bad' | 'warn';
+/** crc = green and amber in turns (a link that is up but drops damaged frames) */
+export type LedState = 'off' | 'on' | 'blink' | 'bad' | 'warn' | 'crc';
 
 export function Led({ state, title, size = 10 }: { state: LedState; title?: string; size?: number }) {
   return <span className={`mg-led ${state}`} style={{ width: size, height: size }} title={title} aria-hidden />;

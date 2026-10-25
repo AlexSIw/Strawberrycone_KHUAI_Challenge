@@ -22,7 +22,11 @@ export const DDAY_CLOCK: ClockDef = {
 
 export const ROOMS = ['server', 'network', 'power', 'cooling', 'noc'] as const;
 
-/** Spots every day has: the NOC console on the monitor wall, the 관리 PC, the mentor. */
+/**
+ * Spots every day has: the NOC console on the monitor wall, the 관리 PC, the mentor, the facility gauges,
+ * and the cable check at the network-room switch (cable incidents such as d5-crc / d3-uplink can be
+ * drawn on any later day, and this is where their cables are tested and replaced).
+ */
 export const BASE_INTERACTIONS: Partial<Record<SpotId, InteractionKind>> = {
   monitor: { kind: 'noc' },
   desk: { kind: 'terminal' },
@@ -30,6 +34,7 @@ export const BASE_INTERACTIONS: Partial<Record<SpotId, InteractionKind>> = {
   ups: { kind: 'gauge', target: 'ups' },
   pdu: { kind: 'gauge', target: 'pdu' },
   crac: { kind: 'gauge', target: 'crac' },
+  switch: { kind: 'cable', mode: 'repair' },
 };
 
 /** Placeholder mission until the day's content lands. */

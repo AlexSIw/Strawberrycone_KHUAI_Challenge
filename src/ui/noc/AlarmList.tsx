@@ -6,6 +6,7 @@ import { fmtClock, gameSec } from '../../sim/clock';
 import type { StageRun } from '../../sim/engine';
 import type { AlarmSev } from '../../sim/scenario';
 import { LAST_DAY } from '../../sim/types';
+import { own } from '../../sim/util';
 import { gameStore } from '../../store/game';
 import { useStageState } from '../useStageState';
 import { placeName } from './facility';
@@ -20,7 +21,9 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
   const open = openAlarms(run.alarms);
   const cleared = run.alarms.filter((a) => a.clearedAt !== null).sort((a, b) => (b.clearedAt ?? 0) - (a.clearedAt ?? 0));
   const at = (t: number) => fmtClock(gameSec(def.clock, t), run.stage === LAST_DAY);
-  const devName = (id: string) => run.world.devices[id]?.label ?? placeName(id);
+  // A campus service (KHU LMS …) is no NMS device: its alarm points at the service's SMS card.
+  const devName = (id: string) => own(run.world.devices, id)?.label ?? own(run.world.campus, id)?.label ?? placeName(id);
+  const isService = (id: string) => !own(run.world.devices, id) && !!own(run.world.campus, id);
   const every = def.pollEvery ?? POLL_EVERY;
 
   const row = (a: Alarm) => {
@@ -33,7 +36,12 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
         <span className="nms-alarm-time" title={`${SOURCE_LABEL[a.source]}로 알게 됨`}>
           {at(a.raisedAt)}
         </span>
-        <button type="button" className="nms-alarm-dev" onClick={() => onSelect(a.device)} title="구성도에서 이 장비 보기">
+        <button
+          type="button"
+          className="nms-alarm-dev"
+          onClick={() => onSelect(a.device)}
+          title={isService(a.device) ? '서비스 관제(SMS)에서 이 서비스 보기' : '구성도에서 이 장비 보기'}
+        >
           {devName(a.device)}
         </button>
         <span className="nms-alarm-text">{a.text}</span>

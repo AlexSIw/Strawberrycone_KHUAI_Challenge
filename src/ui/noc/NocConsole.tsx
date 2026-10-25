@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import type { NocTab } from '../../content/types';
 import type { StageRun } from '../../sim/engine';
+import { own } from '../../sim/util';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
 import { useStageState } from '../useStageState';
@@ -80,8 +81,10 @@ export function NocConsole({ tab: asked }: { tab?: NocTab }) {
   }, [tab]);
 
   const select = (id: string) => {
-    // Racks and facility units live on the FMS; everything else opens in the NMS detail pane.
+    // Racks and facility units live on the FMS, campus services (KHU LMS …) on the SMS; everything else
+    // opens in the NMS detail pane.
     if (isFacilityDevice(id)) return setTab('fms');
+    if (run && !own(run.world.devices, id) && own(run.world.campus, id)) return setTab('sms');
     setSelected(id);
     gameStore.getState().event(`noc:device:${id}`);
     // The detail pane sits under the map: bring it into view.
@@ -91,7 +94,7 @@ export function NocConsole({ tab: asked }: { tab?: NocTab }) {
   const open = run?.alarms.filter((a) => a.clearedAt === null) ?? [];
   const count: Record<ShownTab, number> = {
     nms: open.length,
-    sms: 0,
+    sms: open.filter((a) => !!run && !own(run.world.devices, a.device) && !!own(run.world.campus, a.device)).length,
     fms: open.filter((a) => isFacilityDevice(a.device)).length,
   };
 

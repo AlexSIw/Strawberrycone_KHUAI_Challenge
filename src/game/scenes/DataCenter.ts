@@ -108,6 +108,16 @@ function verbFor(k: InteractionKind): string {
   return VERB[k.kind];
 }
 
+/**
+ * A spot's name in the prompt, from what it opens today: the network-room switch is where the day's map
+ * switch is cabled ("스위치 TOR-01"), the router cabinet is a console to the switches on console days.
+ */
+function spotLabel(spot: SpotDef, kind: InteractionKind, def: StageDef): string {
+  if (spot.id === 'switch' && kind.kind === 'cable') return `스위치 ${mapSwitchOf(def)}`;
+  if (spot.id === 'router' && kind.kind === 'consolePick') return '스위치 콘솔';
+  return spot.label;
+}
+
 /** How far a spot's sprite sticks up above its footprint (for placing the prompt). */
 const OVERHANG: Partial<Record<SpotId, number>> = { monitor: 48, board: 48, mentor: 18 };
 
@@ -275,7 +285,8 @@ export class DataCenter extends Phaser.Scene {
       // A rack with a top-of-rack switch says so in its prompt ("랙 1 · TOR-01").
       const rack = RACK_SPOTS.find((r) => r.spot === spot.id)?.rack;
       const tor = rack && run ? torOf(run.world, rack) : undefined;
-      return [{ spot: tor ? { ...spot, label: `${spot.label} · ${tor.label}` } : spot, kind, area: roomAt(spot.x, spot.y) }];
+      const label = spotLabel(spot, kind, this.def);
+      return [{ spot: { ...spot, label: tor ? `${label} · ${tor.label}` : label }, kind, area: roomAt(spot.x, spot.y) }];
     });
     this.area = roomAt(PLAYER_SPAWN.x, PLAYER_SPAWN.y);
 

@@ -1,7 +1,7 @@
 // Incident templates first taught on D-4. See IncidentTemplate in src/sim/scenario.ts.
-// Every check looks at what the network actually does (reach, dhcpView, operState, sviUp), never at a
+// Every check looks at what the network actually does (reach, dhcpView, operState), never at a
 // flag the solution sets.
-import { dhcpView, longIf, log, operState, reach, resolve, sviUp } from '../../sim/network';
+import { dhcpView, longIf, log, operState, reach, resolve } from '../../sim/network';
 import type { IncidentTemplate } from '../../sim/scenario';
 import type { World } from '../../sim/types';
 import { own } from '../../sim/util';
@@ -181,9 +181,10 @@ export const templates: IncidentTemplate[] = [
         hints: [
           '그 서버가 꽂힌 스위치 포트 불빛은 어때? 스위치는 그 포트를 어떤 상태라고 표시하고 있어? 그냥 꺼짐(down)과는 다른 말이 보일 거야.',
           '포트가 스스로 꺼졌다면 스위치가 뭔가 위험한 걸 보고 막은 거야. 장비 일기장(로그)에서 그 시각에 무슨 일이 있었는지 읽어봐. 원인이 이미 사라졌다면 포트를 다시 살리면 돼.',
-          '오류로 막힌 포트는 그 포트의 설정 모드에서 한 번 껐다가 다시 켜면 풀려. 그다음 저장!',
+          '스위치가 스스로 막은 포트는 저절로 안 풀려. 포트 상태를 바꾸는 명령은 그 포트의 설정 모드에 있어. 원인이 사라졌는지 확인하고 써봐. 고친 뒤엔 저장!',
         ],
-        bannedPhrases: [...ifPhrases(port), 'shutdown', 'no shut', String(v.label)],
+        // The fix in plain words too ("껐다가 다시 켜").
+        bannedPhrases: [...ifPhrases(port), 'shutdown', 'no shut', String(v.label), '껐다', '다시 켜'],
         solution: `누군가 ${v.label} 자리의 포트(${port})에 작은 스위치를 꽂아서 스위치 신호(BPDU)가 들어왔고, bpduguard가 그 포트를 err-disabled로 막았다. 그 장비는 이미 빠졌으니 TOR-01: enable → configure terminal → interface ${port} → shutdown → no shutdown → end → write memory`,
         solutionSteps: [
           { ios: ['enable', 'configure terminal', `interface ${port}`, 'shutdown', 'no shutdown', 'end', 'write memory'], host: 'TOR-01' },
@@ -194,11 +195,14 @@ export const templates: IncidentTemplate[] = [
     },
   },
   {
-    // A core VLAN interface (the VLAN's gateway) shut down by hand. With one core as the only gateway
-    // (D-4 … D-2) that cuts the VLAN off; from D-1 the standby core takes over, so it stops at D-2.
+    // A core VLAN interface (the VLAN's gateway) shut down by hand. With CORE-01 as the only gateway for
+    // VLANs 10/20 that cuts the VLAN off; once CORE-02 is its standby (D-1's build) the standby takes over
+    // and nothing breaks. Checked by the symptom (web reaches db), so a world where the standby already
+    // exists fails the template matrix instead of passing quietly. Until D-3: D-3's world takes the CORE-02
+    // standby out (day2.ts); D-2 can join once its own world does too.
     id: 'd4-svi',
     day: 1,
-    until: 3,
+    until: 2,
     variants: [{ vlan: 10 }, { vlan: 20 }],
     make: (v) => {
       const vlan = Number(v.vlan);
@@ -213,17 +217,18 @@ export const templates: IncidentTemplate[] = [
           if (svi) svi.shutdown = true;
           touchedBy(w, 'CORE-01', '10.10.100.23');
         },
-        check: (w) => sviUp(w, 'CORE-01', vlan) && reachesHost(w, 'web', 'db'),
+        check: (w) => reachesHost(w, 'web', 'db'),
         hints: [
           '같은 동네(VLAN) 안에서는 되고, 동네를 건너갈 때만 안 된다면 어디가 의심스러워? 서버에서 자기 게이트웨이로 ping 해봐.',
           '동네와 동네를 잇는 문은 코어 스위치에 있는 VLAN 인터페이스야. 코어에서 인터페이스들의 상태를 한 줄씩 보여주는 show 명령으로 확인해봐.',
-          '관리자가 꺼둔(administratively down) 인터페이스는 그 인터페이스 설정 모드에서 다시 켜면 돼. 그다음 저장!',
+          '인터페이스를 켜고 끄는 건 그 인터페이스의 설정 모드에서 하는 일이야. 어느 인터페이스인지는 위에서 본 표가 알려줘. 고친 뒤엔 저장!',
         ],
-        bannedPhrases: ['no shutdown', 'no shut', `vlan ${vlan}`, `VLAN ${vlan}`, `vlan${vlan}`, `Vlan${vlan}`, 'interface vlan'],
+        // The fix in plain words too ("다시 켜").
+        bannedPhrases: ['no shutdown', 'no shut', `vlan ${vlan}`, `VLAN ${vlan}`, `vlan${vlan}`, `Vlan${vlan}`, 'interface vlan', '다시 켜'],
         solution: `CORE-01의 VLAN ${vlan} 인터페이스(SVI: 그 VLAN의 게이트웨이)가 누군가에 의해 shutdown 됐다 (show ip interface brief → administratively down, show logging). CORE-01: enable → configure terminal → interface vlan ${vlan} → no shutdown → end → write memory`,
         solutionSteps: [{ ios: ['enable', 'configure terminal', `interface vlan ${vlan}`, 'no shutdown', 'end', 'write memory'], host: 'CORE-01' }],
         concept: 'gateway',
-        lesson: '게이트웨이(.1)를 맡은 코어의 VLAN 인터페이스가 꺼지면 동네 안은 멀쩡해도 밖으로는 못 나가요. 지금은 코어 한 대만 게이트웨이라 여기가 단일 장애점이에요.',
+        lesson: '게이트웨이(.1)를 맡은 코어의 VLAN 인터페이스가 꺼지면 동네 안은 멀쩡해도 밖으로는 못 나가요. 지금은 VLAN 10·20의 게이트웨이를 코어 한 대만 맡고 있어서 여기가 단일 장애점이에요.',
       };
     },
   },

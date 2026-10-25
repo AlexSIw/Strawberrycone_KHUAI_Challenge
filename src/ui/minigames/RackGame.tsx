@@ -143,7 +143,7 @@ export function RackGame() {
   const allPowered = servers.every((d) => powered(world, d.id));
   const allLinked = servers.every((d) => linkUp(world, d.id, d.ports[0] ?? 'eth0'));
   const nextStep = !allPowered
-    ? 'LED가 꺼져 있죠? 아직 전기가 없어서예요. 다음은 전원실 PDU에서 전원을 꽂아 주세요.'
+    ? 'LED가 꺼져 있죠? 아직 전기가 없어서예요. 다음은 전기실 PDU에서 전원을 꽂아 주세요.'
     : !allLinked
       ? '전원 OK! 이제 네트워크실 스위치에 케이블을 연결하면 오른쪽 LED도 켜져요.'
       : '전원도 케이블도 연결 끝! 서버들이 초록불로 반짝여요.';

@@ -24,6 +24,12 @@
   align-items: center;
   gap: 8px;
 }
+/* Repair mode: the heading above the switch's other cables (uplinks …) */
+.cb-col-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
 
 /* ---------- servers ---------- */
 .cb-row {
@@ -172,6 +178,7 @@
 .cb-wire.down .cb-wire-core { stroke: var(--red-2); }
 .cb-wire.degraded .cb-wire-core { stroke: var(--amber); stroke-dasharray: 12 6; }
 .cb-wire.nopower .cb-wire-core { stroke: #8a8090; }
+.cb-wire.shut .cb-wire-core { stroke: #8a8090; stroke-dasharray: 4 8; }
 .cb-wire.live .cb-wire-core { stroke: var(--blue); }
 .cb-wire.live .cb-wire-outline { stroke-dasharray: none; }
 .cb-wire.replacing { opacity: 0.45; }
@@ -190,6 +197,7 @@
 .cb-swatch.down { background: var(--red-2); }
 .cb-swatch.degraded { background: var(--amber); }
 .cb-swatch.nopower { background: #8a8090; }
+.cb-swatch.shut { background: repeating-linear-gradient(90deg, #8a8090 0 4px, transparent 4px 8px); }
 
 @media (prefers-reduced-motion: reduce) {
   .cb-wire.replacing .cb-wire-core, .cb-jack.free .cb-jack-hole { animation: none; }

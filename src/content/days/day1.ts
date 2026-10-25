@@ -4,7 +4,7 @@
 // Teaching incidents: a server port moved to the wrong VLAN; the library Wi-Fi DHCP pool runs dry.
 // The other VLANs, the cores' other SVIs, the campus and the DHCP/DNS servers are pre-built by 선배.
 import { campusDelivery, hostDelivery, reach } from '../../sim/network';
-import type { Device, World } from '../../sim/types';
+import type { Device, PlayContext, World } from '../../sim/types';
 import { ipOf } from '../incidents/d4';
 import { ADDR } from '../topology';
 import type { DaySpec } from '../types';
@@ -29,7 +29,7 @@ const RECORDS: [string, string][] = [
 const nd = (w: World, id: string) => w.devices[id]?.nd;
 
 /** Take a fresh startup-config snapshot (same shape as topology.ts), so the day starts with nothing unsaved. */
-function resave(d: Device | undefined): void {
+export function resave(d: Device | undefined): void {
   const n = d?.nd;
   if (!n) return;
   n.startup = JSON.stringify({ ifs: n.ifs, vlans: n.vlans, svis: n.svis, stpOff: n.stpOff });
@@ -54,6 +54,23 @@ const lookup = (w: World, name: string) => {
   return k ? dns[k] : undefined;
 };
 const recordsSet = (w: World) => RECORDS.filter(([n, ip]) => lookup(w, n) === ip);
+
+/**
+ * Looked at the address pools on dhcp01 itself: a `dhcp pool list|show` typed while the latest ssh
+ * points at dhcp01 (not one typed on the 관리 PC before getting there).
+ */
+function poolsSeen(c: PlayContext): boolean {
+  if (!c.events.includes('ssh:dhcp01')) return false;
+  const names = ['dhcp01', ADDR.dhcp01];
+  let onDhcp = false;
+  for (const x of c.commands) {
+    const ssh = /^ssh\s+(?:\S+@)?(\S+)/i.exec(x);
+    if (ssh) onDhcp = names.includes(ssh[1].toLowerCase());
+    else if (/^(exit|logout)$/i.test(x)) onDhcp = false;
+    else if (onDhcp && /^dhcp\s+pool\s+(list|show)\b/.test(x)) return true;
+  }
+  return false;
+}
 const savedGear = (w: World) => [TOR, CORE].filter((id) => nd(w, id)?.dirty === false);
 
 export const day1: DaySpec = {
@@ -80,7 +97,7 @@ export const day1: DaySpec = {
   ],
   outro: [
     { who: 'mentor', text: 'VLAN은 동네, 코어의 VLAN 인터페이스는 동네 문, DNS는 전화번호부, write memory는 저장 버튼. 오늘 다 해봤네.' },
-    { who: 'mentor', text: '그런데 show standby brief 봤어? Standby가 unknown이지. 문지기가 한 명뿐이라는 뜻이야. 그건 D-1에 고치자.' },
+    { who: 'mentor', text: '그런데 show standby brief 봤어? 오늘 만든 VLAN 10·20 줄만 Standby가 unknown이지. 그 두 동네는 문지기가 한 명뿐이라는 뜻이야. 그건 D-1에 고치자.' },
     { who: 'boss', text: '내일(D-3)은 드디어 수강신청 웹 서비스를 연다!' },
   ],
   objectives: [
@@ -120,7 +137,7 @@ export const day1: DaySpec = {
       progress: (w) => `${gatewaysSet(w).length}/${NEW_VLANS.length}`,
       after: ['ports'],
       concept: 'hsrp',
-      lesson: '서버들의 게이트웨이(.1)는 코어 한 대에 박힌 주소가 아니라 가상 주소예요(HSRP). 지금은 CORE-01 혼자 맡고 있어서 show standby brief에 짝(Standby)이 unknown으로 나와요.',
+      lesson: '서버들의 게이트웨이(.1)는 코어 한 대에 박힌 주소가 아니라 가상 주소예요(HSRP). 지금은 VLAN 10·20을 CORE-01 혼자 맡고 있어서, show standby brief의 그 두 줄에 짝(Standby)이 unknown으로 나와요.',
     },
     {
       id: 'dns',
@@ -136,7 +153,7 @@ export const day1: DaySpec = {
       id: 'dhcp',
       text: 'DHCP 서버(dhcp01)에서 캠퍼스 주소 풀 확인하기 (dhcp pool list)',
       spot: 'desk',
-      done: (_w, c) => c.events.includes('ssh:dhcp01') && c.commands.some((x) => /^dhcp\s+pool\s+(list|show)\b/.test(x)),
+      done: (_w, c) => poolsSeen(c),
       after: ['dns'],
       concept: 'privateip',
       lesson: '캠퍼스 건물 기기들은 dhcp01이 나눠주는 주소(10.20.x.100~199)를 받아요. 10.으로 시작하는 주소는 건물 안에서만 쓰는 사설 주소고, /24는 앞 세 칸이 같은 동네라는 뜻이에요.',

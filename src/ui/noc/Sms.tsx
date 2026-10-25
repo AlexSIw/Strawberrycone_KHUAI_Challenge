@@ -25,6 +25,7 @@ function CampusPanel({ w }: { w: World }) {
               <b>{c.label}</b>
               <span className={lv}>{!c.up ? '✕ 중단' : lv === 'ok' ? '● 정상' : '▲ 느림'}</span>
               <small className="muted">{c.up ? `응답 ${fmtNum(c.latencyMs)} ms` : '응답 없음'}</small>
+              <small className="muted">운영: {c.team}</small>
             </div>
           );
         })}

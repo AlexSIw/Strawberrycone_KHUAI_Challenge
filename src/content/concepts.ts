@@ -18,7 +18,7 @@ export const CONCEPTS: Record<string, Concept> = {
   port: { id: 'port', name: '포트 (L4)', analogy: '건물 안 호실 번호', definition: '한 컴퓨터 안에서 어떤 프로그램에게 갈지 정하는 번호(7계층 중 4층, L4). 웹(HTTP)은 보통 80번' },
   socket: { id: 'socket', name: '소켓 · 멀티스레드 서버', analogy: '프로그램의 전화기 · 전화마다 도우미 한 명씩', definition: '서버는 소켓으로 연결을 받는다. 한 번에 한 명만 받으면 나머지는 줄을 선다. 연결마다 일꾼(스레드)을 따로 붙이면 여럿을 동시에 받는다(멀티스레드)' },
   tcp: { id: 'tcp', name: 'TCP vs UDP · 3-way handshake', analogy: '번호 매긴 등기우편 vs 엽서', definition: 'TCP는 "얘기할래?"(SYN) → "응, 너도?"(SYN-ACK) → "응!"(ACK) 세 번 인사한 뒤 순서와 도착을 챙긴다. UDP는 인사 없이 빠르게 던지지만 도착은 보장하지 않는다' },
-  http: { id: 'http', name: 'HTTP · 상태 코드', analogy: '주문서와 번호표', definition: '요청(GET /enroll = "신청 페이지 주세요")을 보내면 응답과 상태 코드가 돌아온다. 200 OK = 성공, 404 Not Found = 그런 페이지 없음, 500 = 서버 안에서 처리하다 오류' },
+  http: { id: 'http', name: 'HTTP · 상태 코드', analogy: '주문서와 번호표', definition: '요청(GET /enroll = "신청 페이지 주세요")을 보내면 응답과 상태 코드가 돌아온다. 200 OK = 성공, 404 Not Found = 그런 페이지 없음, 500 = 서버 안에서 처리하다 오류, 503 = 요청을 받아 줄 서버가 없음(L4 뒤 서버가 모두 DOWN)' },
   monolith: { id: 'monolith', name: '모놀리스 → MSA', analogy: '주방 하나인 큰 식당 → 매장들이 모인 푸드코트', definition: '모든 기능이 한 덩어리(모놀리스)면 하나가 죽을 때 다 죽는다. 기능별 작은 서비스로 나누면(MSA, 마이크로서비스 구조) 장애가 그 안에 갇힌다' },
   isolation: { id: 'isolation', name: '장애 격리 (Fault Isolation)', analogy: '리뷰 매장이 문 닫아도 주문은 된다', definition: '서비스를 나누면 한 서비스의 장애가 다른 서비스로 번지지 않는다' },
   scaling: { id: 'scaling', name: '독립 확장 (Independent Scaling)', analogy: '붐비는 매장만 직원 추가', definition: '바쁜 서비스만 골라 늘릴 수 있다. 다만 손으로 서버를 깔면 너무 느리다' },

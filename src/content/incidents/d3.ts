@@ -40,7 +40,9 @@ export const templates: IncidentTemplate[] = [
         '학생 요청은 L4(입구 안내원)를 거쳐서 서버로 가. 안내원은 서버가 살아 있는지 정해진 방법으로 계속 물어봐. 안내원이 지금 서버를 어떻게 보고 있는지 L4에 들어가서 확인해봐.',
         'L4에는 서버 목록과 헬스체크(살아 있는지 묻는 방법) 설정을 보여주는 명령이 있어. 그 설정을 웹 서버가 실제로 가진 경로·포트와 하나씩 비교해봐.',
       ],
-      bannedPhrases: ['/healthz', '8080', 'health set', 'set path', 'set port'],
+      // The right value too, in plain words ("경로를 /health 로" / "포트를 80으로"): ' /health ' is word-edged
+      // so '/healthz' still passes, and '80' never matches inside '8080'.
+      bannedPhrases: ['/healthz', '8080', 'health set', 'set path', 'set port', v.kind === 'path' ? ' /health ' : '80'],
       solution:
         v.kind === 'path'
           ? 'L4 헬스체크가 웹 서버에 없는 경로(/healthz)를 묻고 있어서, 멀쩡한 서버를 DOWN으로 보고 손님을 안 보냈다. ssh L4-01 → lb pool / lb health 로 확인 → lb health set path /health'
@@ -53,8 +55,10 @@ export const templates: IncidentTemplate[] = [
     }),
   },
   {
-    // One of TOR-01's links to the cores is cut. Spanning tree opens the other one, so students notice
-    // nothing; but there is no spare left (major), and the NMS gets a link-down trap at once.
+    // One of TOR-01's links to the cores is cut: the one traffic used (spanning tree then opens the spare
+    // to CORE-02; from D-2 it is a member of the LACP bundle, which carries on over the other member) or
+    // the STP-blocked spare itself. Either way students notice nothing, but there is one path less (major),
+    // and the NMS gets a link-down trap at once. The text must hold for both variants on every day.
     id: 'd3-uplink',
     day: 2,
     variants: [
@@ -65,7 +69,7 @@ export const templates: IncidentTemplate[] = [
       const id = String(v.cable);
       const port = String(v.port);
       return {
-        title: '랙 스위치 업링크 하나 끊김 (서비스는 정상)',
+        title: '경보는 떴는데 학생들은 정상',
         alert: '관제 화면에 경보가 하나 떴는데, 학생들은 아무 문제 없대요. 이거 지금 봐야 해요?',
         severity: 'major',
         alarm: { source: 'trap', device: 'TOR-01', text: 'TOR-01 인터페이스 링크 다운' },
@@ -79,15 +83,15 @@ export const templates: IncidentTemplate[] = [
           return !!c && !c.broken && !c.degraded && linkUp(w, 'TOR-01', port);
         },
         hints: [
-          '관제 화면(NMS)에서 그 스위치를 열어봐. 빨간 포트는 어디로 이어져 있어? 그런데 서비스는 왜 멀쩡할까?',
-          '랙 스위치에서 코어로 가는 길은 여러 갈래야. 하나가 끊겨서 막아 두었던 예비 길로 돌아가는 중이라면, 지금은 예비가 없는 상태야. 끊긴 길의 물리 상태부터 봐.',
+          '관제 화면(NMS)에서 그 스위치를 열어봐. 불이 꺼진(down) 포트는 어디로 이어져 있어? 그런데 서비스는 왜 멀쩡할까?',
+          '랙 스위치에서 코어로 가는 길은 여러 갈래야. 끊긴 게 평소에 데이터가 다니던 길이야, 막아 두었던 예비 길이야? 어느 쪽이든 길이 하나 줄었으니 다음 고장엔 버틸 여유가 줄어. 끊긴 길의 물리 상태부터 봐.',
           '네트워크실 스위치 앞에서 케이블을 하나씩 검사하고 손볼 수 있어.',
         ],
         bannedPhrases: [...ifPhrases(port), '케이블을 교체', '케이블 교체', '케이블을 바꿔', '새 케이블', '새것으로'],
-        solution: `TOR-01 ${port} ↔ 코어 스위치 사이 케이블이 끊어졌다. STP가 막아 두었던 다른 길을 열어서 서비스는 살아 있지만 이중화가 깨진 상태(major). 네트워크실 스위치에서 그 케이블을 새것으로 교체한다.`,
+        solution: `TOR-01 ${port} ↔ 코어 스위치 사이 케이블이 끊어졌다. 남은 길로 서비스는 살아 있지만 이중화가 줄어든 상태(major). 네트워크실 스위치(케이블 점검)에서 그 케이블을 테스트하고 새것으로 교체한다.`,
         solutionSteps: [{ label: `TOR-01 ${port} 업링크 케이블 교체`, action: (w) => replaceCable(w, id) }],
         concept: 'spof',
-        lesson: '길이 두 개라 하나가 끊겨도 서비스는 살았어요(STP가 막아 두었던 예비 길을 열어요). 하지만 끊긴 채로 두면 다음 고장엔 버틸 게 없어요. 그래서 "서비스 영향 없음"이어도 major예요.',
+        lesson: '길이 여러 갈래라 하나가 끊겨도 서비스는 살았어요. 하지만 끊긴 채로 두면 다음 고장엔 버틸 게 줄어요. 그래서 "서비스 영향 없음"이어도 major예요.',
       };
     },
   },
@@ -112,9 +116,10 @@ export const templates: IncidentTemplate[] = [
       hints: [
         '관제 화면에서 수강신청 성공률을 봐. 알림이 죽었는데 그 숫자는 어때? 한 덩어리였을 때랑 뭐가 달라졌지?',
         '이제 알림은 따로 떨어진 매장이야. 그 매장만 손보면 돼. 서비스 상태를 보는 명령부터!',
-        '알림팀이 버그를 급히 고친 새 버전(핫픽스)을 올려 뒀대. 그 서비스만 다시 시작하면 반영돼.',
+        '서비스 하나만 다루는 svc 명령들이 있어. 알림팀이 고친 새 버전(핫픽스)을 올려 뒀대. 그 버전이 돌게 하려면 그 서비스에 뭘 해야 할까?',
       ],
-      bannedPhrases: ['svc restart notify', 'restart notify'],
+      // The fix in plain words too ("재시작해", "다시 시작해", "restart").
+      bannedPhrases: ['svc restart notify', 'restart', '재시작', '다시 시작', '다시 켜', '껐다 켜'],
       solution: '알림 서비스만 재시작한다: svc restart notify (급히 고친 새 버전, 핫픽스가 반영됨)',
       solutionSteps: [{ cmd: 'svc restart notify', host: 'ops' }],
       concept: 'isolation',

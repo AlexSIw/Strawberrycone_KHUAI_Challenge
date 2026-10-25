@@ -80,7 +80,7 @@ export const SPOTS: SpotDef[] = [
   { id: 'rack2', x: 6, y: 3, w: 2, h: 3, label: '랙 2' },
   { id: 'rack3', x: 9, y: 3, w: 2, h: 3, label: '랙 3' },
   { id: 'rack4', x: 12, y: 3, w: 2, h: 3, label: '랙 4' },
-  { id: 'switch', x: 20, y: 3, w: 2, h: 2, label: '코어 스위치' },
+  { id: 'switch', x: 20, y: 3, w: 2, h: 2, label: '네트워크 스위치' },
   { id: 'router', x: 24, y: 3, w: 2, h: 2, label: '보더 라우터·방화벽' },
   { id: 'patch', x: 20, y: 7, w: 2, h: 2, label: '패치 패널' },
   { id: 'crac', x: 32, y: 3, w: 3, h: 3, label: '항온항습기(CRAC)' },
