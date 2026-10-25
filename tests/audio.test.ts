@@ -58,7 +58,8 @@ import {
   type MusicTrack,
 } from '../src/audio/logic';
 import { STAGES } from '../src/content/stages';
-import { startStage, tickRun, type StageRun } from '../src/sim/engine';
+import { startStage, tickRun, visibleObjectives, type StageRun } from '../src/sim/engine';
+import { apply, AUTOPLAY } from './autoplay';
 
 describe('hangulToLetter / blipLetter', () => {
   it('uses the initial consonant', () => {
@@ -113,8 +114,7 @@ describe('hangulToLetter / blipLetter', () => {
     expect(hangulToLetter('힤')).toBeNull();
   });
 
-  // TODO(WP8): re-enable once the days have their dialogue.
-  it.skip('every letter of every dialogue line maps into A–Z', () => {
+  it('every letter of every dialogue line maps into A–Z', () => {
     let blips = 0;
     for (const def of STAGES) {
       for (const line of [...def.intro, ...def.outro]) {
@@ -183,20 +183,22 @@ describe('musicFor', () => {
     expect(musicFor(view('playing', [{ id: 'a', state: 'resolved' }, { id: 'b', state: 'active' }]))).toBe('incident');
   });
 
-  // TODO(WP8): re-enable once the days have incidents.
-  it.skip('follows a real stage run', () => {
-    let found = 0;
+  it('follows a real day run: every day turns to the incident loop when its first incident fires', () => {
     for (const def of STAGES) {
-      let run: StageRun = startStage(def.id);
-      expect(musicFor({ screen: 'playing', run })).toBe('normal');
-      for (let i = 0; i < 400 && activeIncidents({ screen: 'playing', run }).length === 0; i++) run = tickRun(run).run;
-      if (activeIncidents({ screen: 'playing', run }).length) {
-        found++;
-        expect(musicFor({ screen: 'playing', run })).toBe('incident');
+      let run: StageRun = startStage(def.id, 1);
+      expect(musicFor({ screen: 'playing', run }), def.label).toBe('normal');
+      // play the missions like tests/autoplay.ts does: most days' incidents wait for a mission
+      for (let i = 0; i < 900 && activeIncidents({ screen: 'playing', run }).length === 0; i++) {
+        for (const o of visibleObjectives(def, run)) {
+          if (o.id in run.objectivesDone) continue;
+          for (const st of AUTOPLAY[def.id]?.[o.id] ?? []) run = apply(run, st, null);
+        }
+        run = tickRun(run).run;
       }
+      expect(activeIncidents({ screen: 'playing', run }).length, def.label).toBeGreaterThan(0);
+      expect(musicFor({ screen: 'playing', run }), def.label).toBe('incident');
     }
-    expect(found).toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it('newlyActive / sameRun', () => {
     expect(newlyActive(['a'], ['a', 'b'])).toEqual(['b']);

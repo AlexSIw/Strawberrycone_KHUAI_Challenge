@@ -1,7 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Smoke test for the browser game. Browsers are installed separately:
+// End-to-end tests for the browser game. Browsers are installed separately:
 //   npx playwright install chromium
+// E2E_PORT picks the dev server's port (default 5173). A server already listening there is reused.
+const PORT = Number(process.env.E2E_PORT ?? 5173);
+
 export default defineConfig({
   testDir: 'e2e',
   timeout: 90_000,
@@ -11,7 +14,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: `http://localhost:${PORT}`,
     screenshot: 'on',
     trace: 'retain-on-failure',
   },
@@ -23,8 +26,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
+    command: `npm run dev -- --port ${PORT} --strictPort`,
+    url: `http://localhost:${PORT}`,
     reuseExistingServer: true,
     timeout: 120_000,
   },

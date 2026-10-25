@@ -1,8 +1,8 @@
 // Sound: credits window, mute toggle (button, M, saved setting), and the audio engine following the
 // game — lobby tune out of the days, long equal-power crossfades into and out of a day, a short one
 // into an incident, the alarm, the coin and the win jingle (incident card, clear popup, certificate).
-// Reads the engine through its dev hook. Incidents are made up (planted through the page's modules), so
-// this doesn't wait for the day content.
+// Reads the engine through its dev hook. The crossfade test plants a made-up incident (through the page's
+// modules) so it controls exactly when it starts and ends; the coin test plays D-5's first missions.
 import { expect, test, type Page } from '@playwright/test';
 
 type Track = 'lobby' | 'normal' | 'incident';
@@ -45,8 +45,8 @@ const audioState = (page: Page) => page.evaluate(() => (window as never as { __k
 const lastFade = async (page: Page) => (await audioState(page)).fades.at(-1);
 const voice = (s: AudioState, track: Track) => s.voices.find((v) => v.track === track);
 const ALL_CLIPS = ['alarm', 'coin', 'incident', 'lobby', 'normal', 'voice', 'win'];
-/** The title screen's start button (v1 wording, or v2's). */
-const START = /처음부터 시작|새로 시작/;
+/** The title screen's start button. */
+const START = /새로 시작/;
 
 /**
  * Plans one made-up incident on the day being played (the day's own content is not needed): it breaks a
@@ -323,5 +323,52 @@ test('하루 클리어 결과 창과 엔딩 수료증에서 징글 (한 번에 �
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
-// A coin per mission played through the UI needs each day's missions.
-test.fixme('미션마다 코인, 미션과 새 카드가 같은 순간이면 한 번 — needs day content (WP5–7)', async () => {});
+test('미션마다 코인, 미션과 새 카드가 같은 순간이면 한 번', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = watchErrors(page);
+
+  await page.goto('/');
+  await page.evaluate(() => {
+    localStorage.removeItem('khu-dc-audio');
+    localStorage.removeItem('khu-dc-save-v2');
+  });
+  await page.reload();
+
+  // D-5 like a player: the start button, then the missions (recorded as the UI records them).
+  await page.getByRole('button', { name: START }).click();
+  await expect.poll(async () => (await audioState(page)).loaded.length).toBe(ALL_CLIPS.length);
+  await expect.poll(async () => (await audioState(page)).music).toBe('normal');
+  await exposeStore(page);
+  const event = (...events: string[]) =>
+    page.evaluate((ev) => {
+      const gameStore = (window as unknown as Win).__store;
+      for (let i = 0; i < 50 && gameStore.getState().dialogue; i++) gameStore.getState().nextDialogue();
+      gameStore.getState().event(...ev);
+    }, events);
+  const coin = async () => (await audioState(page)).coin;
+  const coins0 = await coin();
+  /** One mission's worth of player actions, then its coin (cues closer than 0.15 s merge, so pause like a player). */
+  const mission = async (coins: number, ...events: string[]) => {
+    await event(...events);
+    await expect.poll(coin).toBe(coins0 + coins);
+    await page.waitForTimeout(300);
+  };
+
+  // The tour: a mission and a new card in the same moment, one coin for both.
+  await mission(1, 'room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc');
+  await expect(page.locator('.ccard')).toBeVisible();
+  // Clicking the card away (Enter, as a player would) is no new coin.
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.ccard')).toHaveCount(0);
+  await page.waitForTimeout(300);
+  expect(await coin()).toBe(coins0 + 1);
+
+  // The quiz: the next mission (and its card), the next coin.
+  await mission(2, 'quiz:correct');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  expect(await coin()).toBe(coins0 + 2);
+  expect((await audioState(page)).win).toBe(0); // mission cards don't jingle
+
+  expect(errors, errors.join('\n')).toEqual([]);
+});

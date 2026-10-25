@@ -61,22 +61,9 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
-/**
- * While a day still has only the placeholder mission ("open the NOC"), opening the NOC ends the day at once.
- * Then the NOC is opened without that event (through the dev-only store handle), and the hotkey is checked by
- * the day ending instead.
- */
-const placeholder = (day: 0 | 5) => getStage(day).objectives.every((o) => o.id === 'noc');
-
-async function openNoc(page: Page, day: 0 | 5): Promise<void> {
-  if (placeholder(day)) {
-    await page.evaluate(() => {
-      const w = window as Window & { __khuStore?: { setState(s: object): void } };
-      w.__khuStore?.setState({ modal: { type: 'noc' }, modalStack: [] });
-    });
-  } else {
-    await page.keyboard.press('n');
-  }
+/** N opens the NOC (the 관제 화면). */
+async function openNoc(page: Page): Promise<void> {
+  await page.keyboard.press('n');
   await expect(modal(page)).toBeVisible();
 }
 
@@ -103,7 +90,7 @@ test('새로 시작 → 브리핑 → 이동 → 관제 화면(NMS/SMS/FMS) → 
   await expect(modal(page)).toHaveCount(0);
 
   // The NOC opens on its NMS tab: alarm list, topology map; a device opens its detail pane.
-  await openNoc(page, 0);
+  await openNoc(page);
   await expect(page.getByRole('tab', { name: /NMS/ })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.nms-map')).toBeVisible();
   await page.locator('.nms-node', { hasText: 'TOR-01' }).click();
@@ -124,7 +111,7 @@ test('새로 시작 → 브리핑 → 이동 → 관제 화면(NMS/SMS/FMS) → 
 
   // The NOC on a Full HD screen.
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await openNoc(page, 0);
+  await openNoc(page);
   await page.getByRole('tab', { name: /NMS/ }).click();
   await expectFitsViewport(page, modal(page));
   await page.screenshot({ path: testInfo.outputPath('06-noc-1080p.png') });
@@ -133,25 +120,13 @@ test('새로 시작 → 브리핑 → 이동 → 관제 화면(NMS/SMS/FMS) → 
 
   // The hotkeys: N toggles the NOC, Tab too.
   await page.keyboard.press('n');
-  if (placeholder(0)) {
-    // The placeholder mission is done: the day ends and the daily report follows the sign-off line.
-    const outro = page.locator('.dlg-backdrop');
-    await expect(outro).toBeVisible();
-    for (let i = 0; i < 12 && (await outro.count()) > 0; i++) {
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(350);
-    }
-    await expect(page.locator('.res-card')).toContainText('일일 리포트');
-    await page.screenshot({ path: testInfo.outputPath('07-report.png') });
-  } else {
-    await expect(modal(page)).toBeVisible();
-    await page.keyboard.press('n');
-    await expect(modal(page)).toHaveCount(0);
-    await page.keyboard.press('Tab');
-    await expect(modal(page)).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(modal(page)).toHaveCount(0);
-  }
+  await expect(modal(page)).toBeVisible();
+  await page.keyboard.press('n');
+  await expect(modal(page)).toHaveCount(0);
+  await page.keyboard.press('Tab');
+  await expect(modal(page)).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(modal(page)).toHaveCount(0);
 
   expect(errors, errors.join('\n')).toEqual([]);
 });
