@@ -329,6 +329,18 @@ export const HINT_COST = [0, 0, 1, 2];
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
+/** Points lost for each part of the score (unrounded): hints, answers shown, slow detection, slow repair, availability. */
+function deductions(hintPenalty: number, revealed: number, mttd: number | null, mttr: number | null, availability: number): Record<ScorePart['key'], number> {
+  return {
+    hint: hintPenalty * 5,
+    reveal: revealed * 15,
+    // Detection weighs little: it's a habit to learn, and spamming ACK shouldn't pay.
+    mttd: mttd === null ? 0 : Math.max(0, Math.min(10, (mttd - 15) / 2)),
+    mttr: mttr === null ? 0 : Math.max(0, Math.min(30, (mttr - 45) / 3)),
+    availability: Math.max(0, (0.9 - availability) * 50),
+  };
+}
+
 export function scoreRun(run: StageRun): Score {
   const solved = run.scenarios.filter((s) => s.state === 'resolved' && s.activatedAt !== null && s.resolvedAt !== null);
   const mttr = mean(solved.map((s) => s.resolvedAt! - s.activatedAt!));
@@ -340,17 +352,35 @@ export function scoreRun(run: StageRun): Score {
   );
   const hintPenalty = Object.values(run.hintLevel).reduce((a, l) => a + HINT_COST[l], 0);
   const availability = run.ticks ? run.availabilitySum / run.ticks : 1;
-  let points = 100;
-  points -= hintPenalty * 5;
-  points -= run.revealed.length * 15;
-  if (mttr !== null) points -= Math.max(0, Math.min(30, (mttr - 45) / 3));
-  // Detection weighs little: it's a habit to learn, and spamming ACK shouldn't pay.
-  if (mttd !== null) points -= Math.max(0, Math.min(10, (mttd - 15) / 2));
-  points -= Math.max(0, (0.9 - availability) * 50);
-  points = Math.max(0, Math.round(points));
+  const lost = Object.values(deductions(hintPenalty, run.revealed.length, mttd, mttr, availability)).reduce((a, b) => a + b, 0);
+  const points = Math.max(0, Math.round(100 - lost));
   const stars = points >= 85 ? 3 : points >= 60 ? 2 : 1;
   const escalated = run.scenarios.filter((s) => s.escalatedAt !== null).length;
   return { stars, points, availability, mttd, mttr, hintPenalty, revealed: run.revealed.length, escalated };
+}
+
+/** One part of the daily report's 감점 line. */
+export interface ScorePart {
+  key: 'hint' | 'reveal' | 'mttd' | 'mttr' | 'availability';
+  /** Plain-Korean name ('탐지', '복구' …) */
+  label: string;
+  /** Whole points lost to it (the parts add up to 100 − score) */
+  points: number;
+}
+
+const PART_LABEL: Record<ScorePart['key'], string> = { hint: '힌트', reveal: '정답 보기', mttd: '탐지 시간', mttr: '복구 시간', availability: '가용성' };
+
+/** What cost points in this run, biggest first, in whole points that add up to 100 − the score. */
+export function scoreParts(score: Score): ScorePart[] {
+  const raw = deductions(score.hintPenalty, score.revealed, score.mttd, score.mttr, score.availability);
+  const keys = Object.keys(raw) as ScorePart['key'][];
+  const parts = keys.map((key) => ({ key, label: PART_LABEL[key], points: Math.round(raw[key]) }));
+  // Rounding each part may miss the total by a point: settle it on the biggest part.
+  const total = 100 - score.points;
+  const diff = total - parts.reduce((a, p) => a + p.points, 0);
+  const big = [...parts].sort((a, b) => raw[b.key] - raw[a.key])[0];
+  if (diff && big && raw[big.key] > 0) big.points = Math.max(0, big.points + diff);
+  return parts.filter((p) => p.points > 0).sort((a, b) => b.points - a.points);
 }
 
 /** The player asked for a hint on a scenario. Returns the new level (1–3). */

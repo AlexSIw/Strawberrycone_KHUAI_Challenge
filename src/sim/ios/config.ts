@@ -5,6 +5,7 @@ import { dottedToMask, maskToDotted, networkOf, sameSubnet } from '../net/basics
 import { longIf } from '../net/ifname';
 import { log } from '../net/sync';
 import type { Iface, IosLevel, IosMode, NetDevice, Svi } from '../types';
+import { tip } from './gloss';
 import { isConfigLevel, type Ctx } from './parse';
 
 export const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
@@ -30,6 +31,7 @@ export function snapshot(nd: NetDevice): string {
 export function save(c: Ctx, viaCopy: boolean): void {
   if (viaCopy) c.out.push('Destination filename [startup-config]? ');
   c.out.push('Building configuration...', '[OK]');
+  c.gloss.push(tip('saved'));
   c.nd.dirty = false;
   c.nd.startup = snapshot(c.nd);
 }
@@ -79,7 +81,7 @@ export function eachSvi(c: Ctx, fn: (s: Svi, v: number) => void): void {
 export function ensureVlan(c: Ctx, v: number, announce: boolean): void {
   if (v === 1 || v in c.nd.vlans) return;
   c.nd.vlans[v] = defaultVlanName(v);
-  if (announce) c.out.push(yellow(`% Access VLAN does not exist. Creating vlan ${v}`));
+  if (announce) c.out.push(yellow(`% Access VLAN does not exist. Creating vlan ${v}`), tip('vlanCreated'));
 }
 
 // ---------- interface / vlan commands ----------
@@ -116,7 +118,7 @@ export function noInterface(c: Ctx, k: string): void {
       }
     }
   } else {
-    c.out.push(red('% Physical interfaces cannot be removed.'));
+    c.out.push(red('% Physical interfaces cannot be removed.'), tip('physical'));
     return;
   }
   dirty(c);
@@ -130,7 +132,7 @@ export function createVlans(c: Ctx, vs: number[]): void {
 
 export function deleteVlans(c: Ctx, vs: number[]): void {
   for (const v of vs) {
-    if (v === 1) c.out.push(red('%Default VLAN 1 may not be deleted.'));
+    if (v === 1) c.out.push(red('%Default VLAN 1 may not be deleted.'), tip('vlanOne'));
     else delete c.nd.vlans[v];
   }
   dirty(c);
@@ -139,11 +141,11 @@ export function deleteVlans(c: Ctx, vs: number[]): void {
 export function setVlanName(c: Ctx, name: string | null): void {
   const v = c.mode.vlan;
   if (v === undefined) {
-    c.out.push(red('% name can only be set for one VLAN at a time.'));
+    c.out.push(red('% name can only be set for one VLAN at a time.'), tip('vlanName'));
     return;
   }
   if (v === 1) {
-    c.out.push(red('%Default VLAN 1 may not have its name changed.'));
+    c.out.push(red('%Default VLAN 1 may not have its name changed.'), tip('vlanOne'));
     return;
   }
   c.nd.vlans[v] = name ? name.slice(0, 32) : defaultVlanName(v);
@@ -180,6 +182,7 @@ export function channelGroup(c: Ctx, n: number, mode: 'active' | 'passive' | 'on
     if (!p) {
       c.nd.ifs[po] = { shutdown: false, errDisabled: null, mode: f.mode, accessVlan: f.accessVlan, allowed: f.allowed === 'all' ? 'all' : [...f.allowed], speed: f.speed, crc: 0 };
       c.out.push(`Creating a port-channel interface Port-channel ${n}`);
+      c.gloss.push(tip('poCreated'));
     } else {
       // A new member takes the bundle's L2 settings.
       f.mode = p.mode;
@@ -209,19 +212,19 @@ function overlap(nd: NetDevice, self: string, a: string, m: number): string | nu
 export function ipAddress(c: Ctx, addr: string, dotted: string): void {
   const m = dottedToMask(dotted);
   if (m === null || m === 0) {
-    c.out.push(red(`% Bad mask ${dotted} for address ${addr}`));
+    c.out.push(red(`% Bad mask ${dotted} for address ${addr}`), tip('badMask'));
     return;
   }
   for (const k of c.mode.ifs ?? []) {
     const clash = overlap(c.nd, k, addr, m);
     if (clash) {
-      c.out.push(red(`% ${networkOf(addr, m).split('/')[0]} overlaps with ${clash}`));
+      c.out.push(red(`% ${networkOf(addr, m).split('/')[0]} overlaps with ${clash}`), tip('overlap'));
       continue;
     }
     if (isSviKey(k)) {
       const s = c.nd.svis[sviNum(k)];
       if (s?.hsrp?.vip === addr) {
-        c.out.push(red('% address cannot equal the standby virtual IP address'));
+        c.out.push(red('% address cannot equal the standby virtual IP address'), tip('vipEqualsIp'));
         continue;
       }
       if (s) {
@@ -234,7 +237,7 @@ export function ipAddress(c: Ctx, addr: string, dotted: string): void {
     const f = c.nd.ifs[k];
     if (!f) continue;
     if (f.mode !== 'routed') {
-      c.out.push(red('% IP addresses may not be configured on L2 links.'));
+      c.out.push(red('% IP addresses may not be configured on L2 links.'), tip('l2NoIp'));
       continue;
     }
     f.ip = { addr, mask: m };
@@ -256,11 +259,11 @@ export function standby(c: Ctx, g: number, change: { vip?: string; priority?: nu
   eachSvi(c, (s) => {
     if (change.vip !== undefined && change.vip) {
       if (s.ip === change.vip) {
-        c.out.push(red('% address cannot equal interface IP address'));
+        c.out.push(red('% address cannot equal interface IP address'), tip('vipEqualsIp'));
         return;
       }
       if (s.ip && !sameSubnet(change.vip, s.ip, s.mask)) {
-        c.out.push(red(`% Warning: address is not within a subnet on this interface (${s.ip} ${maskToDotted(s.mask)})`));
+        c.out.push(red(`% Warning: address is not within a subnet on this interface (${s.ip} ${maskToDotted(s.mask)})`), tip('vipSubnet'));
         return;
       }
     }

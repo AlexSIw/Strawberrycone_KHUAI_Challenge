@@ -1,9 +1,10 @@
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
-import { requestHintText } from '../ai/client';
+import { requestHintText, requestMissionText } from '../ai/client';
+import { missionCards } from '../content/cards';
 import { CONCEPTS } from '../content/concepts';
 import { getStage } from '../content/stages';
-import type { DialogueLine, InteractionKind, NocTab, SpotId } from '../content/types';
+import type { DialogueLine, InteractionKind, NocTab, Objective, SpotId, StageDef } from '../content/types';
 import { alarmLine } from '../sim/alarms';
 import { osOf } from '../sim/commands';
 import {
@@ -20,6 +21,7 @@ import {
   scoreRun,
   startStage,
   tickRun,
+  visibleObjectives,
   type Score,
   type StageRun,
 } from '../sim/engine';
@@ -27,6 +29,7 @@ import { USER_MODE } from '../sim/ios';
 import { newSeed } from '../sim/scheduler';
 import { LAST_DAY, type IosMode, type StageId, type World } from '../sim/types';
 import { sourceName, unsavedGear } from '../ui/noc/facility';
+import { objectiveStatus, termGuided } from '../ui/objectiveStatus';
 
 // ---------- types ----------
 
@@ -69,13 +72,33 @@ export interface HintMessage {
   source?: 'ai' | 'canned' | 'solution';
 }
 
+/** Key of the radio's mission thread in `hints` (the others are incident ids). */
+export const MISSION_THREAD = 'mission';
+/** What the player says when they press "다음 단계 알려줘" (it goes in the thread like a typed question). */
+export const MISSION_NEXT_ASK = '다음엔 뭘 하면 돼요?';
+
 export interface ConceptPopup {
+  /** The card (a preview: the first card it previews, '' when it previews none) */
   concept: string;
   lesson: string;
-  /** Scenario id, or "objective:<id>" for cards from objectives */
+  /**
+   * Scenario id, or "objective:<id>" for cards from objectives ("objective:<id>:<card>" for its alsoConcepts,
+   * "objective:<id>#preview" for its 미션 브리핑). Only incident cards (no "objective:" prefix) ring the jingle.
+   */
   scenarioId: string;
   /** The card was already in the collection (an earlier run, or earlier today): shown as a review, not as new */
   review?: boolean;
+  /**
+   * Unset: an incident's card. 'recap': a mission's card on completion ('✅ 배운 것 정리', awarded).
+   * 'preview': the 미션 브리핑 when a mission first appears (its why and the cards to read first; nothing awarded).
+   */
+  kind?: 'recap' | 'preview';
+  /** recap / preview: the mission's text */
+  mission?: string;
+  /** preview: the mission's `why` */
+  why?: string;
+  /** preview: the cards shown under '먼저 알고 가기' (the mission's cards, minus any incident's) */
+  cards?: string[];
 }
 
 export interface SaveData {
@@ -139,10 +162,22 @@ export interface GameState {
   /** 1x → 1.5x → 2x → 1x */
   cycleMoveSpeed(): void;
   dialogue: { lines: DialogueLine[]; index: number; then: 'play' | 'results' } | null;
+  /**
+   * The "지금까지" screen of a day started cold (some earlier day not cleared on this save: a calendar jump,
+   * D-Day 바로 체험): the day it is for, or null. It is part of the briefing: while it is open, `dialogue` is an
+   * empty briefing (so the game is paused and the map, hotkeys and windows wait), and dismissRecap (Enter,
+   * Space, 계속, or nextDialogue) closes it and starts the day's briefing.
+   */
+  recap: StageId | null;
+  dismissRecap(): void;
+  /** Objectives of this run already met: previewed (미션 브리핑), or first seen in the terminal, whose side box explains them */
+  previewed: string[];
+  /** Cards on screen, first one shown: incident cards, missions' recaps and 미션 브리핑 previews */
   concepts: ConceptPopup[];
   /**
-   * Cards earned while a terminal window is open. A card would take the keyboard in the middle of a
-   * command, so they wait here and pop up once no terminal is the open window.
+   * Cards earned while the player is busy: in a working window (a terminal, the NOC, a mini-game, a board, the
+   * radio: see holdsCards), or while an incident is going on. A card would cover what the player is looking at
+   * or typing, so they wait here and pop up once no such window is open and no incident is going on.
    */
   heldConcepts: ConceptPopup[];
   /**
@@ -177,7 +212,8 @@ export interface GameState {
   // navigation
   goTitle(): void;
   goSelect(): void;
-  play(stage: StageId): void;
+  /** Starts a day. `recap` forces the "지금까지" screen on or off (default: on for a cold start, see GameState.recap). */
+  play(stage: StageId, opts?: { recap?: boolean }): void;
   /** Start over: a fresh save seed (new surprises), progress kept */
   newGame(): void;
   /** 이어하기: the furthest day reached (save.unlocked, at most D-Day) */
@@ -218,6 +254,11 @@ export interface GameState {
   dismissConcept(): void;
   dismissToast(id: number): void;
   askHint(scenarioId: string, question?: string): Promise<void>;
+  /**
+   * The radio's mission mode: a question about the mission being built or a term on screen (no question:
+   * "what's next?"). Free, no hint ladder. The thread is hints[MISSION_THREAD].
+   */
+  askMission(question?: string): Promise<void>;
   reveal(scenarioId: string): void;
   /** NOC: acknowledge an alarm (MTTD stops here) */
   ackAlarm(alarmId: string): void;
@@ -327,6 +368,22 @@ function openEvent(m: Modal): string {
 
 const FIXING_MODALS: Modal['type'][] = ['terminal', 'rack', 'cable', 'power', 'repair', 'board'];
 
+/**
+ * Windows the player works in. Cards earned there (and new missions' 미션 브리핑) wait until the window is
+ * closed, so they never cover what a mission just asked to look at (the NOC's port table, the FMS), a
+ * mini-game's 완료 line, or the line being typed.
+ */
+const HOLDING_MODALS: Modal['type'][] = ['terminal', 'noc', 'dashboard', 'rack', 'cable', 'power', 'board', 'hint'];
+
+/** Does this open window hold cards and briefings back? */
+export const holdsCards = (m: Modal | null) => !!m && HOLDING_MODALS.includes(m.type);
+
+/**
+ * Is a serious incident (Critical / Major) going on? Cards earned meanwhile wait until it is fixed: five cards
+ * bursting over the NOC would come between the player and the outage. A Minor / Warning one doesn't hold them.
+ */
+export const cardsWaitForIncident = (run: StageRun) => activeScenarios(run).some((a) => a.def.severity === 'critical' || a.def.severity === 'major');
+
 const isFixing = (m: Modal | null) => !!m && FIXING_MODALS.includes(m.type);
 
 /**
@@ -371,12 +428,54 @@ function sessionFor(s: GameState, m: Modal): Partial<GameState> {
   return { terminals: { ...others, [s.terminalOrigin]: s.terminal }, terminal: session ?? freshSession(m.host, s.run?.world), terminalOrigin: m.host };
 }
 
+/**
+ * Cards of this run's incidents that aren't solved yet (planned, going on, or a mistake that may still happen).
+ * Nothing shows them ahead (미션 브리핑, the 도감): an incident stays a puzzle until it is solved.
+ */
+export function incidentSpoilers(run: StageRun): Set<string> {
+  const def = getStage(run.stage);
+  return new Set(run.scenarios.filter((r) => r.state !== 'resolved').map((r) => scenarioOf(def, r.id).concept));
+}
+
+/**
+ * The 미션 브리핑 for a mission that just appeared: its text, its `why`, and its cards to read first (concept +
+ * alsoConcepts, without any card of an incident not solved yet). Null when there is nothing to explain.
+ */
+export function missionPreview(run: StageRun, o: Objective): ConceptPopup | null {
+  const spoilers = incidentSpoilers(run);
+  const cards = missionCards(o).filter((c) => c in CONCEPTS && !spoilers.has(c));
+  if (!o.why && !cards.length) return null;
+  return { kind: 'preview', concept: cards[0] ?? '', lesson: '', scenarioId: `objective:${o.id}#preview`, mission: o.text, why: o.why, cards };
+}
+
+/** A mission's cards on completion, framed as its '배운 것 정리': the first one carries the lesson. */
+function missionRecaps(o: Objective): ConceptPopup[] {
+  return missionCards(o).map((concept, i) => ({
+    kind: 'recap' as const,
+    concept,
+    mission: o.text,
+    lesson: i === 0 ? (o.lesson ?? CONCEPTS[concept]?.definition ?? '') : '',
+    scenarioId: i === 0 ? `objective:${o.id}` : `objective:${o.id}:${concept}`,
+  }));
+}
+
+/** The briefing of a day whose "지금까지" screen is open: empty, so nothing shows, but the game waits as in a briefing. */
+const RECAP_BRIEFING = { lines: [] as DialogueLine[], index: 0, then: 'play' as const };
+
+const intro = (def: StageDef) => ({ lines: def.intro, index: 0, then: 'play' as const });
+
 // ---------- store ----------
 
 export const gameStore = createStore<GameState>()((set, get) => {
   const toast = (kind: Toast['kind'], text: string, scenarioId?: string, source?: Toast['source']) => {
     const t: Toast = { id: ++toastSeq, kind, text, scenarioId, ...(source ? { source } : {}) };
     set((s) => ({ toasts: [...s.toasts.slice(-(MAX_TOASTS - 1)), t] }));
+  };
+
+  /** Cards wait: a working window is open, or a serious incident is going on (they'd burst over the investigation). */
+  const holdingCards = () => {
+    const s = get();
+    return holdsCards(s.modal) || (!!s.run && cardsWaitForIncident(s.run));
   };
 
   const awardCards = (popups: ConceptPopup[]) => {
@@ -390,18 +489,48 @@ export const gameStore = createStore<GameState>()((set, get) => {
     });
     const save = { ...get().save, cards: [...owned] };
     writeSave(save);
-    // Never in the middle of a command: cards earned with a terminal open wait until it is closed.
-    if (get().modal?.type === 'terminal') set((st) => ({ heldConcepts: [...st.heldConcepts, ...cards], save }));
-    else set((st) => ({ concepts: [...st.concepts, ...cards], save }));
+    if (holdingCards()) set((st) => ({ heldConcepts: [...st.heldConcepts, ...cards], save }));
+    else set((st) => ({ concepts: [...st.concepts, ...st.heldConcepts, ...cards], heldConcepts: [], save }));
   };
 
-  /** Cards held back while a terminal was open come up once it isn't the open window any more. */
+  /** Cards held back come up once no working window is open and no incident is going on. */
   const releaseCards = () => {
     const s = get();
-    if (!s.heldConcepts.length || s.modal?.type === 'terminal') return;
+    if (!s.heldConcepts.length || holdingCards()) return;
     set({ concepts: [...s.concepts, ...s.heldConcepts], heldConcepts: [] });
   };
 
+  /**
+   * Missions that just appeared get their 미션 브리핑 (explain before doing), once per run. Not over a working
+   * window (holdsCards): the briefing waits until it is closed. Over a terminal the side box explains the
+   * mission to do now inline (termGuided), so that one counts as met; any other waits for the terminal to close.
+   */
+  const previewMissions = (run: StageRun) => {
+    const s = get();
+    if (s.screen !== 'playing' || s.dayDone) return;
+    const seen = new Set(s.previewed);
+    let fresh = visibleObjectives(getStage(run.stage), run).filter((o) => !seen.has(o.id));
+    if (s.modal?.type === 'terminal') {
+      const inBox = termGuided(objectiveStatus(getStage(run.stage), run));
+      fresh = fresh.filter((o) => o === inBox || o.id in run.objectivesDone);
+      if (fresh.length) set((st) => ({ previewed: [...st.previewed, ...fresh.map((o) => o.id)] }));
+      return;
+    }
+    if (holdsCards(s.modal)) {
+      // Done before its briefing could show: nothing left to brief.
+      const done = fresh.filter((o) => o.id in run.objectivesDone);
+      if (done.length) set((st) => ({ previewed: [...st.previewed, ...done.map((o) => o.id)] }));
+      return;
+    }
+    if (!fresh.length) return;
+    const popups = fresh.flatMap((o) => {
+      const p = o.id in run.objectivesDone ? null : missionPreview(run, o);
+      return p ? [p] : [];
+    });
+    set((st) => ({ previewed: [...st.previewed, ...fresh.map((o) => o.id)], concepts: [...st.concepts, ...popups] }));
+  };
+
+  /** After every change: missions done get their toast and card(s) (배운 것 정리), missions now shown their 브리핑. */
   const objectiveToasts = (run: StageRun, ids: string[]) => {
     const def = getStage(run.stage);
     const popups: ConceptPopup[] = [];
@@ -409,9 +538,10 @@ export const gameStore = createStore<GameState>()((set, get) => {
       const o = def.objectives.find((x) => x.id === id);
       if (!o) continue;
       toast('objective', `✅ ${o.text}`);
-      if (o.concept) popups.push({ concept: o.concept, lesson: o.lesson ?? CONCEPTS[o.concept]?.definition ?? '', scenarioId: `objective:${id}` });
+      popups.push(...missionRecaps(o));
     }
     awardCards(popups);
+    previewMissions(run);
   };
 
   /**
@@ -478,6 +608,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
       set({ moveSpeed });
     },
     dialogue: null,
+    recap: null,
+    previewed: [],
     concepts: [],
     heldConcepts: [],
     dayDone: false,
@@ -495,8 +627,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     paused: false,
     setPaused: (paused) => set({ paused }),
 
-    goTitle: () => set({ screen: 'title', run: null, ...NO_WINDOWS, dialogue: null, toasts: [], heldConcepts: [], dayDone: false }),
-    goSelect: () => set({ screen: 'select', run: null, ...NO_WINDOWS, dialogue: null, toasts: [], heldConcepts: [], dayDone: false }),
+    goTitle: () => set({ screen: 'title', run: null, ...NO_WINDOWS, dialogue: null, recap: null, toasts: [], heldConcepts: [], dayDone: false }),
+    goSelect: () => set({ screen: 'select', run: null, ...NO_WINDOWS, dialogue: null, recap: null, toasts: [], heldConcepts: [], dayDone: false }),
     newGame: () => {
       const save = { ...get().save, seed: newSeed() };
       writeSave(save);
@@ -505,8 +637,13 @@ export const gameStore = createStore<GameState>()((set, get) => {
     },
     continueGame: () => get().play(Math.max(0, Math.min(LAST_DAY, get().save.unlocked)) as StageId),
 
-    play: (stage) => {
+    play: (stage, opts = {}) => {
       const def = getStage(stage);
+      const s = get();
+      // Started with some earlier day not cleared on this save (calendar jump, D-Day 바로 체험): "지금까지" first.
+      // A retry of the same day doesn't show it again.
+      const skipped = Array.from({ length: stage }, (_, d) => d).some((d) => !s.save.best[d]);
+      const cold = opts.recap ?? (stage > 0 && skipped && s.run?.stage !== stage);
       set({
         screen: 'playing',
         run: startStage(stage, get().save.seed),
@@ -526,8 +663,17 @@ export const gameStore = createStore<GameState>()((set, get) => {
         lastScore: null,
         lastPrevBest: null,
         paused: false,
-        dialogue: { lines: def.intro, index: 0, then: 'play' },
+        previewed: [],
+        recap: cold ? stage : null,
+        dialogue: cold ? RECAP_BRIEFING : intro(def),
       });
+    },
+
+    dismissRecap: () => {
+      const s = get();
+      if (s.recap === null) return;
+      // The briefing starts now (the empty one held the game while "지금까지" was open).
+      set({ recap: null, dialogue: s.run ? intro(getStage(s.run.stage)) : null });
     },
 
     finishResults: (next) => {
@@ -543,7 +689,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
 
     isPaused: () => {
       const s = get();
-      return s.screen !== 'playing' || s.paused || !!s.dialogue || s.concepts.length > 0;
+      return s.screen !== 'playing' || s.paused || !!s.dialogue || s.recap !== null || s.concepts.length > 0;
     },
 
     tick: () => {
@@ -575,6 +721,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
         }),
       );
       objectiveToasts(run, completed);
+      // The last incident just got fixed: what waited for it comes up (unless a working window is open).
+      if (resolved.length) releaseCards();
       afterChange(run);
     },
 
@@ -660,12 +808,16 @@ export const gameStore = createStore<GameState>()((set, get) => {
         // Today's work was done with this window open: the last one closed, so the day ends now.
         const run = get().run;
         if (run && get().dayDone) afterChange(run);
+        // Missions that showed up in the terminal, other than the one its side box explained, are briefed now.
+        else if (run) previewMissions(run);
         return;
       }
       // The terminal underneath gets its own place's session back (it is still the active one unless
       // another place's terminal was opened on top meanwhile).
       set({ modal: back, modalStack: s.modalStack.slice(0, -1), fixing: isFixing(back), ...sessionFor(s, back) });
       releaseCards();
+      const run = get().run;
+      if (run) previewMissions(run);
     },
 
     leaveWork: () => {
@@ -675,6 +827,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     },
 
     nextDialogue: () => {
+      // "지금까지" is the first page of the briefing: going on closes it and starts the day's lines.
+      if (get().recap !== null) return get().dismissRecap();
       const d = get().dialogue;
       if (!d) return;
       if (d.index + 1 < d.lines.length) return set({ dialogue: { ...d, index: d.index + 1 } });
@@ -682,7 +836,11 @@ export const gameStore = createStore<GameState>()((set, get) => {
       if (d.then === 'results') set({ screen: 'results' });
       else {
         const run = get().run;
-        if (run) afterChange(run);
+        // The day starts: its first missions are on the list now, each with its 미션 브리핑.
+        if (run) {
+          previewMissions(run);
+          afterChange(run);
+        }
       }
     },
 
@@ -713,6 +871,26 @@ export const gameStore = createStore<GameState>()((set, get) => {
       if (cur.stageEpoch !== s.stageEpoch) return;
       const updated = [...(cur.hints[scenarioId] ?? thread), { from: 'mentor' as const, text: reply.text, level, source: reply.source }];
       set({ hintPending: false, hints: { ...cur.hints, [scenarioId]: updated } });
+    },
+
+    askMission: async (question) => {
+      const s = get();
+      if (!s.run || s.hintPending) return;
+      const thread = [...(s.hints[MISSION_THREAD] ?? []), { from: 'player' as const, text: question || MISSION_NEXT_ASK }];
+      set({ hintPending: true, hints: { ...s.hints, [MISSION_THREAD]: thread } });
+      const term = get().terminal;
+      const reply = await requestMissionText({
+        run: s.run,
+        question,
+        history: thread,
+        host: term.host,
+        iosMode: term.mode?.level ?? null,
+      });
+      const cur = get();
+      // The stage was started again while the answer was on its way: it belongs to the old run.
+      if (cur.stageEpoch !== s.stageEpoch) return;
+      const updated = [...(cur.hints[MISSION_THREAD] ?? thread), { from: 'mentor' as const, text: reply.text, source: reply.source }];
+      set({ hintPending: false, hints: { ...cur.hints, [MISSION_THREAD]: updated } });
     },
 
     reveal: (scenarioId) => {

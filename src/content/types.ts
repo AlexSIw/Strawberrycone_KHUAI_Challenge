@@ -29,6 +29,32 @@ export interface Objective {
   spot?: SpotId;
   /** Short progress suffix shown after the text, e.g. "2/5" */
   progress?: (w: World, ctx: PlayContext) => string;
+  /**
+   * Explain-before-do: shown the moment this objective first appears, before the player acts. In 1–3 short,
+   * plain Korean sentences: what the new thing IS and what ROLE it plays in this data center today.
+   * The objective's concept card (and alsoConcepts) is previewed with it; completing the objective still
+   * awards the card(s), with `lesson` as the "what just happened" recap.
+   */
+  why?: string;
+  /** More concept cards awarded with this objective (so no card depends on a random extra incident) */
+  alsoConcepts?: string[];
+  /**
+   * First-time guide for a procedure the player has never done: the steps in order, each ticked off by
+   * world state or events as the player really does it. Shown in the terminal side box and the mission panel.
+   * Give it only the first time a procedure appears; repeats get the goal alone (the guide fades).
+   */
+  steps?: GuideStep[];
+}
+
+/** One step of a first-time guide. */
+export interface GuideStep {
+  /** What to do, in plain Korean ("설정 모드로 들어가기") */
+  text: string;
+  /** What to type, verbatim, when it's a command ("configure terminal") */
+  cmd?: string;
+  /** Why this step, in one short line ("설정을 바꾸려면 설정 모드여야 해요") */
+  why?: string;
+  done: (w: World, ctx: PlayContext) => boolean;
 }
 
 /** What pressing E on an interactable opens in this stage. */
@@ -111,6 +137,14 @@ export interface StageDef {
   survive?: number;
   /** Rooms shown on the map (others are dim) */
   rooms?: RoomId[];
+  /**
+   * "지금까지" recap, shown when this day is started without the day before cleared on this save
+   * (calendar jump, D-Day 바로 체험): what earlier days built (plain Korean bullets) and the concept cards
+   * they would have taught (readable from the recap).
+   */
+  recap?: { built: string[]; concepts: string[] };
+  /** Before the briefing on a cold start (D-Day): the tools you'll need today and the role each plays */
+  primer?: { tool: string; role: string }[];
   /** Called every tick before incidents (traffic curves, e.g. D-Day's open spike) */
   onTick?: (w: World, t: number) => void;
   /**

@@ -126,3 +126,56 @@
 @media (prefers-reduced-motion: reduce) {
   .ccard, .ccard-shine, .ccard-banner { animation: none; }
 }
+
+/* ✅ 배운 것 정리 (a mission's card on completion) */
+.ccard-done { margin: -4px 0 0; font-size: 13px; color: var(--muted); text-align: center; word-break: keep-all; }
+.ccard-done strong { color: var(--text); font-weight: 500; }
+.ccard-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.ccard-badge.new { color: #2a1410; background: var(--tan); border-color: var(--tan); }
+
+/* 🧭 미션 브리핑 (a mission just appeared: read first, then do) */
+.ccard-wrap-brief { width: min(480px, 100%); }
+.ccard-brief { padding: 16px; box-shadow: 0 0 0 4px var(--outline), 0 0 0 7px var(--navy), 0 14px 0 rgba(0, 0, 0, 0.45); }
+.ccard-brief-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.ccard-brief-tag {
+  font-family: var(--pixel);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--navy);
+  border: 2px solid #3a4d8f;
+}
+.ccard-brief-mission { margin: 0; font-family: var(--pixel); font-weight: 400; font-size: 19px; line-height: 1.4; word-break: keep-all; }
+.ccard-why {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.7;
+  word-break: keep-all;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(106, 183, 255, 0.08);
+  border-left: 3px solid var(--blue);
+}
+.ccard-ahead { margin-top: 14px; }
+.ccard-ahead h3 { margin: 0 0 8px; font-family: var(--pixel); font-weight: 400; font-size: 13px; color: var(--tan); }
+.ccard-ahead ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ccard-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #15121a;
+  border: 1px dashed rgba(233, 183, 124, 0.55);
+}
+.ccard-mini strong { font-family: var(--pixel); font-weight: 400; font-size: 15px; }
+.ccard-mini-analogy { font-size: 13px; color: var(--tan); word-break: keep-all; }
+.ccard-mini-def { font-size: 13.5px; line-height: 1.6; word-break: keep-all; }

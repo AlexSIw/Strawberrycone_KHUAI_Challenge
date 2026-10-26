@@ -25,6 +25,8 @@ export interface Ctx {
   mode: IosMode;
   a: Record<string, ArgVal>;
   out: string[];
+  /** Dim Korean lines printed after `out` (left out when a show is filtered with `| include …`) */
+  gloss: string[];
   /** Mode after the line; starts equal to `mode` */
   next: IosMode | null;
   events: string[];

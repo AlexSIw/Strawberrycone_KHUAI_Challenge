@@ -33,12 +33,13 @@ async function exposeStore(page: Page) {
   });
 }
 
-/** Starts a day and skips its briefing, like a player clicking through. */
+/** Starts a day and skips its briefing (and the first missions' 미션 브리핑), like a player clicking through. */
 async function play(page: Page, day: number) {
   await page.evaluate((n) => {
     const store = (window as unknown as Win).__store;
     store.getState().play(n as 0);
     for (let i = 0; i < 50 && store.getState().dialogue; i++) store.getState().nextDialogue();
+    for (let i = 0; i < 20 && store.getState().concepts.length; i++) store.getState().dismissConcept();
   }, day);
 }
 
@@ -416,10 +417,15 @@ test('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로'
   await expect(title(page)).toHaveText(/퀴즈/);
   await explained();
 
-  // 알겠어요! closes it and completes the mission: its card comes up, 계속하기 takes it, the next mission (the rack) is up.
+  // 알겠어요! closes it and completes the mission: its card comes up, 계속하기 takes it, the next mission (the rack)
+  // is up with its 미션 브리핑.
   await page.getByRole('button', { name: '알겠어요!' }).click();
   await expect(page.locator('.modal-backdrop')).toHaveCount(0);
+  await expect(page.locator('.ccard-banner')).toHaveText(/배운 것 정리/);
   await page.getByRole('button', { name: /계속하기/ }).click();
+  await expect(page.locator('.ccard-banner')).toHaveText(/미션 브리핑/);
+  await expect(page.locator('.ccard-brief-mission')).toContainText('1번 랙에 서버 3대 장착하기');
+  await page.getByRole('button', { name: /알겠어요, 시작/ }).click();
   await expect(page.locator('.ccard-backdrop')).toHaveCount(0);
   expect(await page.evaluate(() => 'quiz' in ((window as unknown as Win).__store.getState().run?.objectivesDone ?? {}))).toBe(true);
   await expect(page.locator('.obj-panel')).toContainText('1번 랙에 서버 3대 장착하기');

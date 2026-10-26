@@ -161,3 +161,25 @@
   .hud-buttons { gap: 3px; }
   .hud-btn { padding: 4px 5px; }
 }
+
+/* Cards / briefings waiting for the open window to close (or the incident to end): a quiet note under the HUD. */
+.hud-held {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 32;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+  max-width: min(520px, calc(100% - 32px));
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 13px;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}

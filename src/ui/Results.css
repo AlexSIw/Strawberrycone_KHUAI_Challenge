@@ -143,3 +143,6 @@
 @media (prefers-reduced-motion: reduce) {
   .res-star.on, .res-mini, .res-card, .res-best.new { animation: none; }
 }
+
+/* What cost points today (탐지 −5 · 복구 −7), right under the score. */
+.res-breakdown { margin: -4px 0 10px; text-align: center; font-size: 13px; color: var(--muted); }

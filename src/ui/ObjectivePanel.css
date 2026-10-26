@@ -65,6 +65,7 @@
 
 .obj-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .obj-item { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.45; }
+.obj-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .obj-check {
   flex-shrink: 0;
   width: 18px;
@@ -102,6 +103,71 @@
 @keyframes obj-nudge {
   50% { box-shadow: 0 0 0 3px rgba(233, 183, 124, 0.3); }
 }
+
+/* ----- The current objective's guide (also in the terminal's side box): why, then the first-time steps ----- */
+.og { display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--text); }
+.og-why-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--blue);
+  cursor: pointer;
+  text-align: left;
+}
+.og-why-btn:hover, .og-why-btn:focus-visible { text-decoration: underline; outline: none; }
+.og-caret { color: var(--muted); }
+.og-why-text {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--blue);
+  border-radius: 0 6px 6px 0;
+  background: rgba(106, 183, 255, 0.1);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.og-guide {
+  padding: 6px 8px;
+  border: 1px solid rgba(233, 183, 124, 0.45);
+  border-radius: 6px;
+  background: rgba(233, 183, 124, 0.06);
+}
+.og-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--muted); }
+.og-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--tan);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.og-more:hover, .og-more:focus-visible { text-decoration: underline; outline: none; }
+.og-steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+/* (specific enough to beat the terminal side box's own `li` rules) */
+.og .og-steps > .og-step { display: flex; gap: 6px; align-items: flex-start; justify-content: flex-start; font-size: 13px; line-height: 1.5; }
+.og-mark { flex-shrink: 0; width: 14px; text-align: center; font-size: 12px; }
+.og-steps li.done { color: var(--muted); }
+.og-steps li.done .og-mark { color: var(--green); }
+.og-steps li.done .og-text { text-decoration: line-through; text-decoration-color: rgba(244, 236, 228, 0.4); }
+.og-steps li.todo { color: var(--muted); }
+.og-steps li.todo .og-mark::before { content: '·'; }
+.og-steps li.next .og-mark { color: var(--tan); }
+.og-steps li.next .og-text { color: var(--tan); }
+.og-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.og-cmd {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #100d13;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--tan);
+  overflow-wrap: anywhere;
+}
+.og-step-why { font-size: 12px; color: var(--muted); line-height: 1.4; }
 
 .obj-alarm {
   width: 100%;

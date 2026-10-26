@@ -2,6 +2,7 @@
 import { getStage } from '../../content/stages';
 import { physicalPorts, portLed, stpBlocked, type LedState } from '../../game/worldView';
 import { syslogStamp } from '../../sim/clock';
+import { syslogGloss } from '../../sim/ios/gloss';
 import type { StageRun } from '../../sim/engine';
 import { cableAt, cablePeer, logicalLinks, operState, powered, utilization } from '../../sim/network';
 import type { Iface, IfOper } from '../../sim/types';
@@ -171,18 +172,31 @@ export function DevicePane({ run, id }: { run: StageRun; id: string }) {
           </tbody>
         </table>
       </div>
+      <p className="muted nms-gloss">
+        VLAN / 모드 칸: VLAN 번호 = 그 포트가 속한 네트워크 · trunk = 스위치끼리 잇는 포트, 뒤 숫자의 VLAN들을 한 줄로 함께 실어 나름 · Po = 포트 묶음 ·
+        inactive = 아직 만들지 않은 VLAN에 넣음 · CRC = 깨진 채 도착한 데이터 수
+      </p>
 
       <h4 className="nms-sub">장비 로그 (syslog)</h4>
+      <p className="muted nms-gloss">
+        장비 일기장: 언제 무슨 일이 있었는지 적혀요. 한 줄 = 시각 · %기능-심각도-종류 · 내용 (심각도 0 가장 심각 ~ 7 참고) · 회색 줄이 그 뜻이에요.
+      </p>
       {logs.length === 0 ? (
         <p className="muted nms-empty">아직 기록된 로그가 없어요.</p>
       ) : (
         <pre className="nms-syslog">
-          {logs.map((e, i) => (
-            <span key={i} className={sevClass(e.tag)}>
-              {`${syslogStamp(def.clock, def.date, e.t)}: %${e.tag}: ${e.msg}`}
-              {'\n'}
-            </span>
-          ))}
+          {logs.map((e, i) => {
+            const gloss = syslogGloss(e.tag, e.msg);
+            return (
+              <span key={i}>
+                <span className={sevClass(e.tag)}>
+                  {`${syslogStamp(def.clock, def.date, e.t)}: %${e.tag}: ${e.msg}`}
+                  {'\n'}
+                </span>
+                {gloss && <span className="nms-syslog-gloss">{`  └ ${gloss}\n`}</span>}
+              </span>
+            );
+          })}
         </pre>
       )}
       {sshButton}

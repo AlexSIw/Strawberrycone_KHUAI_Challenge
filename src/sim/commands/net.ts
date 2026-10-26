@@ -145,6 +145,7 @@ export const netCommands: Command[] = [
       stats(PINGS - lost.size);
       if (r.failure === 'conflict') lines.push(dim('(응답이 들쭉날쭉해요… 같은 주소를 쓰는 장비가 둘?)'));
       else if (lost.size) lines.push(dim('(신호 일부가 가는 길에 사라졌어요)'));
+      else lines.push(dim('(0% packet loss = 보낸 신호가 모두 돌아왔어요 · time = 갔다 오는 데 걸린 시간)'));
       return { lines, events: ev };
     },
   },
@@ -174,6 +175,7 @@ export const netCommands: Command[] = [
         for (let i = 1; i <= 3; i++) lines.push(red(` ${String(hops.length + i).padStart(2)}  * * *`));
         lines.push(dim(hops.length ? `(${label(w, hops[hops.length - 1])} 다음부터 대답이 없어요)` : '(첫 구간부터 대답이 없어요)'));
       }
+      lines.push(dim('(한 줄 = 가는 길에 거치는 장비(라우터) 하나 · ms 세 개 = 세 번 재 본 왕복 시간 · * * * = 대답 없음)'));
       return { lines, events: [`trace:${target}:${r.ok ? 'ok' : r.failure}`] };
     },
   },
@@ -194,12 +196,12 @@ export const netCommands: Command[] = [
       const dns = w.net!.dns;
       if (isIp(name)) {
         const hit = Object.entries(dns).find(([, ip]) => ip === name);
-        if (!hit) return { lines: [...lines, red(`** server can't find ${name.split('.').reverse().join('.')}.in-addr.arpa: NXDOMAIN`)], events };
-        return { lines: [...lines, `${name.split('.').reverse().join('.')}.in-addr.arpa\tname = ${hit[0]}.`], events };
+        if (!hit) return { lines: [...lines, red(`** server can't find ${name.split('.').reverse().join('.')}.in-addr.arpa: NXDOMAIN`), dim('(DNS 장부에 그 주소의 이름이 없어요)')], events };
+        return { lines: [...lines, `${name.split('.').reverse().join('.')}.in-addr.arpa\tname = ${hit[0]}.`, dim('(거꾸로 찾기: name = 그 IP 주소로 등록된 이름)')], events };
       }
       const key = Object.keys(dns).find((k) => k.toLowerCase() === name.toLowerCase());
       if (!key) return { lines: [...lines, red(`** server can't find ${name}: NXDOMAIN`), dim('(DNS 장부에 없는 이름이에요)')], events };
-      return { lines: [...lines, `Name:\t${key}`, `Address: ${dns[key]}`], events };
+      return { lines: [...lines, `Name:\t${key}`, `Address: ${dns[key]}`, dim('(위 Server = 물어본 DNS 서버, #53 은 DNS의 문 번호 · 아래 Name / Address 가 답: 그 이름의 IP 주소)')], events };
     },
   },
   {

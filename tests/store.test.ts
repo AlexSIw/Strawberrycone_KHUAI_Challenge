@@ -15,12 +15,14 @@ const storage = vi.hoisted(() => {
   return data;
 });
 
-import { createCueTracker, crossfade, FADES, JINGLE_AFTER_COIN, musicFor, type CuePlay } from '../src/audio/logic';
+import { createCueTracker, crossfade, FADES, JINGLE_AFTER_COIN, jingleCue, musicFor, type CuePlay } from '../src/audio/logic';
+import { cardAccess, dayRecap, FIRST_STAGE, fixedIncidentCards, missionCards, stageCards } from '../src/content/cards';
+import { CONCEPTS } from '../src/content/concepts';
 import { getStage } from '../src/content/stages';
 import type { Objective } from '../src/content/types';
 import { initRuntime, type Scenario, type Trigger } from '../src/sim/scenario';
 import { LAST_DAY, type StageId } from '../src/sim/types';
-import { gameStore, nextMoveSpeed, pushWindow, SAVE_KEY, SPEED_KEY, windowKey, type Modal } from '../src/store/game';
+import { gameStore, incidentSpoilers, missionPreview, nextMoveSpeed, pushWindow, SAVE_KEY, SPEED_KEY, windowKey, type Modal } from '../src/store/game';
 
 const S = () => gameStore.getState();
 /** The open window and the ones waiting under it, top first, as window keys. */
@@ -58,10 +60,11 @@ function synth(id: string, over: Partial<Scenario> = {}): Scenario {
 }
 DAY.scenarios.push(synth('s-trap'), synth('s-poll', { severity: 'critical', alarm: { source: 'poll', device: 'TOR-01', text: '업링크 사용률 100%' } }));
 
-/** Starts a day with its briefing clicked through; on D-5 only `plan` happens. */
+/** Starts a day with its briefing (and the first missions' 미션 브리핑) clicked through; on D-5 only `plan` happens. */
 function play(stage: StageId, plan: { id: string; trigger: Trigger }[] = []) {
   S().play(stage);
   for (let i = 0; i < 50 && S().dialogue; i++) S().nextDialogue();
+  gameStore.setState({ concepts: S().concepts.filter((c) => c.kind !== 'preview') });
   if (stage === 0) gameStore.setState({ run: { ...S().run!, scenarios: initRuntime(plan) } });
 }
 const tickUntil = (until: () => boolean, max = 120) => {
@@ -247,10 +250,47 @@ describe('window stack', () => {
     expect(S().save.cards).toContain('datacenter');
     // The game keeps running meanwhile (a card on screen would pause it).
     expect(S().isPaused()).toBe(false);
-    // The radio on top of the terminal: the card comes up there.
+    // The radio on top of the terminal is a working window too: the card still waits…
     S().openModal({ type: 'hint' });
+    expect(S().concepts).toEqual([]);
+    S().closeModal();
+    expect(S().concepts).toEqual([]);
+    // …until no working window is open.
+    S().closeModal();
     expect(S().concepts.map((c) => c.concept)).toEqual(['datacenter']);
     expect(S().heldConcepts).toEqual([]);
+  });
+
+  it('cards earned while an incident is going on wait until it is fixed (they would burst over the investigation)', () => {
+    play(0, [{ id: 's-trap', trigger: { type: 'stageStart', delay: 1 } }]);
+    gameStore.setState({ save: { ...S().save, cards: [] } });
+    for (let i = 0; i < 5 && scState('s-trap') !== 'active'; i++) S().tick();
+    expect(scState('s-trap')).toBe('active');
+    S().event('t:b');
+    expect(S().concepts).toEqual([]);
+    expect(S().heldConcepts.map((c) => c.concept)).toEqual(['datacenter']);
+    // Opening the NOC to investigate doesn't let them out either.
+    S().openModal({ type: 'noc' });
+    S().closeModal();
+    expect(S().concepts).toEqual([]);
+    fixIt('s-trap');
+    for (let i = 0; i < 5 && scState('s-trap') !== 'resolved'; i++) S().tick();
+    expect(S().concepts.map((c) => c.concept)).toEqual(['datacenter', 'spof']);
+    expect(S().heldConcepts).toEqual([]);
+  });
+
+  it('cards and briefings wait while the NOC or a mini-game is open (they would cover what the mission asked to look at)', () => {
+    gameStore.setState({ save: { ...S().save, cards: [] } });
+    for (const m of [{ type: 'noc' }, { type: 'rack' }, { type: 'cable', mode: 'build' }] as const) {
+      play(0);
+      while (S().concepts.length) S().dismissConcept();
+      S().openModal(m);
+      S().event('t:b');
+      expect(S().concepts, m.type).toEqual([]);
+      expect(S().heldConcepts.map((c) => c.concept), m.type).toEqual(['datacenter']);
+      S().closeModal();
+      expect(S().concepts.map((c) => c.concept), m.type).toEqual(['datacenter']);
+    }
   });
 
   it('a card already in the collection comes back as a review', () => {
@@ -274,6 +314,217 @@ describe('window stack', () => {
     expect(pushWindow(hint, [term], { type: 'terminal', host: 'web' })).toEqual([term, hint]);
     expect(pushWindow({ type: 'consolePick', hosts: ['a'] }, [], term)).toEqual([]);
     expect(pushWindow({ type: 'consolePick', hosts: ['a'] }, [], hint)).toEqual([{ type: 'consolePick', hosts: ['a'] }]);
+  });
+});
+
+describe('explain before doing: 미션 브리핑, 배운 것 정리, 도감, 지금까지', () => {
+  // A made-up D-5 whose missions explain themselves: p-1 (why + two cards) → p-2 (one card), and p-inc whose
+  // only card is the made-up incident's ('spof').
+  const EXPLAINED: Objective[] = [
+    { id: 'p-1', text: '랙에 서버 달기', why: '서버는 랙에 층층이 끼워요.', done: (_w, c) => c.events.includes('p:1'), concept: 'rack', alsoConcepts: ['pdu', 'rack'], lesson: '서버 3대를 달았어요' },
+    { id: 'p-2', text: '전기 확인', after: ['p-1'], done: (_w, c) => c.events.includes('p:2'), concept: 'ups' },
+    { id: 'p-inc', text: '이중화 확인', after: ['p-2'], done: (_w, c) => c.events.includes('p:inc'), concept: 'spof' },
+  ];
+  const kinds = () => S().concepts.map((c) => `${c.kind ?? 'card'}:${c.kind === 'preview' ? c.scenarioId : c.concept}`);
+  /** Starts D-5 with `plan` in place before its briefing ends (the briefing's end is when the first missions show). */
+  const start = (plan: { id: string; trigger: Trigger }[] = []) => {
+    S().play(0);
+    gameStore.setState({ run: { ...S().run!, scenarios: initRuntime(plan) } });
+    for (let i = 0; i < 50 && S().dialogue; i++) S().nextDialogue();
+  };
+
+  beforeEach(() => {
+    Object.assign(DAY, { objectives: EXPLAINED });
+    gameStore.setState({ save: { unlocked: 0, seed: 9, best: {}, cards: [] } });
+  });
+  afterEach(() => Object.assign(DAY, { objectives: MISSIONS }));
+
+  it('a mission gets its 미션 브리핑 once per run, after the briefing: text, why, and its cards to read first', () => {
+    start();
+    expect(S().concepts).toEqual([
+      { kind: 'preview', concept: 'rack', lesson: '', scenarioId: 'objective:p-1#preview', mission: '랙에 서버 달기', why: '서버는 랙에 층층이 끼워요.', cards: ['rack', 'pdu'] },
+    ]);
+    // It pauses the game like a card, gives nothing yet, and never rings the incident jingle.
+    expect(S().isPaused()).toBe(true);
+    expect(S().save.cards).toEqual([]);
+    expect(jingleCue({ screen: 'playing', dialogue: null, concepts: [] }, S())).toBeNull();
+    S().dismissConcept();
+    for (let i = 0; i < 3; i++) S().tick();
+    S().event('room:server');
+    expect(S().concepts).toEqual([]);
+    // Done: its cards (concept + alsoConcepts) as '배운 것 정리', then the next mission's briefing.
+    S().event('p:1');
+    expect(kinds()).toEqual(['recap:rack', 'recap:pdu', 'preview:objective:p-2#preview']);
+    expect(S().concepts[0]).toMatchObject({ mission: '랙에 서버 달기', lesson: '서버 3대를 달았어요', scenarioId: 'objective:p-1' });
+    expect(S().concepts[1]).toMatchObject({ lesson: '', scenarioId: 'objective:p-1:pdu' });
+    expect(S().save.cards).toEqual(['rack', 'pdu']);
+    expect(S().previewed).toEqual(['p-1', 'p-2']);
+    // A new run of the day briefs again.
+    start();
+    expect(kinds()).toEqual(['preview:objective:p-1#preview']);
+  });
+
+  it('never over an open terminal: the mission that appears there is explained in its side box instead', () => {
+    // p-2 explains itself (a why) and is the mission to do now: the terminal's side box shows it.
+    Object.assign(DAY, { objectives: [EXPLAINED[0], { ...EXPLAINED[1], why: '전기는 두 줄로 들어와요.' }, EXPLAINED[2]] });
+    start();
+    S().dismissConcept();
+    S().openModal({ type: 'terminal', host: 'ops' });
+    S().event('p:1');
+    expect(S().concepts).toEqual([]);
+    // The recaps wait for the terminal to close; p-2's briefing is never popped (the side box had it).
+    expect(S().heldConcepts.map((c) => c.concept)).toEqual(['rack', 'pdu']);
+    expect(S().previewed).toContain('p-2');
+    S().closeModal();
+    expect(kinds()).toEqual(['recap:rack', 'recap:pdu']);
+    // Over another working window (the radio) the recap and the next briefing wait too, until it closes.
+    for (let i = 0; i < 5; i++) S().dismissConcept();
+    S().openModal({ type: 'hint' });
+    S().event('p:2');
+    expect(kinds()).toEqual([]);
+    S().closeModal();
+    expect(kinds()).toEqual(['recap:ups', 'preview:objective:p-inc#preview']);
+  });
+
+  it('a mission the terminal side box does not explain is briefed once the terminal closes', () => {
+    // p-2 has no why or steps: the side box only lists it, so its card waits for its briefing, after the recaps.
+    start();
+    S().dismissConcept();
+    S().openModal({ type: 'terminal', host: 'ops' });
+    S().event('p:1');
+    expect(S().previewed).not.toContain('p-2');
+    S().event('noop');
+    expect(S().concepts).toEqual([]);
+    S().closeModal();
+    expect(kinds()).toEqual(['recap:rack', 'recap:pdu', 'preview:objective:p-2#preview']);
+    expect(S().previewed).toContain('p-2');
+  });
+
+  it("never previews an incident's card while that incident may still happen", () => {
+    // A mission with a why: its card that is the incident's ('spof') is left out until the incident is solved.
+    Object.assign(DAY, { objectives: [{ ...EXPLAINED[0], alsoConcepts: ['spof'] }, ...EXPLAINED.slice(1)] });
+    start([{ id: 's-trap', trigger: { type: 'stageStart', delay: 200 } }]);
+    expect(S().concepts[0].cards).toEqual(['rack']);
+    expect(incidentSpoilers(S().run!)).toEqual(new Set(['spof']));
+    S().dismissConcept();
+    // A mission whose only card is the incident's, and no why: no briefing at all.
+    S().event('p:1');
+    S().event('p:2');
+    expect(kinds()).toEqual(['recap:rack', 'recap:spof', 'preview:objective:p-2#preview', 'recap:ups']);
+    expect(S().previewed).toContain('p-inc');
+    // Solved, the incident's card is no secret any more.
+    const solved = { ...S().run!, scenarios: S().run!.scenarios.map((r) => ({ ...r, state: 'resolved' as const })) };
+    expect(incidentSpoilers(solved).size).toBe(0);
+    expect(missionPreview(solved, EXPLAINED[2])?.cards).toEqual(['spof']);
+  });
+
+  it("an incident's own card keeps the incident framing (no kind), a mission's is a recap", () => {
+    start([{ id: 's-trap', trigger: { type: 'stageStart', delay: 1 } }]);
+    S().dismissConcept();
+    for (let i = 0; i < 5 && scState('s-trap') !== 'active'; i++) S().tick();
+    fixIt('s-trap');
+    for (let i = 0; i < 5 && scState('s-trap') !== 'resolved'; i++) S().tick();
+    expect(S().concepts[0]).toEqual({ concept: 'spof', lesson: '테스트', scenarioId: 's-trap' });
+  });
+
+  it('"지금까지" opens a day started cold (the day before not cleared), before its briefing, and pauses the game', () => {
+    S().goSelect();
+    S().play(3);
+    expect(S().recap).toBe(3);
+    expect(S().dialogue).toMatchObject({ lines: [], then: 'play' });
+    expect(S().isPaused()).toBe(true);
+    const t = S().run!.ctx.stageTime;
+    S().tick();
+    expect(S().run!.ctx.stageTime).toBe(t);
+    // Enter / 계속 (or skipping the briefing) closes it, and the day's briefing starts.
+    S().dismissRecap();
+    expect(S().recap).toBeNull();
+    expect(S().dialogue).toMatchObject({ lines: getStage(3).intro, index: 0, then: 'play' });
+    // A retry of the same day doesn't show it again.
+    S().play(3);
+    expect(S().recap).toBeNull();
+    // From the calendar again it does; leaving closes it; nextDialogue goes through it.
+    S().goSelect();
+    S().play(LAST_DAY);
+    expect(S().recap).toBe(LAST_DAY);
+    S().nextDialogue();
+    expect(S().recap).toBeNull();
+    expect(S().dialogue?.lines).toBe(getStage(LAST_DAY).intro);
+    S().goSelect();
+    S().play(2);
+    S().goTitle();
+    expect(S().recap).toBeNull();
+  });
+
+  it('"지금까지" only on a cold start: never on D-5, not when every earlier day is cleared, and the calendar can skip it', () => {
+    S().goSelect();
+    S().play(0);
+    expect(S().recap).toBeNull();
+    // The day before cleared, but an earlier one skipped: still a recap.
+    gameStore.setState({ save: { ...S().save, best: { 2: { stars: 2, points: 70 } } } });
+    S().goSelect();
+    S().play(3);
+    expect(S().recap).toBe(3);
+    const done = { stars: 2 as const, points: 70 };
+    gameStore.setState({ save: { ...S().save, best: { 0: done, 1: done, 2: done } } });
+    S().goSelect();
+    S().play(3);
+    expect(S().recap).toBeNull();
+    expect(S().dialogue?.lines).toBe(getStage(3).intro);
+    S().goSelect();
+    S().play(4, { recap: false });
+    expect(S().recap).toBeNull();
+    // Finishing a day and going on to the next: never cold.
+    S().goSelect();
+    S().play(4);
+    expect(S().recap).toBe(4);
+  });
+
+  it('every day after D-5 has something to recap (its own, or what the days before were about)', () => {
+    for (let d = 1; d <= LAST_DAY; d++) {
+      const r = dayRecap(d as StageId);
+      expect(r.built.length, `D${d}`).toBeGreaterThan(0);
+      expect(r.concepts.length, `D${d}`).toBeGreaterThan(0);
+      expect(r.concepts.every((c) => c in CONCEPTS)).toBe(true);
+    }
+  });
+
+  it('a mission awards its concept and alsoConcepts, without duplicates', () => {
+    expect(missionCards(EXPLAINED[0])).toEqual(['rack', 'pdu']);
+    expect(missionCards({ alsoConcepts: ['dns'] })).toEqual(['dns']);
+    expect(missionCards({})).toEqual([]);
+    // And they count for the day the card is first met.
+    expect(stageCards(0)).toEqual(expect.arrayContaining(['rack', 'pdu', 'ups', 'spof']));
+  });
+
+  it('도감: earned cards, cards whose day has come (readable ahead), later days and pending incidents locked', () => {
+    const none = new Set<string>();
+    // Owned is owned, on any day.
+    expect(cardAccess('triage', 0, new Set(['triage']))).toBe('owned');
+    // A card is met on its first day or later; never before.
+    for (const [id, first] of Object.entries(FIRST_STAGE)) {
+      if (first > 0) expect(cardAccess(id, first - 1, none), id).toBe('locked');
+      if (first < LAST_DAY) expect(cardAccess(id, first + 1, none), id).toBe('ahead');
+    }
+    // On its first day: a mission's card reads ahead, an incident's only card stays a secret.
+    const missionCard = getStage(1).objectives.flatMap(missionCards).find((c) => FIRST_STAGE[c] === 1);
+    expect(missionCard).toBeDefined();
+    if (!missionCard) return;
+    expect(cardAccess(missionCard, 1, none)).toBe('ahead');
+    expect(cardAccess(missionCard, 1, none, new Set([missionCard]))).toBe('locked');
+    const incidentOnly = Object.keys(FIRST_STAGE).find((id) => FIRST_STAGE[id] === LAST_DAY && !getStage(LAST_DAY).objectives.some((o) => missionCards(o).includes(id)));
+    if (incidentOnly) expect(cardAccess(incidentOnly, LAST_DAY, none)).toBe('locked');
+    // The calendar keeps a day's always-on incident cards secret too.
+    for (const d of [0, 1, 2, 3, 4, 5] as StageId[]) for (const c of fixedIncidentCards(d)) expect(FIRST_STAGE[c]).toBeLessThanOrEqual(d);
+  });
+
+  it("an extra that can't be drawn that day (extras [0, 0]) doesn't count as meeting its card there", () => {
+    for (const st of [0, 1, 2, 3, 4, 5] as StageId[]) {
+      const def = getStage(st);
+      if (def.extras[1] > 0) continue;
+      const allowed = new Set([...def.objectives.flatMap(missionCards), ...fixedIncidentCards(st)]);
+      expect(stageCards(st).filter((c) => !allowed.has(c)), def.label).toEqual([]);
+    }
   });
 });
 

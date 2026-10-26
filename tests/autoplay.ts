@@ -16,7 +16,7 @@ import {
   type StageRun,
 } from '../src/sim/engine';
 import type { SolutionStep } from '../src/sim/scenario';
-import type { IosMode, StageId } from '../src/sim/types';
+import type { IosMode, StageId, World } from '../src/sim/types';
 
 export type Step =
   | { cmd: string; host: string }
@@ -32,19 +32,27 @@ const D5 = ['web', 'web2', 'db'];
 
 /** How a player completes each mission, per day. Each day's owner fills in its own entry. */
 export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
-  // D-5 (WP5): mini-games are world actions, the NOC looks are events.
+  // D-5 (WP5): mini-games are world actions, the NOC looks are events. Each window is opened first
+  // (`open:…`), as a player does, so the first-time guides tick in order.
   0: {
     tour: [{ events: ['room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc'] }],
-    quiz: [{ events: ['quiz:correct'] }],
-    mount: [{ action: (w) => D5.forEach((id) => mount(w, id)), events: ['rack:mount'] }],
-    power: [{ action: (w) => D5.forEach((id) => setFeeds(w, id, ['A', 'B'])) }],
-    cable: [{ action: (w) => D5.forEach((id) => connectCable(w, `${id}:eth0`, `TOR-01:${SERVERS[id][5]}`)), events: ['cable:connect'] }],
-    leds: [{ events: ['noc:device:TOR-01'] }],
+    quiz: [{ events: ['open:quiz', 'quiz:correct'] }],
+    mount: [{ events: ['open:rack'] }, ...D5.map((id) => ({ action: (w: World) => mount(w, id), events: ['rack:mount'] }))],
+    power: [
+      { events: ['open:power'] },
+      { action: (w) => D5.forEach((id) => setFeeds(w, id, ['A'])), events: ['power:feed'] },
+      { action: (w) => D5.forEach((id) => setFeeds(w, id, ['A', 'B'])), events: ['power:feed'] },
+    ],
+    cable: [
+      { events: ['open:cable'] },
+      ...D5.map((id) => ({ action: (w: World) => connectCable(w, `${id}:eth0`, `TOR-01:${SERVERS[id][5]}`), events: ['cable:connect'] })),
+    ],
+    leds: [{ events: ['open:noc'] }, { events: ['noc:nms'] }, { events: ['noc:device:TOR-01'] }],
     fms: [{ events: ['noc:fms'] }],
   },
-  // D-4 (WP5): IOS from the `>` prompt, as after `ssh TOR-01`.
+  // D-4 (WP5): IOS from the `>` prompt, as after `ssh TOR-01`. Each device is reached from the 관리 PC first.
   1: {
-    ssh: [{ cmd: 'ssh TOR-01', host: 'ops' }],
+    ssh: [{ events: ['open:terminal'] }, { cmd: 'ssh TOR-01', host: 'ops' }],
     vlan: [{ ios: ['enable', 'configure terminal', 'vlan 10', 'name WEB', 'exit', 'vlan 20', 'name DB', 'end'], host: 'TOR-01' }],
     ports: [
       {
@@ -53,6 +61,7 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
       },
     ],
     gateway: [
+      { cmd: 'ssh CORE-01', host: 'ops' },
       {
         ios: [
           'enable',
@@ -71,6 +80,7 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
       },
     ],
     dns: [
+      { cmd: 'ssh ns1', host: 'ops' },
       { cmd: 'dns add web 10.10.10.11', host: 'ns1' },
       { cmd: 'dns add db 10.10.20.11', host: 'ns1' },
     ],
@@ -80,31 +90,52 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
     ],
     wr: [
       { ios: ['enable', 'write memory'], host: 'TOR-01' },
+      { cmd: 'ssh CORE-01', host: 'ops' },
       { ios: ['enable', 'write memory'], host: 'CORE-01' },
     ],
   },
   // D-3 (WP5)
   2: {
-    start: [{ cmd: 'server start', host: 'web' }],
-    port: [{ cmd: 'server set port 80', host: 'web' }],
+    start: [
+      { cmd: 'ssh web', host: 'ops' },
+      { cmd: 'server start', host: 'web' },
+    ],
+    port: [
+      { cmd: 'server status', host: 'web' },
+      { cmd: 'server set port 80', host: 'web' },
+    ],
     l4: [
+      { cmd: 'ssh L4-01', host: 'ops' },
       { cmd: 'lb pool add web 80', host: 'L4-01' },
       { cmd: 'lb health set path /health', host: 'L4-01' },
     ],
-    curl: [{ cmd: 'curl http://sugang/enroll', host: 'ops' }],
+    curl: [
+      { cmd: 'curl http://web/enroll', host: 'ops' },
+      { cmd: 'curl http://sugang/enroll', host: 'ops' },
+    ],
     sms: [{ events: ['noc:sms'] }],
-    msa: [{ action: decompose, events: ['board:decompose'] }],
+    msa: [{ events: ['open:board'] }, { action: decompose, events: ['board:decompose'] }],
   },
   // D-2 (WP6): containers on APP-01 / DB-02; the bundle itself is the load-test incident's fix.
+  // The rows follow the missions' first-time guides (steps), ssh and exit included.
   3: {
-    log: [{ cmd: 'deploy log', host: 'srv-new' }],
+    log: [
+      { cmd: 'ssh srv-new', host: 'ops' },
+      { cmd: 'deploy log', host: 'srv-new' },
+    ],
     recipe: [{ action: (w) => writeDockerfile(w, 'enroll'), events: ['board:dockerfile'] }],
     image: [
+      { cmd: 'exit', host: 'srv-new' },
       { cmd: 'docker build -t enroll:1.0 .', host: 'ops' },
       { cmd: 'docker push enroll:1.0', host: 'ops' },
     ],
-    run: [{ cmd: 'docker run -p 80:8000 enroll:1.0', host: 'srv-new' }],
+    run: [
+      { cmd: 'ssh srv-new', host: 'ops' },
+      { cmd: 'docker run -p 80:8000 enroll:1.0', host: 'srv-new' },
+    ],
     volume: [
+      { cmd: 'ssh srv-db', host: 'ops' },
+      { cmd: 'docker ps', host: 'srv-db' },
       { cmd: 'docker rm -f db', host: 'srv-db' },
       { cmd: 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8', host: 'srv-db' },
     ],
@@ -118,6 +149,7 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
     desired: [{ action: (w) => applyDesired(w, 'enroll', 3, 'enroll:v1'), events: ['board:desired'] }],
     observe: [{ cmd: 'pods', host: 'ops' }],
     hsrp: [
+      { cmd: 'ssh CORE-02', host: 'ops' },
       {
         ios: [
           'enable',
@@ -141,6 +173,7 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
       },
     ],
     uncordon: [
+      { cmd: 'nodes', host: 'ops' },
       { cmd: 'uncordon n1', host: 'ops' },
       { cmd: 'uncordon n2', host: 'ops' },
     ],

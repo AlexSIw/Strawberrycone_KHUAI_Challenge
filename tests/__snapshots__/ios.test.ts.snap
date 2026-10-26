@@ -118,7 +118,9 @@ interface TenGigabitEthernet1/1/4
  switchport mode trunk
  shutdown
 !
-end"
+end
+(지금 이 장비에서 돌아가는 설정 전체예요 · ! 는 구분선 · 한 칸 들여 쓴 줄은 바로 위 interface·vlan 의 설정)
+(write memory 로 저장하기 전에는 장비를 재부팅하면 사라져요 · 저장된 설정은 show startup-config)"
 `;
 
 exports[`show output > running-config (snapshot) 2`] = `
@@ -131,7 +133,9 @@ interface Vlan10
  standby 1 ip 10.10.10.1
  standby 1 priority 110
  standby 1 preempt
-end"
+end
+(지금 이 장비에서 돌아가는 설정 전체예요 · ! 는 구분선 · 한 칸 들여 쓴 줄은 바로 위 interface·vlan 의 설정)
+(write memory 로 저장하기 전에는 장비를 재부팅하면 사라져요 · 저장된 설정은 show startup-config)"
 `;
 
 exports[`show output > standby brief (snapshot) 1`] = `
@@ -143,7 +147,9 @@ Vl20        1    110 P Active  local           10.10.20.3      10.10.20.1
 Vl30        1    110 P Active  local           10.10.30.3      10.10.30.1
 Vl40        1    110 P Active  local           10.10.40.3      10.10.40.1
 Vl50        1    110 P Active  local           10.10.50.3      10.10.50.1
-Vl100       1    110 P Active  local           10.10.100.3     10.10.100.1"
+Vl100       1    110 P Active  local           10.10.100.3     10.10.100.1
+(State = 이 장비가 맡은 역할: Active 지금 게이트웨이를 맡음 · Standby 예비로 대기 · Init 아직 시작 못 함 · Pri 높은 쪽이 Active · P = preempt(되찾아 오기))
+(Active·Standby 칸 = 그 역할을 맡은 장비, local 은 이 장비 자신 · Standby unknown = 짝이 없음 = 예비 없음 · Virtual IP = 모두가 쓰는 공용 게이트웨이 주소)"
 `;
 
 exports[`show output > vlan brief (snapshot) 1`] = `
@@ -153,5 +159,7 @@ exports[`show output > vlan brief (snapshot) 1`] = `
 10   WEB                              active    Gi1/0/1, Gi1/0/2, Gi1/0/4
 20   DB                               active    Gi1/0/3, Gi1/0/5
 40   K8S                              active    Gi1/0/6, Gi1/0/7
-50   INFRA                            active    Gi1/0/8"
+50   INFRA                            active    Gi1/0/8
+(VLAN마다 번호·이름과, 그 VLAN에 들어 있는 access 포트(서버·PC를 꽂는 포트)가 보여요)
+(default = 처음부터 있는 기본 VLAN, VLAN을 아직 안 정한 포트가 여기 있어요 · trunk 포트는 여기 안 나와요: show interfaces trunk)"
 `;

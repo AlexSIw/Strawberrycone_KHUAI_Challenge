@@ -84,6 +84,12 @@ export const k8sCommands: Command[] = [
         const full = Object.entries(k.nodes).filter(([id, n]) => n.ready && k.pods.filter((p) => p.node === id).length >= k.maxPodsPerNode).length;
         rows.push(dim(`NODE <none> = 아직 들어갈 노드가 없어 기다리는 pod (0/${nodes.length} nodes are available: NotReady(일할 수 없음) ${notReady}대, 자리 꽉 참 ${full}대)`));
       }
+      if (k.pods.length) {
+        rows.push(
+          dim('(STATUS: Running 정상 동작 · Pending 아직 준비 중(잠시 뒤 다시 확인) · CrashLoopBackOff 켜지자마자 죽기를 반복 · RESTARTS = 죽어서 다시 띄운 횟수)'),
+          dim('(AGE = 뜬 지 지난 시간 · NODE = 이 pod가 도는 서버(노드) · VERSION = 앱 버전 · IP = 이 pod의 주소)'),
+        );
+      }
       return { lines: rows, events: ['k8s_get_pods'] };
     },
   },
@@ -109,6 +115,10 @@ export const k8sCommands: Command[] = [
         const st = status(n).padEnd(width);
         rows.push(`${id.padEnd(6)}${n.ready && !n.cordoned ? green(st) : n.ready ? yellow(st) : red(st)} ${n.rack.padEnd(7)} ${t} ${w.k8s!.pods.filter((p) => p.node === id).length}`);
       }
+      rows.push(
+        dim('(STATUS: Ready 일할 수 있음 · NotReady 일할 수 없음 · SchedulingDisabled "점검 중" 팻말이 걸려 새 pod를 안 받음)'),
+        dim('(RACK = 이 노드가 들어 있는 랙 · TEMP = 그 랙의 온도 · PODS = 이 노드에서 도는 pod 수)'),
+      );
       return { lines: rows, events: ['k8s_get_nodes'] };
     },
   },
@@ -128,6 +138,7 @@ export const k8sCommands: Command[] = [
         const r = ready < d.replicas ? yellow(`${ready}/${d.replicas}`.padEnd(8)) : green(`${ready}/${d.replicas}`.padEnd(8));
         rows.push(`${name.padEnd(10)}${r}${String(upToDate).padEnd(12)}${d.rolling ? yellow(`${d.image} → ${d.rolling.target}`) : d.image}`);
       }
+      rows.push(dim('(READY = 준비된 pod 수 / 원하는 수 · UP-TO-DATE = 지금 버전으로 바뀐 pod 수 · IMAGE 의 a → b 는 a 버전에서 b 버전으로 바꾸는 중)'));
       return { lines: rows, events: ['k8s_get_deploy'] };
     },
   },
@@ -360,7 +371,17 @@ export const k8sCommands: Command[] = [
       }
       if (!dep) return err('사용법: env <앱>');
       const entries = Object.entries(dep.env);
-      return out(...(entries.length ? entries.map(([k, v]) => `${k}=${v}`) : [dim('(없음)')]));
+      if (!entries.length) return out(dim('(없음)'));
+      // What the settings are, never what they should be (no target value: the D-Day DB incident is a puzzle).
+      const meaning: Record<string, string> = {
+        DB_POOL: '(DB_POOL = pod 하나가 DB-01과 미리 열어 두는 연결 수)',
+        COURSE_URL: '(COURSE_URL = 신청 앱이 과목조회(course) 서비스를 부르는 주소)',
+      };
+      return out(
+        ...entries.map(([k, v]) => `${k}=${v}`),
+        dim('(KEY=VALUE 한 줄 = 앱이 켜질 때 읽는 설정값 하나 · 바꾸려면 env set <앱> KEY=VALUE)'),
+        ...entries.filter(([k]) => k in meaning).map(([k]) => dim(meaning[k])),
+      );
     },
   },
 ];

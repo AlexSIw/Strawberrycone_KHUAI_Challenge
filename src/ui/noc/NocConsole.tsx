@@ -49,7 +49,7 @@ function NmsTab({ run, selected, onSelect }: { run: StageRun; selected: string |
               <i className="sw down" /> 끊김
             </span>
             <span>
-              <i className="sw dashed" /> 예비 길 (STP 차단)
+              <i className="sw dashed" /> 예비 길 (STP 차단: 길이 빙 도는 고리를 막으려고 일부러 쉬게 둔 길)
             </span>
             <span>
               <i className="sw spare" /> 꺼 둔 예비 길

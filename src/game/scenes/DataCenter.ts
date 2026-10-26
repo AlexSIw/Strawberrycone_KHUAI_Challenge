@@ -110,10 +110,11 @@ function verbFor(k: InteractionKind): string {
 
 /**
  * A spot's name in the prompt, from what it opens today: the network-room switch is where the day's map
- * switch is cabled ("스위치 TOR-01"), the router cabinet is a console to the switches on console days.
+ * switch is cabled ("TOR 배선판 (TOR-01)"), the router cabinet is a console to the switches on console days.
  */
 function spotLabel(spot: SpotDef, kind: InteractionKind, def: StageDef): string {
-  if (spot.id === 'switch' && kind.kind === 'cable') return `스위치 ${mapSwitchOf(def)}`;
+  // One name everywhere (missions, calls, hints): the TOR 배선판, with the switch it is wired to.
+  if (spot.id === 'switch' && kind.kind === 'cable') return `TOR 배선판 (${mapSwitchOf(def)})`;
   if (spot.id === 'router' && kind.kind === 'consolePick') return '스위치 콘솔';
   return spot.label;
 }
@@ -901,6 +902,21 @@ export class DataCenter extends Phaser.Scene {
 
   // ---------- per frame ----------
 
+  /** −1 / +1: the way to slide to reach the door just ahead (walking `vy`), 0 when the way is clear or no door is near. */
+  private doorNudge(vy: number): number {
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const aheadY = Math.floor(((vy < 0 ? body.top : body.bottom) + vy * 6) / TILE);
+    const t0 = Math.floor(body.left / TILE);
+    const t1 = Math.floor((body.right - 0.01) / TILE);
+    if (!isWall(t0, aheadY) && !isWall(t1, aheadY)) return 0;
+    for (const r of ROOMS) {
+      if (!r.door || r.door.y !== aheadY) continue;
+      const dx = (r.door.x + r.door.w / 2) * TILE - body.center.x;
+      if (Math.abs(dx) > 2 && Math.abs(dx) < TILE * 1.6) return Math.sign(dx);
+    }
+    return 0;
+  }
+
   update(time: number, delta: number): void {
     const s = gameStore.getState();
     const blocked = isBlocked(s);
@@ -915,6 +931,9 @@ export class DataCenter extends Phaser.Scene {
       if (k.up.isDown || k.w.isDown) vy -= 1;
       if (k.down.isDown || k.s.isDown) vy += 1;
     }
+    // Walking straight up or down into the wall beside a door: slide toward the opening, so the lion
+    // doesn't need lining up to the pixel.
+    if (vx === 0 && vy !== 0) vx = this.doorNudge(vy);
     const moving = vx !== 0 || vy !== 0;
     // Read every frame, so a new speed applies at once, also mid-walk.
     const mul = s.moveSpeed;

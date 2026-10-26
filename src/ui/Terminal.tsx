@@ -5,12 +5,13 @@ import { getStage } from '../content/stages';
 import { available, osOf, promptFor } from '../sim/commands';
 import type { HostOs } from '../sim/commands/types';
 import { activeScenarios, type StageRun } from '../sim/engine';
-import { iosCheatSheet, iosComplete, iosHelp } from '../sim/ios';
+import { iosCheatSheet, iosComplete, iosHelp, MODE_LEGEND } from '../sim/ios';
 import type { IosMode, StageId } from '../sim/types';
-import { gameStore, useGame } from '../store/game';
+import { cardsWaitForIncident, gameStore, useGame } from '../store/game';
 import { ModalFrame } from './ModalFrame';
 import { unsavedGear } from './noc/facility';
-import { lockedText, objectiveStatus, waitingText, type ObjectiveStatus } from './objectiveStatus';
+import { ObjectiveGuide, useTightScreen } from './ObjectivePanel';
+import { iosModeText, lockedText, objectiveStatus, termGuided, waitingText, type ObjectiveStatus } from './objectiveStatus';
 import './Terminal.css';
 
 // Dark palette that matches theme.css (warm ops-room colors).
@@ -67,6 +68,45 @@ function cellWidth(s: string): number {
 }
 
 const crlf = (s: string) => s.replace(/\r?\n/g, '\r\n');
+
+// eslint-disable-next-line no-control-regex
+const DIM_LINE = /^\x1b\[90m([^\x1b\n]*)\x1b\[0m$/;
+
+/**
+ * A dim Korean gloss line wider than the terminal, broken at spaces into lines that fit (xterm itself would
+ * cut it mid-word: 'Pr|i', 'Session|s'). Continuation lines are indented one cell. Other lines (output,
+ * tables) are left as they are.
+ */
+function softWrap(line: string, cols: number): string[] {
+  const m = DIM_LINE.exec(line);
+  if (!m || cols < 20 || cellWidth(m[1]) <= cols - 1) return [line];
+  const max = cols - 1;
+  const rows: string[] = [];
+  let cur = '';
+  for (const word of m[1].split(' ')) {
+    const next = cur ? `${cur} ${word}` : word;
+    if (cur.trim() && cellWidth(next) > max) {
+      rows.push(cur);
+      cur = ` ${word}`;
+    } else cur = next;
+  }
+  if (cur) rows.push(cur);
+  // A single word longer than a line is cut by cells.
+  const fitted = rows.flatMap((r) => {
+    if (cellWidth(r) <= max) return [r];
+    const parts: string[] = [];
+    let part = '';
+    for (const ch of r) {
+      if (cellWidth(part + ch) > max) {
+        parts.push(part);
+        part = '';
+      }
+      part += ch;
+    }
+    return part ? [...parts, part] : parts;
+  });
+  return fitted.map((r) => DIM(r));
+}
 /** Home + erase screen + erase scrollback, sent through the write queue so it lands after earlier output. */
 const CLEAR_ALL = '\x1b[H\x1b[2J\x1b[3J';
 
@@ -204,7 +244,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
   const print = (lines: string[]) => {
     if (!lines.length) return;
     store().appendTerminal(lines);
-    term.write(lines.map((l) => crlf(l) + '\r\n').join(''));
+    term.write(lines.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
   };
 
   /** Returns false when the terminal went away (e.g. `hint` opened the radio). */
@@ -264,7 +304,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     term.write('?\r\n');
     const help = iosHelp(s.run.world, s.terminal.host, mode, line);
     store().appendTerminal([prompt + line + '?', ...help]);
-    if (help.length) term.write(help.map((l) => crlf(l) + '\r\n').join(''));
+    if (help.length) term.write(help.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
     row = 0;
     render();
   };
@@ -512,8 +552,12 @@ const TERM_FONT = "'Nanum Gothic Coding', D2Coding, Menlo, monospace";
 /** Commands every stage has: listed after the ones this stage is about. */
 const BASIC_COMMANDS = new Set(['help', 'clear', 'hint']);
 
-/** The open objectives (the one to do now highlighted), for the side box: the objective panel is behind this window. */
+/**
+ * The open objectives (the one to do now highlighted, with its why and first-time steps as the player
+ * types), for the side box: the objective panel is behind this window.
+ */
 function GoalList({ goals, run }: { goals: ObjectiveStatus; run: StageRun }) {
+  const tight = useTightScreen();
   return (
     <ul className="term-goal-list">
       {goals.open.map((o) => {
@@ -521,14 +565,30 @@ function GoalList({ goals, run }: { goals: ObjectiveStatus; run: StageRun }) {
         return (
           <li key={o.id} className={o === goals.next ? 'current' : ''}>
             <span className="term-goal-check" aria-hidden />
-            <span className="term-goal-text">
-              {o.text}
-              {progress && <span className="term-goal-progress"> ({progress})</span>}
-            </span>
+            <div className="term-goal-main">
+              <span className="term-goal-text">
+                {o.text}
+                {progress && <span className="term-goal-progress"> ({progress})</span>}
+              </span>
+              {o === goals.next && <ObjectiveGuide o={o} run={run} compact={tight} variant="term" />}
+            </div>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/** On network gear: the mode the session is in, in plain words, and the way back. */
+function IosModeLine({ mode }: { mode: IosMode }) {
+  const m = iosModeText(mode);
+  return (
+    <p className="term-mode">
+      <span>
+        지금 <code>{m.mark}</code> {m.name}
+      </span>
+      <span className="term-mode-back">↩ {m.back}</span>
+    </p>
   );
 }
 
@@ -618,7 +678,7 @@ export function Terminal({ host }: { host: string }) {
       s.appendTerminal(welcome);
       term.write(welcome.map((l) => l + '\r\n').join(''));
     } else {
-      term.write(s.terminal.log.map((l) => crlf(l) + '\r\n').join(''));
+      term.write(s.terminal.log.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
     }
 
     const editor = createLineEditor(term, () => alive);
@@ -654,12 +714,18 @@ export function Terminal({ host }: { host: string }) {
   const iosMode = os === 'ios' ? (mode ?? { level: 'user' as const }) : null;
   // Today's new commands first (what the missions ask for), the always-there basics last.
   const rank = (c: { name: string; minStage: number }) => (c.minStage === stage ? 0 : BASIC_COMMANDS.has(c.name) ? 2 : 1);
+  // The sheet's first row is its mode legend: the mode line above the list (IosModeLine) already says it, with
+  // the port or VLAN the session is on, so it isn't repeated as a row.
   const commands = iosMode
-    ? iosCheatSheet(iosMode).map(([usage, summary]) => ({ name: usage, usage, summary, minStage: -1 }))
+    ? iosCheatSheet(iosMode)
+        .filter(([usage]) => usage !== MODE_LEGEND[iosMode.level][0])
+        .map(([usage, summary]) => ({ name: usage, usage, summary, minStage: -1 }))
     : [...available(stage, os)].sort((a, b) => rank(a) - rank(b));
   const incidents = run ? activeScenarios(run) : [];
   // The objective panel is behind this window: with no incident going on, the box shows the objectives instead.
   const goals = run ? objectiveStatus(getStage(run.stage), run) : null;
+  // The box shows the current objective's why / first-time steps: the side column widens a little for them.
+  const guided = !!goals && !dayDone && !!termGuided(goals);
 
   const typeUsage = (usage: string) => {
     editorRef.current?.setLine(usageStub(usage));
@@ -671,13 +737,14 @@ export function Terminal({ host }: { host: string }) {
       <p className="term-next muted">
         {iosMode ? '명령을 입력하고 Enter. 막히면 ?를 눌러보세요. 줄임말도 돼요.' : '명령어를 입력하고 Enter. 모르겠으면 "명령어 도움말"에서 골라보세요.'}
       </p>
-      <div className="term-wrap">
+      <div className={`term-wrap${guided ? ' has-guide' : ''}`}>
         <div className="term-screen" onMouseDown={() => requestAnimationFrame(() => termRef.current?.focus())}>
           <div ref={screenRef} className="term-xterm" />
         </div>
         <aside className="term-side">
           <section className="term-help">
             <h3>{iosMode ? '장비 명령 (IOS)' : '명령어 도움말'}</h3>
+            {iosMode && <IosModeLine mode={iosMode} />}
             <p className="term-tip muted">누르면 입력줄에 들어가요.</p>
             <ul>
               {commands.map((c, i) => (
@@ -706,14 +773,31 @@ export function Terminal({ host }: { host: string }) {
                       {/* What the caller said (the toast with it may be hidden by this window). */}
                       {def.alert && <small className="term-inc-alert">📞 {def.alert}</small>}
                     </span>
-                    <button
-                      type="button"
-                      className="btn term-hint-btn"
-                      // The radio opens on top of this window: closing it comes back to this session.
-                      onClick={() => gameStore.getState().openModal({ type: 'hint', scenarioId: rt.id })}
-                    >
-                      쿠사수 힌트
-                    </button>
+                    <span className="term-inc-acts">
+                      {/* The alarm the NMS raised for it, not acknowledged yet: ACK from here too (MTTD stops). */}
+                      {run?.alarms
+                        .filter((a) => a.scenarioId === rt.id && a.clearedAt === null && a.ackAt === null)
+                        .slice(0, 1)
+                        .map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            className="btn primary term-hint-btn"
+                            title="경보를 봤다고 표시해요. 여기까지가 탐지 시간(MTTD)이에요."
+                            onClick={() => gameStore.getState().ackAlarm(a.id)}
+                          >
+                            확인(ACK)
+                          </button>
+                        ))}
+                      <button
+                        type="button"
+                        className="btn term-hint-btn"
+                        // The radio opens on top of this window: closing it comes back to this session.
+                        onClick={() => gameStore.getState().openModal({ type: 'hint', scenarioId: rt.id })}
+                      >
+                        쿠사수 힌트
+                      </button>
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -757,7 +841,7 @@ export function Terminal({ host }: { host: string }) {
           )}
           {heldCards > 0 && (
             <p className="term-held" role="status">
-              🃏 새 개념 카드 {heldCards}장! 터미널을 닫으면 펼쳐져요.
+              🃏 새 개념 카드 {heldCards}장! {run && cardsWaitForIncident(run) ? '장애를 해결하고 터미널을 닫으면 펼쳐져요.' : '터미널을 닫으면 펼쳐져요.'}
             </p>
           )}
         </aside>

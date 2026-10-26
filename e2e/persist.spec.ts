@@ -22,12 +22,13 @@ async function exposeStore(page: Page) {
   });
 }
 
-/** Starts a day and skips its briefing, like a player clicking through. */
+/** Starts a day and skips its briefing (and the first missions' 미션 브리핑), like a player clicking through. */
 async function play(page: Page, day: number) {
   await page.evaluate((n) => {
     const store = (window as unknown as Win).__store;
     store.getState().play(n as 0);
     for (let i = 0; i < 50 && store.getState().dialogue; i++) store.getState().nextDialogue();
+    for (let i = 0; i < 20 && store.getState().concepts.length; i++) store.getState().dismissConcept();
   }, day);
 }
 

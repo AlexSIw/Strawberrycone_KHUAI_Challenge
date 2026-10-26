@@ -1,0 +1,79 @@
+/* "지금까지" recap / primer (z 55: over the HUD, the windows and the cards; under the results). Prefix: rcp- */
+.rcp-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 6, 12, 0.82);
+  animation: rcp-fade 0.2s ease-out;
+}
+/* The calendar's '지금까지 요약' (the calendar screen scrolls, so it is fixed to the viewport) */
+.rcp-backdrop.rcp-fixed { position: fixed; }
+
+.rcp {
+  width: min(760px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-color: var(--tan);
+}
+
+.rcp-head { padding: 16px 18px 12px; border-bottom: 2px solid var(--line); background: var(--panel-2); }
+.rcp-kicker { font-family: var(--pixel); font-size: 12px; color: var(--tan); }
+.rcp-head h2 { margin: 4px 0 0; font-family: var(--pixel); font-weight: 400; font-size: 24px; text-shadow: 2px 2px 0 var(--outline); }
+.rcp-lead { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--text); }
+
+.rcp-body { padding: 4px 18px 14px; overflow-y: auto; flex: 1; }
+.rcp-sec { margin-top: 14px; }
+.rcp-sec h3 { margin: 0 0 8px; font-family: var(--pixel); font-weight: 400; font-size: 15px; color: var(--tan); }
+.rcp-help { margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
+
+.rcp-built { margin: 0; padding-left: 20px; display: grid; gap: 5px; font-size: 14px; line-height: 1.6; }
+
+.rcp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; align-items: start; }
+.rcp-card {
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.rcp-card[open] { border-color: var(--tan); }
+.rcp-card summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.rcp-card summary::-webkit-details-marker { display: none; }
+.rcp-card summary:focus-visible { outline: 3px solid var(--blue); outline-offset: 1px; border-radius: 8px; }
+.rcp-card summary strong { font-family: var(--pixel); font-weight: 400; font-size: 14px; }
+.rcp-card summary strong::after { content: ' ▸'; color: var(--muted); }
+.rcp-card[open] summary strong::after { content: ' ▾'; }
+.rcp-analogy { font-size: 12.5px; color: var(--tan); }
+.rcp-have { align-self: flex-start; font-size: 10.5px; color: var(--green); }
+.rcp-card p { margin: 0; padding: 0 10px 10px; font-size: 13px; line-height: 1.6; }
+
+.rcp-tools { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rcp-tools th, .rcp-tools td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; line-height: 1.5; }
+.rcp-tools thead th { font-size: 12px; color: var(--muted); font-weight: 400; }
+.rcp-tools tbody th { font-family: var(--mono); font-weight: 400; color: var(--text); white-space: nowrap; }
+
+.rcp-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; padding: 12px 18px; border-top: 2px solid var(--line); }
+.rcp-keys { font-size: 12px; color: var(--muted); }
+.rcp-go { font-size: 16px; padding: 10px 20px; }
+
+@keyframes rcp-fade {
+  from { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rcp-backdrop { animation: none; }
+}
+@media (max-width: 640px) {
+  .rcp-head h2 { font-size: 20px; }
+  .rcp-tools tbody th { white-space: normal; }
+}

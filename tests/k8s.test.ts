@@ -208,10 +208,16 @@ describe('d1-fire: network rack 1 loses power', () => {
     expect(run.scenarios[0].state).toBe('active');
   });
 
-  it('adding the K8S VLAN to that trunk resolves it; facilities restore the rack and CORE-01 takes Active back', () => {
+  it('adding the K8S VLAN to that trunk resolves it; facilities restore the rack a little later and CORE-01 takes Active back', () => {
     let run = atIncident();
     run = ticks(solve(run, 'd1-fire:0'), 6);
     expect(run.scenarios[0].state).toBe('resolved');
+    // Right after the fix the rack is still dark: checking the fix shows the backup trunk at work.
+    expect(run.world.power!.racksDown).toEqual(['net1']);
+    const trunk = ios(run, 'TOR-02', ['enable', 'show interfaces trunk']).out;
+    expect(trunk).not.toMatch(/Te1\/1\/1\s/);
+    expect(trunk).toMatch(/forwarding state[^]*Te1\/1\/3\s+40,50,100/);
+    run = ticks(run, 30);
     expect(run.world.power!.racksDown).toEqual([]);
     run = ticks(run, 2);
     expect(hsrpActiveFor(run.world, 40)).toBe('CORE-01');

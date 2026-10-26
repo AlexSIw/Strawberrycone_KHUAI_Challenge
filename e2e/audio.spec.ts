@@ -195,7 +195,9 @@ test('크레딧 · 소리 켜기/끄기 · 로비 음악 → 하루 → 장애 �
   await page.evaluate(() => {
     const gameStore = (window as unknown as Win).__store;
     gameStore.getState().play(1);
+    // "지금까지" (D-5 isn't cleared), the briefing, then the first mission's 미션 브리핑.
     for (let i = 0; i < 50 && gameStore.getState().dialogue; i++) gameStore.getState().nextDialogue();
+    for (let i = 0; i < 20 && gameStore.getState().concepts.length; i++) gameStore.getState().dismissConcept();
   });
   await plantIncident(page, 'e2e-audio', 'spof');
   expect((await audioState(page)).music).toBe('normal'); // a new day keeps the in-day loop going
@@ -354,18 +356,26 @@ test('미션마다 코인, 미션과 새 카드가 같은 순간이면 한 번',
     await page.waitForTimeout(300);
   };
 
+  /** Clicks the cards on screen away with Enter, as a player would (a card ignores keys in its first 0.3 s). */
+  const enterAway = async () => {
+    for (let i = 0; i < 8 && (await page.locator('.ccard').count()) > 0; i++) {
+      await page.waitForTimeout(350);
+      await page.keyboard.press('Enter');
+    }
+    await expect(page.locator('.ccard')).toHaveCount(0);
+  };
+
   // The tour: a mission and a new card in the same moment, one coin for both.
   await mission(1, 'room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc');
   await expect(page.locator('.ccard')).toBeVisible();
-  // Clicking the card away (Enter, as a player would) is no new coin.
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.ccard')).toHaveCount(0);
+  // Clicking the cards away (the tour's 브리핑 and card, the quiz's 브리핑) is no new coin.
+  await enterAway();
   await page.waitForTimeout(300);
   expect(await coin()).toBe(coins0 + 1);
 
   // The quiz: the next mission (and its card), the next coin.
   await mission(2, 'quiz:correct');
-  await page.keyboard.press('Enter');
+  await enterAway();
   await page.waitForTimeout(300);
   expect(await coin()).toBe(coins0 + 2);
   expect((await audioState(page)).win).toBe(0); // mission cards don't jingle

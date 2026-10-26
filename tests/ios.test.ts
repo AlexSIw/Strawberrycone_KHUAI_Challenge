@@ -4,14 +4,27 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { bannedFor, leaks } from '../src/ai/leak';
+import { ALL_SCENARIOS, getStage } from '../src/content/stages';
 import { baseTopology } from '../src/content/topology';
 import { runCommand } from '../src/sim/commands';
+import { startStage } from '../src/sim/engine';
 import { canonicalize, iosCheatSheet, iosComplete, iosHelp, iosPrompt, iosScript, iosVariantsRegex, runIos, type IosResult } from '../src/sim/ios';
-import type { IosLevel, IosMode, World } from '../src/sim/types';
+import { SHOW_GLOSS, TIP } from '../src/sim/ios/gloss';
+import type { CNode } from '../src/sim/ios/parse';
+import { allIfKeys } from '../src/sim/ios/show';
+import { ROOTS } from '../src/sim/ios/tree';
+import { clone } from '../src/sim/step';
+import { LAST_DAY, type DayId, type IosLevel, type IosMode, type NetDevice, type World } from '../src/sim/types';
 
 const RED = '\x1b[31m';
+const DIM = '\x1b[90m';
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 const text = (r: IosResult) => r.lines.map(strip).join('\n');
+/** The output without the dim Korean gloss lines. */
+const body = (r: IosResult) => r.lines.filter((l) => !l.startsWith(DIM)).map(strip).join('\n');
+/** The dim Korean gloss lines, plain. */
+const glossOf = (r: IosResult) => r.lines.filter((l) => l.startsWith(DIM)).map(strip);
 
 const EXEC: IosMode = { level: 'exec' };
 const CONFIG: IosMode = { level: 'config' };
@@ -72,7 +85,10 @@ describe('parser errors', () => {
   it('bare "s" is ambiguous (decoy keywords) while "sh" is show', () => {
     for (const mode of [{ level: 'user' }, EXEC] as IosMode[]) {
       const r = runIos('s', baseTopology(), 'TOR-01', mode, 1);
-      expect(r.lines).toEqual([`${RED}% Ambiguous command:  "s"\x1b[0m`]);
+      expect(r.lines[0]).toBe(`${RED}% Ambiguous command:  "s"\x1b[0m`);
+      expect(r.lines).toHaveLength(2);
+      expect(r.lines[1].startsWith(DIM)).toBe(true);
+      expect(strip(r.lines[1])).toContain('줄임말');
       expect(r.canonical).toBeNull();
       expect(r.events).toEqual([]);
     }
@@ -95,9 +111,11 @@ describe('parser errors', () => {
 
   it('reports incomplete commands', () => {
     const w = baseTopology();
-    expect(text(runIos('switchport access vlan', w, 'TOR-01', ifMode('Gi1/0/9'), 1))).toBe('% Incomplete command.');
-    expect(text(runIos('sh ip', w, 'TOR-01', EXEC, 1))).toBe('% Incomplete command.');
-    expect(text(runIos('show', w, 'TOR-01', EXEC, 1))).toBe('% Type "show ?" for a list of subcommands');
+    expect(body(runIos('switchport access vlan', w, 'TOR-01', ifMode('Gi1/0/9'), 1))).toBe('% Incomplete command.');
+    expect(body(runIos('sh ip', w, 'TOR-01', EXEC, 1))).toBe('% Incomplete command.');
+    expect(glossOf(runIos('sh ip', w, 'TOR-01', EXEC, 1))).toEqual(['(명령이 덜 끝났어요. 한 칸 띄고 ? 를 치면 뒤에 올 말이 보여요)']);
+    expect(body(runIos('show', w, 'TOR-01', EXEC, 1))).toBe('% Type "show ?" for a list of subcommands');
+    expect(glossOf(runIos('show', w, 'TOR-01', EXEC, 1))[0]).toContain('show ?');
     expect(runIos('no', w, 'TOR-01', CONFIG, 1).lines[0].startsWith(RED)).toBe(true);
   });
 
@@ -233,7 +251,7 @@ describe('? and Tab', () => {
   });
 
   it('cheat sheets are mode-aware', () => {
-    expect(iosCheatSheet({ level: 'user' })[0][0]).toBe('enable');
+    expect(iosCheatSheet({ level: 'user' })[1][0]).toBe('enable');
     expect(iosCheatSheet(EXEC).map(([c]) => c)).toContain('write memory');
     expect(iosCheatSheet(ifMode('Gi1/0/1')).map(([c]) => c)).toContain('switchport access vlan <N>');
     expect(iosCheatSheet(ifMode('Vlan10')).map(([c]) => c)).toContain('standby 1 ip <가상 IP>');
@@ -331,7 +349,9 @@ describe('config commands', () => {
     const w = baseTopology();
     const nd = w.devices['TOR-02'].nd!;
     const r = runIos('channel-group 2 mode active', w, 'TOR-02', ifMode('Te1/1/1'), 1);
-    expect(text(r)).toBe('Creating a port-channel interface Port-channel 2');
+    expect(body(r)).toBe('Creating a port-channel interface Port-channel 2');
+    // Where Port-channel first appears (the player's own command), it says what a bundle is.
+    expect(glossOf(r)).toEqual([TIP.poCreated]);
     expect(nd.ifs.Po2).toMatchObject({ mode: 'trunk', allowed: [40, 50, 100], speed: 10000, shutdown: false });
     expect(nd.ifs['Te1/1/1']).toMatchObject({ group: 2, chMode: 'active' });
     nd.ifs['Te1/1/4'].allowed = [40];
@@ -513,7 +533,9 @@ describe('show output', () => {
     expect(st).toMatch(/^Interface\s+Role Sts Cost/m);
     const w = baseTopology();
     w.devices['CORE-01'].nd!.stpOff = [10];
-    expect(text(runIos('sh span vlan 10', w, 'CORE-01', EXEC, 1))).toBe('Spanning tree instance(s) for vlan 10 does not exist.');
+    const none = runIos('sh span vlan 10', w, 'CORE-01', EXEC, 1);
+    expect(body(none)).toBe('Spanning tree instance(s) for vlan 10 does not exist.');
+    expect(glossOf(none)).toEqual([...SHOW_GLOSS.stpNoVlan]);
   });
 
   it('logging shows syslog lines with the day clock', () => {
@@ -687,5 +709,215 @@ describe('no real product names on screen (only concept cards may name them)', (
       return code.split('\n').flatMap((l, i) => (PRODUCTS.test(l) ? [`${f}:${i + 1}: ${l.trim()}`] : []));
     });
     expect(hits).toEqual([]);
+  });
+});
+
+// ---------- Korean glosses (explain-before-do round) ----------
+
+/** Every show line the tree accepts on this device: each interface for `<ifname>`, each VLAN (+1, +4094) for `<vlan>`. */
+function showLines(nd: NetDevice): string[] {
+  const show = ROOTS.exec.find((n) => n.kw === 'show')!;
+  const vlans = [1, ...Object.keys(nd.vlans).map(Number), 4094].map(String);
+  const out: string[] = [];
+  const rec = (n: CNode, prefix: string) => {
+    const vals = n.kw ? [n.kw] : n.arg === 'ifname' ? allIfKeys(nd) : n.arg === 'vlan' ? vlans : [];
+    for (const v of vals) {
+      const line = `${prefix} ${v}`.trim();
+      if (n.run) out.push(line);
+      for (const k of n.kids ?? []) rec(k, line);
+    }
+  };
+  rec(show, '');
+  return out;
+}
+
+/** What a gloss must never say: an address, a port name or a VLAN number (or a port pair / KEY=VALUE). */
+const VALUE_RES: [string, RegExp][] = [
+  ['IP', /(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.])/],
+  ['interface', /(?<![a-z])(?:gi|te|hu|po|gigabitethernet|tengigabitethernet|hundredgige|port-channel)\s*-?\s*\d|\d+\/\d+\/\d+/i],
+  ['VLAN number', /(?<![a-z])(?:vl|vlan|브이랜)\s*-?\s*\d|\d+\s*번?\s*(?:vlan|브이랜)/i],
+  ['port pair', /\d+\s*(?::|->|→)\s*\d+/],
+  ['KEY=VALUE', /[A-Za-z_]+=\S/],
+];
+const valueIn = (s: string) => VALUE_RES.find(([, re]) => re.test(s))?.[0] ?? null;
+
+describe('show glosses: dim Korean lines after every show, generic on every day', () => {
+  /** Each day's start world, and the same world with all of that day's incidents injected. */
+  const worlds = ([0, 1, 2, 3, 4, 5] as DayId[]).flatMap((d) => {
+    const start = startStage(d).world;
+    const broken = clone(start);
+    for (const sc of getStage(d).scenarios) sc.inject(broken);
+    return [
+      [`day ${d} start`, start],
+      [`day ${d} incidents`, broken],
+    ] as const;
+  });
+
+  it.each(worlds)('%s', (_name, w0) => {
+    let checked = 0;
+    for (const dev of Object.values(w0.devices)) {
+      if (dev.nd?.os !== 'ios') continue;
+      for (const line of showLines(dev.nd)) {
+        const r = runIos(line, clone(w0), dev.id, EXEC, LAST_DAY);
+        const where = `${dev.id}# ${line}`;
+        const first = r.lines.findIndex((l) => l.startsWith(DIM));
+        expect(first, `${where}: no gloss`).toBeGreaterThanOrEqual(0);
+        // The gloss comes after the output, every line of it dim: the output's own lines and columns are untouched.
+        expect(r.lines.slice(first).every((l) => l.startsWith(DIM)), where).toBe(true);
+        for (const g of glossOf(r)) {
+          expect(valueIn(g), `${where}: ${g}`).toBeNull();
+          expect(g.startsWith('(') && /[가-힣]/.test(g), `${where}: ${g}`).toBe(true);
+        }
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  it('every gloss and tip string is value-free and never coloured', () => {
+    const all = [...Object.values(SHOW_GLOSS).flat(), ...Object.values(TIP)];
+    for (const s of all) {
+      // A netmask (255.255.255.0) is a format, not an answer.
+      expect(valueIn(s.replace(/255(?:\.\d{1,3}){3}/g, 'MASK')), s).toBeNull();
+      expect(s.includes('\x1b')).toBe(false);
+    }
+  });
+
+  it("show glosses never contain an IOS answer the 사수 is banned from saying (any incident's values)", () => {
+    const lines = Object.values(SHOW_GLOSS).flat();
+    for (const sc of ALL_SCENARIOS) {
+      const banned = bannedFor({ bannedPhrases: [], solutionSteps: sc.solutionSteps, bannedIos: sc.bannedIos });
+      for (const g of lines) expect(leaks(g, banned), `${sc.id}: ${g}`).toBe(false);
+    }
+  });
+
+  it('the glosses name what to look at: status words, HSRP roles, STP roles, flags, syslog shape', () => {
+    const w = baseTopology();
+    const g = (host: string, line: string) => glossOf(runIos(line, w, host, EXEC, 1)).join('\n');
+    expect(g('TOR-01', 'sh int status')).toMatch(/connected.*notconnect.*disabled.*err-disabled/);
+    expect(g('TOR-01', 'sh int status')).toContain('trunk');
+    expect(g('CORE-01', 'sh ip int br')).toContain('administratively down');
+    expect(g('CORE-01', 'sh standby br')).toContain('Standby unknown = 짝이 없음 = 예비 없음');
+    expect(g('CORE-01', 'sh standby br')).toMatch(/Active.*Standby.*Virtual IP/s);
+    expect(g('CORE-01', 'sh span')).toMatch(/Root.*Desg.*Altn.*FWD.*BLK/);
+    expect(g('TOR-01', 'sh eth sum')).toMatch(/P = .*s = .*D = .*SU/s);
+    expect(g('TOR-01', 'sh int te1/1/1')).toMatch(/txload.*255\/255.*CRC/s);
+    expect(g('TOR-01', 'sh int count err')).toContain('FCS-Err');
+    expect(g('TOR-02', 'sh int trunk')).toContain('Vlans allowed on trunk');
+    expect(g('TOR-01', 'sh log')).toContain('시각 · %장비기능-심각도-종류 · 내용');
+    expect(g('TOR-01', 'sh run')).toMatch(/설정 전체.*재부팅하면 사라져요/s);
+    expect(g('TOR-01', 'sh cdp nei')).toContain('Device ID');
+    expect(g('TOR-01', 'sh ver')).toContain('모델');
+  });
+
+  it('a filtered show (| include …) prints only the matching lines, no gloss', () => {
+    const r = runIos('sh int status | i connected', baseTopology(), 'TOR-01', EXEC, 1);
+    expect(r.lines.length).toBeGreaterThan(0);
+    expect(glossOf(r)).toEqual([]);
+  });
+
+  it('do show in config mode keeps the gloss; configure terminal and write memory explain themselves', () => {
+    const w = baseTopology();
+    expect(glossOf(runIos('do sh vlan br', w, 'TOR-01', CONFIG, 1))).toEqual([...SHOW_GLOSS.vlanBrief]);
+    expect(glossOf(runIos('conf t', w, 'TOR-01', EXEC, 1))[0]).toContain('Ctrl+Z');
+    expect(glossOf(runIos('wr', w, 'TOR-01', EXEC, 1))[0]).toContain('재부팅해도');
+  });
+});
+
+describe('IOS errors: a dim Korean line, saying where the line would work', () => {
+  const tipOf = (line: string, mode: IosMode, host = 'TOR-01') => {
+    const r = runIos(line, baseTopology(), host, mode, 1);
+    expect(r.lines.some((l) => l.startsWith(RED)), line).toBe(true);
+    const g = glossOf(r);
+    expect(g.length, line).toBe(1);
+    expect(r.lines.at(-1)!.startsWith(DIM)).toBe(true);
+    return g[0];
+  };
+
+  it.each<[string, IosMode, string, string?]>([
+    ['foo', EXEC, TIP.invalid],
+    ['show foo', EXEC, TIP.invalid],
+    ['interface gi1/0/40', CONFIG, TIP.noSuchPort],
+    ['show interfaces gi 1/0/40', EXEC, TIP.noSuchPort],
+    ['switchport access vlan v10', ifMode('Gi1/0/1'), TIP.invalid],
+    ['interface gi1/0/5', EXEC, TIP.needConfig],
+    ['vlan 30', EXEC, TIP.needConfig],
+    ['interface gi1/0/5', { level: 'user' }, TIP.needConfigUser],
+    ['conf t', { level: 'user' }, TIP.needEnable],
+    ['switchport access vlan 10', EXEC, TIP.needIf],
+    ['no shutdown', EXEC, TIP.needIf],
+    ['switchport access vlan 10', { level: 'user' }, TIP.needIfUser],
+    ['switchport access vlan 10', CONFIG, TIP.pickIf],
+    ['name WEB', CONFIG, TIP.pickVlan],
+    ['name WEB', EXEC, TIP.needVlan],
+    ['standby 1 ip 10.10.10.1', ifMode('Gi1/0/1'), TIP.needSvi],
+    ['switchport mode access', ifMode('Vlan10'), TIP.needPort, 'CORE-01'],
+    ['show vlan brief', CONFIG, TIP.doShow],
+    ['write memory', CONFIG, TIP.doWrite],
+    ['wr', ifMode('Gi1/0/1'), TIP.doWrite],
+    ['copy run start', CONFIG, TIP.doWrite],
+    ['ping 10.10.10.11', CONFIG, TIP.doExec],
+    ['conf t', CONFIG, TIP.inConfig],
+    ['do show vlan brief', EXEC, TIP.noDo],
+    ['ssh TOR-02', EXEC, TIP.ssh],
+    ['ssh TOR-02', CONFIG, TIP.ssh],
+    ['curl http://web/', EXEC, TIP.linux],
+    ['ip addr', EXEC, TIP.linux],
+    ['help', EXEC, TIP.help],
+    ['sh run | foo bar', EXEC, TIP.pipe],
+    ['sh ip', EXEC, TIP.incomplete],
+    ['s', EXEC, TIP.ambiguous],
+  ])('%s at %j', (line, mode, want, host) => {
+    expect(tipOf(line, mode, host)).toBe(want);
+  });
+
+  it('ssh alone runs the decoy and still points back to the 관리 PC', () => {
+    expect(tipOf('ssh', EXEC)).toBe(TIP.ssh);
+    expect(tipOf('systat', EXEC)).toBe(TIP.decoy);
+  });
+
+  it('ip address with /N says how IOS writes the mask', () => {
+    const svi = ifMode('Vlan60');
+    for (const line of ['ip address 10.10.60.3 /24', 'ip address 10.10.60.3/24', 'ip add 10.10.60.3 24']) {
+      expect(tipOf(line, svi, 'CORE-02')).toBe('(IOS는 /24 대신 마스크로 써요: /24 = 255.255.255.0 · 예) ip address <IP> 255.255.255.0)');
+    }
+    expect(tipOf('ip address 10.10.60.3 /16', svi, 'CORE-02')).toContain('/16 = 255.255.0.0');
+  });
+
+  it('config errors (L2 port, bad mask, overlap, VIP) carry a Korean line too', () => {
+    const w = baseTopology();
+    const last = (line: string, host: string, mode: IosMode) => strip(runIos(line, w, host, mode, 1).lines.at(-1)!);
+    expect(last('ip address 10.1.1.1 255.255.255.0', 'TOR-01', ifMode('Gi1/0/9'))).toBe(TIP.l2NoIp);
+    expect(last('ip address 10.10.10.2 255.0.255.0', 'CORE-01', ifMode('Vlan10'))).toBe(TIP.badMask);
+    expect(last('ip address 10.10.20.9 255.255.255.0', 'CORE-01', ifMode('Vlan10'))).toBe(TIP.overlap);
+    expect(last('standby 1 ip 10.10.70.1', 'CORE-01', ifMode('Vlan10'))).toBe(TIP.vipSubnet);
+    expect(last('standby 1 ip 10.10.10.2', 'CORE-01', ifMode('Vlan10'))).toBe(TIP.vipEqualsIp);
+  });
+
+  it('a line typed in 한글 gets no tip from here (the terminal adds its 한/영 tip)', () => {
+    expect(glossOf(runIos('ㅗ디ㅔ', baseTopology(), 'TOR-01', EXEC, 1))).toEqual([]);
+  });
+
+  it('? on an unknown word explains itself', () => {
+    expect(iosHelp(baseTopology(), 'TOR-01', EXEC, 'xyz').map(strip)).toEqual(['% Unrecognized command', TIP.unrecognized]);
+  });
+});
+
+describe('cheat sheet', () => {
+  it('starts every mode with the mode legend (clicking it types nothing)', () => {
+    const modes: IosMode[] = [{ level: 'user' }, EXEC, CONFIG, ifMode('Gi1/0/1'), ifMode('Vlan10'), { level: 'config-vlan', vlan: 10 }];
+    const prompts = ['>', '#', '(config)#', '(config-if)#', '(config-if)#', '(config-vlan)#'];
+    modes.forEach((m, i) => {
+      const [usage, ko] = iosCheatSheet(m)[0];
+      expect(usage).toBe(`[지금 모드] ${prompts[i]}`);
+      expect(ko).toMatch(/모드/);
+    });
+  });
+
+  it("ip address is the switch's own address; the shared gateway is standby 1 ip", () => {
+    const rows = Object.fromEntries(iosCheatSheet(ifMode('Vlan10')));
+    expect(rows['ip address <IP> <마스크>']).toContain('자신의 주소');
+    expect(rows['ip address <IP> <마스크>']).toContain('게이트웨이 아님');
+    expect(rows['standby 1 ip <가상 IP>']).toContain('공용 게이트웨이');
   });
 });

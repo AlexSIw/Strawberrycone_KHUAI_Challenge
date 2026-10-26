@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { missionCards } from '../content/cards';
 import { CONCEPTS } from '../content/concepts';
 import { getStage } from '../content/stages';
 import { koDate } from '../sim/clock';
+import { scoreParts, type ScorePart } from '../sim/engine';
 import { LAST_DAY, type StageId } from '../sim/types';
 import { gameStore, useGame } from '../store/game';
 import { availLevel } from './levels';
@@ -24,13 +26,19 @@ function useCountUp(to: number, delayMs = 250): number {
   return v;
 }
 
-function advice(stars: number, hintPenalty: number, revealed: number, mttd: number | null, mttr: number | null, availability: number | null, final: boolean): string {
-  if (stars === 3) return final ? '완벽해요! 수강신청을 끝까지 지켜냈어요.' : '완벽해요! 이 실력이면 수강신청 날도 문제없어요.';
-  if (revealed > 0) return '다음엔 "정답 보기" 전에 힌트를 한 단계씩 먼저 받아보세요.';
-  if (hintPenalty > 2) return '힌트를 조금만 아끼면 별이 더 늘어나요.';
-  if (mttd !== null && mttd > 30) return '경보가 뜨면 관제 화면(N)에서 바로 확인(ACK)부터 눌러보세요.';
-  if (mttr !== null && mttr > 60) return '경보를 확인했으면 장비 로그와 포트 상태부터 보고 빨리 움직여보세요.';
-  if (availability !== null && availability < 0.9) return '서비스가 멈춘 시간이 길었어요. 장애를 빨리 고치면 가용성이 올라가요.';
+/** What to try next: the tip for whatever cost the most points today. */
+const TIP: Record<ScorePart['key'], string> = {
+  reveal: '다음엔 "정답 보기" 전에 힌트를 한 단계씩 먼저 받아보세요.',
+  hint: '힌트를 조금만 아끼면 별이 더 늘어나요. 막히면 도감(C)의 카드부터 읽어 보세요.',
+  mttd: '경보가 뜨면 관제 화면(N)에서 바로 확인(ACK)부터 눌러보세요. 터미널 옆 "지금 장애"에서도 누를 수 있어요.',
+  mttr: '고치는 데 오래 걸렸어요. 막히면 도감(C)과 쿠사수 무전기 1단계 힌트부터 써 보세요.',
+  availability: '서비스가 멈춘 시간이 길었어요. 장애를 빨리 고치면 가용성이 올라가요.',
+};
+
+function advice(stars: number, parts: ScorePart[], final: boolean): string {
+  const worst = [...parts].sort((a, b) => b.points - a.points)[0];
+  if (stars === 3 && (!worst || worst.points < 10)) return final ? '완벽해요! 수강신청을 끝까지 지켜냈어요.' : '완벽해요! 이 실력이면 수강신청 날도 문제없어요.';
+  if (worst) return TIP[worst.key];
   return '좋아요! 다시 하면 별 3개도 노려볼 수 있어요.';
 }
 
@@ -74,18 +82,20 @@ export function Results() {
   if (!run || !score) return null;
   const def = getStage(run.stage);
 
+  // Every card granted today: each finished mission's cards (its concept and alsoConcepts) and each fixed incident's.
   const earned = [
     ...new Set([
+      ...def.objectives.filter((o) => o.id in run.objectivesDone).flatMap(missionCards),
       ...run.scenarios
         .filter((r) => r.state === 'resolved')
         .map((r) => def.scenarios.find((s) => s.id === r.id)?.concept),
-      ...def.objectives.filter((o) => o.concept && o.id in run.objectivesDone).map((o) => o.concept),
     ]),
   ]
     .filter((c): c is string => !!c && c in CONCEPTS)
     .map((id) => CONCEPTS[id]);
 
   const finish = gameStore.getState().finishResults;
+  const parts = scoreParts(score);
   const hintPoints = score.hintPenalty * 5;
   const revealPoints = score.revealed * 15;
   // D-Day (scoreAvailabilityFrom): every second from the 10:00 open, incidents included — the same number the
@@ -129,6 +139,10 @@ export function Results() {
           {newRecord ? <span className="res-best new">🏆 신기록!</span> : <span className="res-best">최고 기록 {prevBest}점</span>}
         </div>
 
+        <p className="res-breakdown">
+          {parts.length ? `감점: ${parts.map((p) => `${p.label} −${p.points}`).join(' · ')}` : '감점 없이 100점!'}
+        </p>
+
         <dl className="res-stats">
           <Stat
             label={availLabel}
@@ -155,7 +169,7 @@ export function Results() {
           />
         </dl>
 
-        <p className="res-advice">💬 {advice(score.stars, score.hintPenalty, score.revealed, score.mttd, score.mttr, availability, isFinal)}</p>
+        <p className="res-advice">💬 {advice(score.stars, parts, isFinal)}</p>
 
         {tomorrow && (
           <p className="res-tomorrow">

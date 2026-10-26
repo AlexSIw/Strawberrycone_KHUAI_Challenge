@@ -1,9 +1,9 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { getStage } from '../content/stages';
 import { fmtClock, gameSec, koDate, parseHms } from '../sim/clock';
-import { activeScenarios } from '../sim/engine';
+import { activeScenarios, visibleObjectives } from '../sim/engine';
 import { LAST_DAY } from '../sim/types';
-import { gameStore, useGame } from '../store/game';
+import { cardsWaitForIncident, gameStore, missionPreview, useGame } from '../store/game';
 import { availLevel, latencyLevel, type Level } from './levels';
 import { ModalFrame } from './ModalFrame';
 import { SoundToggle } from './SoundToggle';
@@ -38,6 +38,8 @@ export function Hud() {
   // Today's work is done: the exit button becomes 퇴근하기 (the outro also starts once every window is closed).
   const dayDone = useGame((s) => s.dayDone && s.screen === 'playing' && !s.dialogue);
   const [confirmExit, setConfirmExit] = useState(false);
+  const held = useGame((s) => s.heldConcepts.length);
+  const previewed = useGame((s) => s.previewed);
 
   // The stage ended (outro / results / next stage) while the exit question was open: drop it.
   useEffect(() => {
@@ -85,6 +87,21 @@ export function Hud() {
   const dday = run.stage === LAST_DAY;
   const now = gameSec(def.clock, t);
   const overtime = !dday && now >= OVERTIME;
+  // What waits for the open window to close (cards, new missions' briefings) or for the incident to end.
+  // The terminal says it in its own side box.
+  const briefs = modal
+    ? visibleObjectives(def, run).filter((o) => !previewed.includes(o.id) && !(o.id in run.objectivesDone) && !!missionPreview(run, o)).length
+    : 0;
+  const waiting = [held ? `카드 ${held}장` : '', briefs ? `새 미션 브리핑 ${briefs}개` : ''].filter(Boolean).join(' · ');
+  const incidentHold = cardsWaitForIncident(run);
+  const heldNote =
+    screen !== 'playing' || busy || modal === 'terminal' || !waiting
+      ? null
+      : modal
+        ? `📬 ${waiting} 대기 중 · ${incidentHold && held ? '장애를 해결하고 ' : ''}이 창을 닫으면 펼쳐져요`
+        : incidentHold
+          ? `🃏 ${waiting} 대기 중 · 장애를 해결하면 펼쳐져요`
+          : null;
 
   /** Run a HUD action and drop focus, so a later Enter/Space doesn't press this button again. */
   const press = (fn: () => void) => (e: MouseEvent<HTMLButtonElement>) => {
@@ -127,7 +144,7 @@ export function Hud() {
             value={Math.round(h.rps).toLocaleString('ko-KR')}
             unit="rps"
             tone="plain"
-            title="초당 요청 수(requests per second): 지금 몰려온 학생 수예요."
+            title="초당 요청 수(requests per second): 1초에 들어오는 학생 요청 수예요. 매크로·봇 요청은 세지 않아요."
           />
           <Kpi
             label="응답"
@@ -195,6 +212,12 @@ export function Hud() {
           )}
         </nav>
       </header>
+
+      {heldNote && (
+        <p className="hud-held" role="status">
+          {heldNote}
+        </p>
+      )}
 
       {confirmExit && (
         <ModalFrame

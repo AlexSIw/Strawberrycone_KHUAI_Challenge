@@ -27,6 +27,7 @@ import {
   standby,
   vtySource,
 } from './config';
+import { showGloss, tip, type ShowGloss } from './gloss';
 import type { CNode, Ctx, Env } from './parse';
 import {
   showCdpNeighbors,
@@ -48,6 +49,15 @@ import {
 const num = (c: Ctx, k: string) => c.a[k] as number;
 const str = (c: Ctx, k: string) => c.a[k] as string;
 const list = (c: Ctx, k: string) => c.a[k] as number[];
+
+/** Print a show output and its Korean gloss (the gloss may depend on what the output says). */
+function shown(c: Ctx, lines: string[], g: ShowGloss | ((lines: string[]) => ShowGloss)): void {
+  c.out.push(...lines);
+  c.gloss.push(...showGloss(typeof g === 'function' ? g(lines) : g));
+}
+
+const stpGloss = (lines: string[]): ShowGloss =>
+  lines[0]?.startsWith('Spanning tree instance(s)') ? 'stpNoVlan' : lines[0]?.startsWith('No spanning tree') ? 'stpNone' : 'stp';
 
 // ---------- visibility ----------
 
@@ -86,17 +96,22 @@ const showNode: CNode = {
       kw: 'interfaces',
       help: 'Interface status and configuration',
       ko: '포트 상세 상태 (사용률 txload, CRC 오류)',
-      run: (c) => c.out.push(...showInterfaces(c.w, c.host, c.nd)),
+      run: (c) => shown(c, showInterfaces(c.w, c.host, c.nd), 'interfaces'),
       kids: [
-        { kw: 'status', help: 'Show interface line status', ko: '포트 상태 한눈에 (connected/notconnect/err-disabled, VLAN)', run: (c) => c.out.push(...showIntStatus(c.w, c.host, c.nd)) },
-        { kw: 'trunk', help: 'Show interface trunk information', ko: 'trunk 포트와 실어 나르는 VLAN', run: (c) => c.out.push(...showIntTrunk(c.w, c.host, c.nd)) },
+        { kw: 'status', help: 'Show interface line status', ko: '포트 상태 한눈에 (connected/notconnect/err-disabled, VLAN)', run: (c) => shown(c, showIntStatus(c.w, c.host, c.nd), 'intStatus') },
+        {
+          kw: 'trunk',
+          help: 'Show interface trunk information',
+          ko: 'trunk 포트와 실어 나르는 VLAN',
+          run: (c) => shown(c, showIntTrunk(c.w, c.host, c.nd), (l) => (l.length ? 'trunk' : 'trunkNone')),
+        },
         {
           kw: 'counters',
           help: 'Show interface counters',
           ko: '포트 카운터',
-          kids: [{ kw: 'errors', help: 'Show interface error counters', ko: '포트별 오류 수 (CRC = 깨진 프레임)', run: (c) => c.out.push(...showCountersErrors(c.nd)) }],
+          kids: [{ kw: 'errors', help: 'Show interface error counters', ko: '포트별 오류 수 (CRC = 깨진 프레임)', run: (c) => shown(c, showCountersErrors(c.nd), 'countersErrors') }],
         },
-        { ...IFNAME_HELP, check: ifExists, run: (c) => c.out.push(...showInterfaces(c.w, c.host, c.nd, str(c, 'if'))) },
+        { ...IFNAME_HELP, check: ifExists, run: (c) => shown(c, showInterfaces(c.w, c.host, c.nd, str(c, 'if')), 'interfaces') },
       ],
     },
     {
@@ -108,7 +123,7 @@ const showNode: CNode = {
           kw: 'interface',
           help: 'IP interface status and configuration',
           ko: '포트별 IP',
-          kids: [{ kw: 'brief', help: 'Brief summary of IP status and configuration', ko: '포트별 IP와 up/down 요약', run: (c) => c.out.push(...showIpIntBrief(c.w, c.host, c.nd)) }],
+          kids: [{ kw: 'brief', help: 'Brief summary of IP status and configuration', ko: '포트별 IP와 up/down 요약', run: (c) => shown(c, showIpIntBrief(c.w, c.host, c.nd), 'ipIntBrief') }],
         },
       ],
     },
@@ -116,33 +131,33 @@ const showNode: CNode = {
       kw: 'vlan',
       help: 'VTP VLAN status',
       ko: 'VLAN 목록',
-      run: (c) => c.out.push(...showVlanBrief(c.nd)),
-      kids: [{ kw: 'brief', help: 'VTP all VLAN status in brief', ko: 'VLAN과 거기 속한 포트 요약', run: (c) => c.out.push(...showVlanBrief(c.nd)) }],
+      run: (c) => shown(c, showVlanBrief(c.nd), 'vlanBrief'),
+      kids: [{ kw: 'brief', help: 'VTP all VLAN status in brief', ko: 'VLAN과 거기 속한 포트 요약', run: (c) => shown(c, showVlanBrief(c.nd), 'vlanBrief') }],
     },
     {
       kw: 'etherchannel',
       help: 'EtherChannel information',
       ko: '포트 묶음(LACP) 정보',
-      kids: [{ kw: 'summary', help: 'One-line summary per channel-group', ko: '묶음별 한 줄 요약 (P = 묶여서 동작 중)', run: (c) => c.out.push(...showEtherchannel(c.w, c.host, c.nd)) }],
+      kids: [{ kw: 'summary', help: 'One-line summary per channel-group', ko: '묶음별 한 줄 요약 (P = 묶여서 동작 중)', run: (c) => shown(c, showEtherchannel(c.w, c.host, c.nd), 'etherchannel') }],
     },
     {
       kw: 'standby',
       help: 'Hot standby protocol information',
       ko: 'HSRP(게이트웨이 이중화) 상태',
-      run: (c) => c.out.push(...showStandbyBrief(c.w, c.host, c.nd)),
-      kids: [{ kw: 'brief', help: 'Brief output', ko: 'Active/Standby 한 줄 요약', run: (c) => c.out.push(...showStandbyBrief(c.w, c.host, c.nd)) }],
+      run: (c) => shown(c, showStandbyBrief(c.w, c.host, c.nd), 'standby'),
+      kids: [{ kw: 'brief', help: 'Brief output', ko: 'Active/Standby 한 줄 요약', run: (c) => shown(c, showStandbyBrief(c.w, c.host, c.nd), 'standby') }],
     },
     {
       kw: 'spanning-tree',
       help: 'Spanning tree topology',
       ko: '루프 방지(STP) 상태 (FWD 전달 / BLK 차단)',
-      run: (c) => c.out.push(...showSpanningTree(c.w, c.host, c.nd)),
+      run: (c) => shown(c, showSpanningTree(c.w, c.host, c.nd), stpGloss),
       kids: [
         {
           kw: 'vlan',
           help: 'VLAN Switch Spanning Trees',
           ko: '한 VLAN만 보기',
-          kids: [{ arg: 'vlan', id: 'v', label: '<1-4094>', help: 'Spanning tree VLAN id', ko: 'VLAN 번호', run: (c) => c.out.push(...showSpanningTree(c.w, c.host, c.nd, num(c, 'v'))) }],
+          kids: [{ arg: 'vlan', id: 'v', label: '<1-4094>', help: 'Spanning tree VLAN id', ko: 'VLAN 번호', run: (c) => shown(c, showSpanningTree(c.w, c.host, c.nd, num(c, 'v')), stpGloss) }],
         },
       ],
     },
@@ -153,6 +168,7 @@ const showNode: CNode = {
       run: (c) => {
         const d = c.w.devices[c.host];
         const ports = Object.keys(c.nd.ifs).filter((k) => !isPoKey(k));
+        c.gloss.push(...showGloss('version'));
         c.out.push(
           'KHU NOS Software, Version 17.9.4',
           'Copyright (c) KHU Data Center Lab (fictional device for training)',
@@ -175,21 +191,21 @@ const showNode: CNode = {
       kw: 'cdp',
       help: 'CDP information',
       ko: '옆에 연결된 네트워크 장비 정보',
-      kids: [{ kw: 'neighbors', help: 'CDP neighbor entries', ko: '어느 포트에 어떤 장비가 꽂혔는지', run: (c) => c.out.push(...showCdpNeighbors(c.w, c.host, c.nd)) }],
+      kids: [{ kw: 'neighbors', help: 'CDP neighbor entries', ko: '어느 포트에 어떤 장비가 꽂혔는지', run: (c) => shown(c, showCdpNeighbors(c.w, c.host, c.nd), 'cdp') }],
     },
-    { kw: 'logging', help: 'Show the contents of logging buffers', ko: '장비 로그(syslog) 보기', run: (c) => c.out.push(...showLogging(c.nd, c.day)) },
+    { kw: 'logging', help: 'Show the contents of logging buffers', ko: '장비 로그(syslog) 보기', run: (c) => shown(c, showLogging(c.nd, c.day), 'logging') },
     {
       kw: 'running-config',
       help: 'Current operating configuration',
       ko: '지금 돌아가는 설정 전체',
       when: priv,
-      run: (c) => c.out.push(...showRunningConfig(c.w.devices[c.host].label, c.nd)),
+      run: (c) => shown(c, showRunningConfig(c.w.devices[c.host].label, c.nd), 'running'),
       kids: [
         {
           kw: 'interface',
           help: 'Show interface configuration',
           ko: '포트 하나의 설정만',
-          kids: [{ ...IFNAME_HELP, check: ifExists, run: (c) => c.out.push(...showRunningConfig(c.w.devices[c.host].label, c.nd, str(c, 'if'))) }],
+          kids: [{ ...IFNAME_HELP, check: ifExists, run: (c) => shown(c, showRunningConfig(c.w.devices[c.host].label, c.nd, str(c, 'if')), 'running') }],
         },
       ],
     },
@@ -198,7 +214,7 @@ const showNode: CNode = {
       help: 'Contents of startup configuration',
       ko: '저장된 설정 (재부팅하면 이걸로 켜져요)',
       when: priv,
-      run: (c) => c.out.push(...showStartupConfig(c.w.devices[c.host].label, c.nd)),
+      run: (c) => shown(c, showStartupConfig(c.w.devices[c.host].label, c.nd), (l) => (l[0] === 'startup-config is not present' ? 'startupNone' : 'startup')),
     },
   ],
 };
@@ -216,7 +232,7 @@ function ping(c: Ctx): void {
   if (!ip) {
     c.out.push(red('% Unrecognized host or address, or protocol not running.'));
     // A TOR can't reach the DNS server either: a server's name fails here, not because the server is gone.
-    if (mgmtOnly(c)) c.out.push(MGMT_ONLY_NOTE);
+    c.out.push(mgmtOnly(c) ? MGMT_ONLY_NOTE : tip('unknownHost'));
     return;
   }
   const r = reach(c.w, c.host, ip);
@@ -288,7 +304,7 @@ const decoy = (kw: string, help: string): CNode => ({
   help,
   ko: '(이 게임에서는 쓰지 않아요)',
   decoy: true,
-  run: (c) => c.out.push(red(`% ${kw}: this command is not available on this device.`)),
+  run: (c) => c.out.push(red(`% ${kw}: this command is not available on this device.`), tip(kw === 'ssh' ? 'ssh' : 'decoy')),
 });
 const DECOYS = [
   decoy('send', 'Send a message to other tty lines'),
@@ -332,6 +348,7 @@ const EXEC_ROOT: CNode[] = [
 
 function enterConfig(c: Ctx): void {
   c.out.push('Enter configuration commands, one per line.  End with CNTL/Z.');
+  c.gloss.push(tip('configure'));
   go(c, 'config');
 }
 

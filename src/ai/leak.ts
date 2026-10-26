@@ -10,6 +10,9 @@
 //    unless the scenario lists them in `bannedIos`;
 //  - the values in those IOS lines on their own: IPs/CIDRs, interface names in any form ('Gi1/0/5',
 //    'gi 1/0/5', 'GigabitEthernet1/0/5', '1/0/5'), and VLAN numbers ('VLAN 20', 'vlan20', '20번 VLAN').
+// A MISSION answer (the radio's mission mode) is held to the same for every incident going on, minus what the
+// mission itself shows on screen (missionBanned).
+import type { Objective } from '../content/types';
 import { canonicalize, iosVariantsRegex } from '../sim/ios';
 import { normIf } from '../sim/net/ifname';
 import type { Scenario } from '../sim/scenario';
@@ -220,4 +223,21 @@ export function bannedFor(sc: Pick<Scenario, 'bannedPhrases' | 'solutionSteps' |
 export function leaks(reply: string, banned: RegExp[]): boolean {
   const r = ` ${normalize(reply)} `;
   return banned.some((re) => re.test(r));
+}
+
+/** Everything a mission shows on screen (its text, why and steps): the radio may repeat it whatever is going on. */
+export function missionShown(o: Pick<Objective, 'text' | 'why' | 'steps'>): string[] {
+  return [o.text, o.why ?? '', ...(o.steps ?? []).flatMap((s) => [s.text, s.cmd ?? '', s.why ?? ''])].filter(Boolean);
+}
+
+/**
+ * What the 사수 must not say when answering a question about a MISSION: everything banned for each incident
+ * going on (a mission answer never gives an incident away), except what the mission itself already shows on
+ * screen (its text, why and steps). Repeating those is no leak, and banning them would leave the mission
+ * unexplainable while the incident lasts (D-4: DB-01's address in the DNS mission, during the VLAN incident).
+ */
+export function missionBanned(active: Pick<Scenario, 'bannedPhrases' | 'solutionSteps' | 'bannedIos'>[], shown: string[]): RegExp[] {
+  const screen = ` ${normalize(shown.join(' \n '))} `;
+  const uniq = new Map(active.flatMap(bannedFor).map((r) => [`${r.flags}/${r.source}`, r]));
+  return [...uniq.values()].filter((re) => !re.test(screen));
 }

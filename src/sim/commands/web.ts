@@ -166,7 +166,7 @@ export const webCommands: Command[] = [
         );
       }
       if (status !== 200) {
-        lines.push(yellow(`{"error":"Not Found","path":"${path}"}`));
+        lines.push(yellow(`{"error":"Not Found","path":"${path}"}`), dim('(404 Not Found = 서버는 대답했지만 그런 경로(페이지)가 없대요)'));
         return { lines, events: [`curl:404:${path}`] };
       }
       const body: Record<string, string> = {
@@ -175,7 +175,7 @@ export const webCommands: Command[] = [
         '/courses': '{"courses":["대학 글쓰기","컴퓨터 개론","교양 영어"]}',
         '/health': '{"status":"UP"}',
       };
-      lines.push(green(own(body, path) ?? '{"status":"ok"}'));
+      lines.push(green(own(body, path) ?? '{"status":"ok"}'), dim('(200 OK = 정상 응답 · { } 안은 서버가 보내 준 데이터(JSON))'));
       // The name asked for is in the event ('curl:200:sugang/enroll'): a mission can tell whose 200 it was.
       return { lines, events: [`curl:200:${name.toLowerCase()}${path}`] };
     },

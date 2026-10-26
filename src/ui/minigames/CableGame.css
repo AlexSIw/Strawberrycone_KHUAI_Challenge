@@ -202,3 +202,22 @@
 @media (prefers-reduced-motion: reduce) {
   .cb-wire.replacing .cb-wire-core, .cb-jack.free .cb-jack-hole { animation: none; }
 }
+
+/* The wiring plan (배선표) of the cable mission: the mission panel is under this window. */
+.cb-plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 6px 0 8px;
+  padding: 6px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.cb-plan-row { color: var(--muted); }
+.cb-plan-row.next { color: var(--text); font-weight: 700; }
+.cb-plan-row.done { color: var(--green, #4fd17a); }
+/* The port the 배선표 gives the server in hand */
+.cb-port.planned { outline: 3px solid var(--green); outline-offset: 1px; box-shadow: 0 0 0 6px rgba(79, 209, 122, 0.25); }
+.cb-port.planned .cb-port-use::after { content: ' ← 여기'; color: var(--green); font-weight: 700; }

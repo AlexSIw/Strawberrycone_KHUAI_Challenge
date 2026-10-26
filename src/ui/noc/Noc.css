@@ -340,3 +340,7 @@
 @media (prefers-reduced-motion: reduce) {
   .nms-link.red, .nms-badge.pulse, .nms-led.green, .nms-led.crc { animation: none; }
 }
+
+/* Plain-Korean help under the port table and the syslog, and the gloss line under each syslog entry. */
+.nms-gloss { margin: 4px 0 6px; font-size: 12px; line-height: 1.5; }
+.nms-syslog-gloss { color: var(--muted); }

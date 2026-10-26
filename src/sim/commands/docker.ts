@@ -251,6 +251,7 @@ export const dockerCommands: Command[] = [
         lines: [
           ...recipe.map((l, i) => dim(`Step ${i + 1}/${recipe.length} : ${l}`)),
           green(`Successfully tagged ${img}`),
+          dim('(Step = 레시피(Dockerfile) 한 줄씩 차례로 실행 · Successfully tagged = 이 이름표로 이미지를 다 만들었어요)'),
           ...(hasContext ? [] : [dim('(실제 docker 에서는 끝에 빌드할 폴더를 꼭 적어요. 지금 폴더면 "." )')]),
         ],
         events: [`docker_build:${name}`],
@@ -303,7 +304,10 @@ export const dockerCommands: Command[] = [
       const bad = dockerHost(w, host);
       if (bad) return bad;
       const list = localImages(w, host);
-      return out(bold('REPOSITORY:TAG'), ...(list.length ? list.map((i) => `  ${i}`) : [dim('  (없음)')]));
+      return out(
+        bold('REPOSITORY:TAG'),
+        ...(list.length ? [...list.map((i) => `  ${i}`), dim('(이미지 = 컨테이너를 찍어 내는 원본 · 이름:태그 에서 태그는 버전 이름표)')] : [dim('  (없음)')]),
+      );
     },
   },
   {
@@ -372,6 +376,7 @@ export const dockerCommands: Command[] = [
         rows.push(`${c.id}   ${pad(c.image, 15)}${c.running ? green(pad('Up', 10)) : red(pad('Exited', 10))}${ports}${pad(c.volume ?? '-', 11)}${c.name}`);
       }
       if (!list.length) rows.push(dim(host === 'ops' ? '  (없음 · 관리 PC에는 컨테이너가 없어요. 서버에 ssh 로 접속해서 보세요)' : '  (없음)'));
+      else rows.push(dim('(PORTS 의 a->b = 서버의 a번 문 → 컨테이너 안 b번 문 · STATUS: Up 실행 중, Exited 멈춤 · VOLUME = 붙여 둔 볼륨, - 는 없음)'));
       return { lines: rows, events: ['docker_ps'] };
     },
   },
@@ -553,8 +558,10 @@ export const dockerCommands: Command[] = [
         lines: [
           `$ pip install -r requirements.txt`,
           red('ERROR: Package \'enroll-app\' requires a different Python: 3.9.18 not in \'>=3.11\''),
+          dim('(앱에 필요한 부품 설치가 거절됐어요: 이 서버의 Python은 3.9인데, 앱은 3.11 이상이 필요해요)'),
           `$ python app.py`,
           red('ModuleNotFoundError: No module named \'fastapi\''),
+          dim('(부품(fastapi)이 안 깔려서 앱이 켜지지 못했어요)'),
           yellow('→ 배포 실패: 이 서버 환경이 기존 서버와 달라요.'),
         ],
       };

@@ -5,7 +5,10 @@ import { cableBoard, portLed, stpBlocked, type LedState as PortLed } from '../..
 import { connectCable, replaceCable } from '../../sim/actions';
 import { cableAt, linkUp, operState, powered } from '../../sim/network';
 import type { Cable, Device, World } from '../../sim/types';
-import { gameStore } from '../../store/game';
+import { getStage } from '../../content/stages';
+import { visibleObjectives, type StageRun } from '../../sim/engine';
+import { gameStore, useGame } from '../../store/game';
+import { guideOf, type GuideRow } from '../objectiveStatus';
 import { useStageState } from '../useStageState';
 import { GameFooter, Led, MiniGameFrame, NoteLine, TaskBar, rackName, useDay, useDragDrop, useNote, useTimers, useWorld, type LedState } from './common';
 import './CableGame.css';
@@ -127,8 +130,30 @@ function useJackPositions(board: RefObject<HTMLDivElement | null>): Record<strin
   return pts;
 }
 
+/**
+ * The wiring plan of the cable mission being done (its first-time guide without the "open this window" step):
+ * the mission panel is under this window, so the plan is shown here too. Null when there is none.
+ */
+function wiringPlan(run: StageRun | null): GuideRow[] | null {
+  if (!run) return null;
+  const o = visibleObjectives(getStage(run.stage), run).find((x) => x.spot === 'switch' && !(x.id in run.objectivesDone));
+  const rows = guideOf(o, run)?.rows.filter((r) => !/앞에서 E:/.test(r.text));
+  return rows?.length ? rows : null;
+}
+
+/** "WEB-01 → TOR-01 1번 포트 (Gi1/0/1)" → ['WEB-01', 'Gi1/0/1']: which port the plan gives a server. */
+const planPort = (r: GuideRow): [string, string] | null => {
+  const m = /^(\S+)\s*→.*\(([A-Za-z]+[\d/]+)\)/.exec(r.text);
+  return m ? [m[1], m[2]] : null;
+};
+
+/** Network gear past the switch's uplinks: a core is the way up (업링크); another rack switch is a side link. */
+const isCore = (id: string) => /^CORE-/i.test(id);
+
 export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   const world = useWorld();
+  const run = useGame((s) => s.run);
+  const plan = mode === 'build' ? wiringPlan(run) : null;
   const day = useDay();
   const board = day && world ? cableBoard(day, world, mode) : null;
   const SWITCH = board?.sw ?? 'TOR-01';
@@ -190,6 +215,9 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   const installed = servers.filter((d) => d.installed);
   const notMounted = servers.length - installed.length;
   const holding = drag?.item ?? selected;
+  // The port the plan gives the server in hand (lit up as the place to plug it).
+  const heldLabel = holding ? world.devices[devOf(holding)]?.label : undefined;
+  const plannedPort = heldLabel ? plan?.map(planPort).find((x) => x?.[0] === heldLabel)?.[1] : undefined;
 
   const runTest = (c: Cable) => {
     setRunning((r) => ({ ...r, [c.id]: true }));
@@ -283,7 +311,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   let doneText: string | null = null;
   if (done) {
     if (!allLinked) doneText = anyNoPower ? '케이블은 다 꽂았어요. LED는 양쪽 장비에 전원이 들어와야 켜져요.' : '케이블은 다 꽂았어요.';
-    else if (!world.k8s || !nodeRows) doneText = '모든 링크 정상! 데이터가 지나갈 도로(L1)가 깔렸어요.';
+    else if (!world.k8s || !nodeRows) doneText = '모든 링크 정상! 데이터가 지나갈 도로(케이블과 신호)가 깔렸어요.';
     else {
       const down = Object.entries(world.k8s.nodes).filter(([, n]) => !n.ready);
       const hot = down.filter(([, n]) => (world.cooling?.temps[n.rack] ?? 24) >= NODE_SAFE_TEMP).map(([id]) => id);
@@ -345,6 +373,17 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
       footer={<GameFooter done={done}>{doneText}</GameFooter>}
     >
       <TaskBar done={done}>{task}</TaskBar>
+      {plan && (
+        <div className="cb-plan" aria-label="배선표">
+          <b>📋 배선표</b>
+          {plan.map((r) => (
+            <span key={r.text} className={`cb-plan-row${r.done ? ' done' : r.next ? ' next' : ''}`}>
+              {r.done ? '✓ ' : r.next ? '▶ ' : ''}
+              {r.text}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="cb-scroll">
         <div className="cb-board" ref={boardRef}>
@@ -401,7 +440,7 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
                   <div className="cb-dev">
                     <div className="cb-dev-line">
                       <span className="cb-dev-name">{labelOf(world, o.dev)}</span>
-                      {world.devices[o.dev]?.nd && <span className="tag">업링크</span>}
+                      {world.devices[o.dev]?.nd && <span className="tag">{isCore(o.dev) ? '업링크' : '스위치 간 연결'}</span>}
                     </div>
                     {tools(o.cable, name)}
                   </div>
@@ -431,12 +470,13 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
                 const ep = `${SWITCH}:${p}`;
                 const c = cableAt(world, ep);
                 const target = !c && !!holding && mode === 'build';
+                const planned = target && plannedPort === p;
                 const over = drag?.over === ep;
                 return (
                   <button
                     key={p}
                     type="button"
-                    className={`cb-port${c ? ' used' : ' free'}${target ? ' target' : ''}${over ? (c ? ' over-bad' : ' over-ok') : ''}`}
+                    className={`cb-port${c ? ' used' : ' free'}${target ? ' target' : ''}${planned ? ' planned' : ''}${over ? (c ? ' over-bad' : ' over-ok') : ''}`}
                     data-drop={ep}
                     onClick={() => tapPort(p)}
                     aria-label={`스위치 ${p} 포트: ${c ? `${farName(world, otherEnd(c, ep))} 연결됨` : '비어 있음'}`}

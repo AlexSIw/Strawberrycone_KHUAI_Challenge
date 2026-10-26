@@ -8,8 +8,9 @@ import { normIf } from '../net/ifname';
 import type { DayId, IosLevel, IosMode, World } from '../types';
 import { own } from '../util';
 import { isPoKey, isSviKey, logConfigured, red } from './config';
+import { maskTip, tip } from './gloss';
 import { canonicalOf } from './leak';
-import { isConfigLevel, tokenize, visible, walk, type CNode, type Ctx, type Env, type Walk } from './parse';
+import { isConfigLevel, tokenize, visible, walk, type CNode, type Ctx, type Env, type Tok, type Walk } from './parse';
 import { ROOTS } from './tree';
 
 export type { IosLevel, IosMode };
@@ -58,20 +59,85 @@ function parseIn(w: World, host: string, mode: IosMode, line: string): { r: Walk
   return { r: r2.at > r.at ? r2 : r, mode };
 }
 
-const EXEC_ONLY = ['configure', 'write', 'copy', 'clear', 'disable', 'running-config', 'startup-config'];
+/** Exec commands that also run from config modes with `do`. */
+const DOABLE = new Set(['show', 'write', 'copy', 'ping', 'clear']);
+
+/** 관리 PC (Linux) commands: typed on a switch, they belong back on the admin PC. */
+const LINUX_WORDS = new Set(['curl', 'nslookup', 'dig', 'traceroute', 'tracert', 'tracepath', 'ifconfig', 'docker', 'kubectl', 'k', 'pods', 'nodes', 'deploys', 'svcs', 'dhcp', 'dns', 'lb', 'fw', 'hostname', 'whoami', 'ls', 'cd', 'cat', 'sudo', 'cls']);
+
+/** Commands of one kind of server, typed on a switch: the tip names that server. */
+const HOME_TIP: Record<string, 'dnsHost' | 'dhcpHost' | 'lbHost' | 'fwHost'> = { dns: 'dnsHost', dhcp: 'dhcpHost', lb: 'lbHost', fw: 'fwHost' };
+
+const HANGUL = /[ㄱ-ㅎㅏ-ㅣ가-힣]/;
+
+/** The prefix length in `ip address <IP> /24`, `ip address <IP>/24` or `ip address <IP> 24`, else null. */
+function slashMask(toks: Tok[]): number | null {
+  const t = toks.map((x) => x.s.toLowerCase());
+  if (t[0] !== 'ip' || !t[1] || !'address'.startsWith(t[1])) return null;
+  for (let i = 2; i < t.length; i++) {
+    const m = /^(?:\d{1,3}(?:\.\d{1,3}){3})?\/(\d{1,2})$/.exec(t[i]) ?? (i === 3 ? /^(\d{1,2})$/.exec(t[i]) : null);
+    if (m && Number(m[1]) <= 32) return Number(m[1]);
+  }
+  return null;
+}
+
+/** One dim Korean line under "% Invalid input": where the line would work instead, else how to look it up. */
+function invalidTip(w: World, host: string, mode: IosMode, line: string, toks: Tok[], r: Walk): string | null {
+  const first = toks[0]?.s.toLowerCase() ?? '';
+  // The terminal adds its own 한/영 tip for a line typed in Hangul.
+  if (HANGUL.test(first)) return null;
+  if (first === 'ssh') return tip('ssh');
+  if (first === 'help') return tip('help');
+  // A command of another server: name the server it belongs on, not just "the 관리 PC".
+  const home = HOME_TIP[first];
+  if (home) return tip(home);
+  if (LINUX_WORDS.has(first) || /^ip\s+(?:a|addr)$/i.test(line.trim())) return tip('linux');
+  const at = (level: IosLevel, ifs?: string[]): Walk | null => {
+    const r = walk(ROOTS[level], toks, line, envOf(w, host, { level, ...(ifs ? { ifs } : {}) }));
+    return r.ok ? r : null;
+  };
+  const lv = mode.level;
+  if (isConfigLevel(lv)) {
+    if (first.length >= 2 && 'show'.startsWith(first)) return tip('doShow');
+    const ex = at('exec');
+    if (ex) {
+      const head = ex.canon[0];
+      if (head === 'write' || head === 'copy') return tip('doWrite');
+      return tip(DOABLE.has(head) ? 'doExec' : 'inConfig');
+    }
+    if (lv === 'config-if') {
+      // A command for another kind of interface (an SVI's standby on a port, a port's switchport on an SVI …).
+      if (at('config-if', ['Vlan1'])) return tip('needSvi');
+      if (at('config-if', ['Gi1/0/1']) || at('config-if', ['Po1'])) return tip('needPort');
+    } else if (at('config-if')) return tip('pickIf');
+    if (lv !== 'config-vlan' && at('config-vlan')) return tip('pickVlan');
+  } else {
+    const user = lv === 'user';
+    if (first === 'do') return tip('noDo');
+    if (user && at('exec')) return tip('needEnable');
+    if (at('config')) return tip(user ? 'needConfigUser' : 'needConfig');
+    if (at('config-if')) return tip(user ? 'needIfUser' : 'needIf');
+    if (at('config-vlan')) return tip(user ? 'needVlanUser' : 'needVlan');
+  }
+  // A port was expected and a well-formed name came that this device doesn't have ('gi1/0/40', 'gi 1/0/40').
+  const t = toks[r.at]?.s ?? '';
+  const portNext = r.next.some((n) => n.arg === 'ifname' || n.arg === 'ifrange');
+  if (portNext && (normIf(t) || (/^[a-z-]+$/i.test(t) && normIf(t + (toks[r.at + 1]?.s ?? ''))))) return tip('noSuchPort');
+  const n = slashMask(toks);
+  return n !== null ? maskTip(n) : tip('invalid');
+}
 
 function errorLines(w: World, host: string, mode: IosMode, line: string, r: Walk): string[] {
   const toks = tokenize(line);
-  if (r.err === 'ambiguous') return [red(`% Ambiguous command:  "${line.trim()}"`)];
-  if (r.err === 'incomplete') return [red(r.last?.incomplete ?? '% Incomplete command.')];
+  if (r.err === 'ambiguous') return [red(`% Ambiguous command:  "${line.trim()}"`), tip('ambiguous')];
+  if (r.err === 'incomplete') {
+    if (r.last?.incomplete) return [red(r.last.incomplete), tip(r.last.kw === 'show' ? 'showIncomplete' : 'incomplete')];
+    return [red('% Incomplete command.'), tip('incomplete')];
+  }
   const col = toks[r.at]?.col ?? line.length;
   const out = [`${' '.repeat(iosPrompt(w, host, mode).length + 1 + col)}^`, red("% Invalid input detected at '^' marker.")];
-  const first = toks[0]?.s.toLowerCase() ?? '';
-  if (isConfigLevel(mode.level) && first.length >= 2 && 'show'.startsWith(first)) {
-    out.push(dim('(설정 모드에서는 show 앞에 do 를 붙여요: do show …)'));
-  } else if (mode.level === 'user' && toks.some((t) => EXEC_ONLY.some((k) => k.startsWith(t.s.toLowerCase()) && t.s.length >= 2))) {
-    out.push(dim('(이 명령은 관리자 모드(#)에서 써요. 먼저 enable)'));
-  }
+  const t = invalidTip(w, host, mode, line, toks, r);
+  if (t) out.push(t);
   return out;
 }
 
@@ -93,13 +159,13 @@ export function runIos(line: string, w: World, host: string, mode: IosMode, day:
   const bar = text.indexOf('|');
   if (bar >= 0 && /^(do )?show /.test(parseIn(w, host, mode, text.slice(0, bar)).r.canon.join(' ') + ' ')) {
     pipe = parsePipe(text.slice(bar + 1));
-    if (!pipe) return { lines: [`${' '.repeat(iosPrompt(w, host, mode).length + 1 + bar)}^`, red("% Invalid input detected at '^' marker.")], mode, events: [], canonical: null };
+    if (!pipe) return { lines: [`${' '.repeat(iosPrompt(w, host, mode).length + 1 + bar)}^`, red("% Invalid input detected at '^' marker."), tip('pipe')], mode, events: [], canonical: null };
     base = text.slice(0, bar);
   }
   const { r, mode: runMode } = parseIn(w, host, mode, base);
   if (!r.ok || !r.handler) return { lines: errorLines(w, host, mode, base, r), mode, events: [], canonical: null };
 
-  const c: Ctx = { w, host, nd, day, mode: runMode, a: r.args, out: [], next: runMode, events: [], changed: false };
+  const c: Ctx = { w, host, nd, day, mode: runMode, a: r.args, out: [], gloss: [], next: runMode, events: [], changed: false };
   r.handler(c);
   let next = c.next;
   if (next && c.changed && isConfigLevel(next.level) && !next.changed) next = { ...next, changed: true };
@@ -112,7 +178,8 @@ export function runIos(line: string, w: World, host: string, mode: IosMode, day:
   const events = [`ios:${host}:${canonical}`, ...c.events];
   if (canonical.startsWith('do ')) events.push(`ios:${host}:${canonical.slice(3)}`);
   if (canonical.endsWith('copy running-config startup-config')) events.push(`ios:${host}:write memory`);
-  return { lines: pipe ? applyPipe(c.out, pipe) : c.out, mode: next, events, canonical };
+  // A filtered show (`| include …`) prints only the matching lines, without the Korean gloss.
+  return { lines: pipe ? applyPipe(c.out, pipe) : [...c.out, ...c.gloss], mode: next, events, canonical };
 }
 
 type Pipe = { kind: 'include' | 'exclude' | 'begin' | 'section'; re: RegExp };
@@ -193,7 +260,7 @@ export function iosHelp(w: World, host: string, mode: IosMode, partial: string):
     if (r.err === 'invalid' && r.at === done.length - 1 && r.next.some((n) => n.arg === 'ifname') && /^[a-z-]+$/i.test(done[r.at].s) && normIf(`${done[r.at].s}1/0/1`)) {
       return endsSpace ? ['  <1-9>    Interface number'] : ['% Unrecognized command'];
     }
-    return [red(r.err === 'ambiguous' ? `% Ambiguous command:  "${partial.trim()}"` : '% Unrecognized command')];
+    return r.err === 'ambiguous' ? [red(`% Ambiguous command:  "${partial.trim()}"`), tip('ambiguous')] : [red('% Unrecognized command'), tip('unrecognized')];
   }
   const nodes = r.next;
   if (!endsSpace) {
@@ -203,7 +270,7 @@ export function iosHelp(w: World, host: string, mode: IosMode, partial: string):
     if (words.length) return [words.join('  ')];
     // a half-typed argument ('vlan 1?'): show what kind of value goes there
     const args = nodes.filter((n) => n.arg && n.arg !== 'ifname' && visible(n, e)).map((n) => `${n.label ?? n.arg}  ${n.help}`);
-    return args.length ? args.map((a) => `  ${a}`) : [red('% Unrecognized command')];
+    return args.length ? args.map((a) => `  ${a}`) : [red('% Unrecognized command'), tip('unrecognized')];
   }
   const rows = helpRows(nodes, e);
   const width = Math.max(10, ...rows.map(([k]) => k.length)) + 2;
@@ -236,17 +303,32 @@ export function iosComplete(w: World, host: string, mode: IosMode, partial: stri
 
 // ---------- cheat sheet ----------
 
+/**
+ * The first row of every sheet: which mode the prompt is in and how to move between modes. Its "command"
+ * starts with '[' so clicking it types nothing (the side panel cuts a usage at '[' / '<').
+ */
+export const MODE_LEGEND: Record<IosLevel, [string, string]> = {
+  user: ['[지금 모드] >', '일반 모드(보기만) · enable → # 관리자 모드 → conf t → (config)# 설정 모드'],
+  exec: ['[지금 모드] #', '관리자 모드(보기·저장) · conf t → (config)# 설정 모드 · exit → 관리 PC로'],
+  config: ['[지금 모드] (config)#', '설정 모드(장비 전체) · interface·vlan → 한 단계 안으로 · end → # 관리자 모드'],
+  'config-if': ['[지금 모드] (config-if)#', '인터페이스 설정 모드: 고른 것에만 적용 · exit → (config)# · end → #'],
+  'config-vlan': ['[지금 모드] (config-vlan)#', 'VLAN 설정 모드: 고른 VLAN에만 적용 · exit → (config)# · end → #'],
+};
+
 const SHEET_EXEC: [string, string][] = [
+  MODE_LEGEND.exec,
   ['configure terminal', '설정 모드로 (줄여서 conf t)'],
   ['show interfaces status', '포트 상태 한눈에 (sh int status)'],
   ['show ip interface brief', '포트별 IP와 up/down (sh ip int br)'],
   ['show vlan brief', 'VLAN과 포트 (sh vlan br)'],
+  ['show interfaces trunk', 'trunk 포트와 실어 나르는 VLAN 목록 (sh int trunk)'],
   ['show interfaces counters errors', '포트별 오류 수 (sh int count err)'],
   ['show etherchannel summary', '포트 묶음 상태 (sh eth sum)'],
   ['show standby brief', 'HSRP Active/Standby (sh standby br)'],
   ['show spanning-tree', '루프 방지 상태 (sh span)'],
   ['show logging', '장비 로그 (sh log)'],
   ['show running-config', '지금 설정 전체 (sh run)'],
+  ['ping <IP>', '응답 확인 (! 성공 . 실패)'],
   ['write memory', '설정 저장 (wr)'],
   ['exit', '장비에서 나가기'],
 ];
@@ -257,6 +339,7 @@ export function iosCheatSheet(mode: IosMode): [string, string][] {
   switch (mode.level) {
     case 'user':
       return [
+        MODE_LEGEND.user,
         ['enable', '관리자 모드(#)로 (줄여서 en)'],
         ['show interfaces status', '포트 상태 한눈에 (sh int status)'],
         ['show ip interface brief', '포트별 IP와 up/down (sh ip int br)'],
@@ -270,6 +353,7 @@ export function iosCheatSheet(mode: IosMode): [string, string][] {
       return SHEET_EXEC;
     case 'config':
       return [
+        MODE_LEGEND.config,
         ['interface <포트>', '포트 설정하러 (int gi1/0/5)'],
         ['interface vlan <N>', 'VLAN의 게이트웨이(SVI) 설정하러'],
         ['vlan <N>', 'VLAN 만들기'],
@@ -281,6 +365,7 @@ export function iosCheatSheet(mode: IosMode): [string, string][] {
       ];
     case 'config-vlan':
       return [
+        MODE_LEGEND['config-vlan'],
         ['name <이름>', 'VLAN 이름 붙이기'],
         ['exit', 'config 모드로'],
         ['end', '관리자 모드(#)로'],
@@ -289,8 +374,9 @@ export function iosCheatSheet(mode: IosMode): [string, string][] {
     case 'config-if':
       if (ifs.length && ifs.every(isSviKey)) {
         return [
-          ['ip address <IP> <마스크>', '이 VLAN의 게이트웨이 주소'],
-          ['standby 1 ip <가상 IP>', 'HSRP 가상 게이트웨이 주소'],
+          MODE_LEGEND['config-if'],
+          ['ip address <IP> <마스크>', '이 VLAN에서 이 스위치 자신의 주소 (게이트웨이 아님 · 마스크 예: 255.255.255.0 = /24)'],
+          ['standby 1 ip <가상 IP>', '모두가 쓰는 공용 게이트웨이 주소(.1) · 두 코어가 나눠 맡는 가상 IP (HSRP)'],
           ['standby 1 priority <N>', '높은 쪽이 Active (기본 100)'],
           ['standby 1 preempt', 'Active 되찾아 오기'],
           ['ip helper-address <IP>', 'DHCP 요청을 서버로 전달'],
@@ -300,11 +386,12 @@ export function iosCheatSheet(mode: IosMode): [string, string][] {
         ];
       }
       return [
+        MODE_LEGEND['config-if'],
         ['switchport mode access', '서버·PC용 포트로 (VLAN 하나)'],
         ['switchport access vlan <N>', '이 포트를 VLAN N에 넣기'],
         ['switchport mode trunk', '스위치 간 포트로 (VLAN 여러 개)'],
         ['switchport trunk allowed vlan add <N>', 'trunk에 VLAN 더하기'],
-        ['channel-group <N> mode active', '포트 묶기 (LACP)'],
+        ['channel-group <N> mode active', '포트 묶기 (LACP) · N = 이 장비의 묶음 번호: 이미 쓰는 번호면 그 묶음에 들어가요, 새 묶음은 안 쓰는 번호로'],
         ['shutdown', '포트 끄기'],
         ['no shutdown', '포트 켜기'],
         ['description <메모>', '포트 메모'],

@@ -2,6 +2,7 @@ import { gameStore, useGame, type Modal } from '../store/game';
 import { ConceptsBook } from './ConceptsBook';
 import { HintChat } from './HintChat';
 import { ModalFrame } from './ModalFrame';
+import { Recap } from './Recap';
 import { Terminal } from './Terminal';
 import { DecomposeBoard } from './boards/DecomposeBoard';
 import { DesiredBoard } from './boards/DesiredBoard';
@@ -18,11 +19,16 @@ import { NocConsole } from './noc/NocConsole';
  * Renders the open window (the top of the store's window stack). Each window closes itself via
  * gameStore.closeModal(), which brings back the window underneath, if any.
  * The layer starts below the HUD, so its buttons (관제, radio, 도감…) still work with a window open.
+ * A day started cold opens with its "지금까지" screen (store.recap), over everything, before the briefing.
  */
 export function ModalHost() {
   const modal = useGame((s) => s.modal);
-  if (!modal) return null;
-  return <div className="modal-layer">{renderWindow(modal)}</div>;
+  return (
+    <>
+      {modal && <div className="modal-layer">{renderWindow(modal)}</div>}
+      <Recap />
+    </>
+  );
 }
 
 function renderWindow(modal: Modal) {

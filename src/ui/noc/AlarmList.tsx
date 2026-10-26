@@ -93,7 +93,11 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
           {showCleared && <ol className="nms-alarm-list">{cleared.map(row)}</ol>}
         </>
       )}
-      {!calm && <p className="nms-poll muted">📡 SNMP로 {every}초마다 장비 상태를 물어봐요. 그래서 어떤 경보는 늦게 떠요.</p>}
+      {!calm && (
+        <p className="nms-poll muted">
+          📡 관제 시스템이 {every}초마다 장비에 상태를 물어봐요(SNMP 폴링 = 정해진 간격의 순찰). 그래서 어떤 경보는 늦게 떠요.
+        </p>
+      )}
     </section>
   );
 }

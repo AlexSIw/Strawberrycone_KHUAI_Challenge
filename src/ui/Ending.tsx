@@ -11,6 +11,8 @@ const CONFETTI_COLORS = ['#d7262b', '#e9b77c', '#ffd166', '#4fd17a', '#6ab7ff', 
 export function Ending() {
   const save = useGame((s) => s.save);
   const totalStars = STAGES.reduce((a, st) => a + (save.best[st.id]?.stars ?? 0), 0);
+  // The certificate says "from the first day on" only when every day was really played.
+  const allDays = STAGES.every((st) => !!save.best[st.id]);
   const owned = [...new Set(save.cards)].filter((c) => c in CONCEPTS);
   const cardTotal = Object.keys(CONCEPTS).length; // same total as the 개념 도감
   // Name the cards still to collect, so a gap reads as a goal rather than a counting bug.
@@ -57,11 +59,19 @@ export function Ending() {
             </div>
           </div>
 
-          <p className="end-body">
-            위 사람은 D-5 첫 출근부터 케이블 한 줄, 스위치 설정, 관제까지 직접 해내며
-            <br />
-            수강신청 날 서버를 끝까지 지켜냈기에 이 증서를 드립니다.
-          </p>
+          {allDays ? (
+            <p className="end-body">
+              위 사람은 D-5 첫 출근부터 케이블 한 줄, 스위치 설정, 관제까지 직접 해내며
+              <br />
+              수강신청 날 서버를 끝까지 지켜냈기에 이 증서를 드립니다.
+            </p>
+          ) : (
+            <p className="end-body">
+              위 사람은 수강신청 날 서버를 끝까지 지켜냈기에 이 증서를 드립니다.
+              <br />
+              <span className="muted">앞 날들(D-5~D-1)도 달력에서 해 보면, 그날 무엇을 지켰는지 더 잘 보여요.</span>
+            </p>
+          )}
 
           <div className="end-stats">
             <div>

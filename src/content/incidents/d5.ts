@@ -22,7 +22,7 @@ export const templates: IncidentTemplate[] = [
       const host = String(v.host);
       return {
         title: '포트 불빛이 초록·주황으로 깜빡임',
-        alert: '서버실 지나가다 봤는데, 스위치 포트 불빛 하나가 초록이랑 주황으로 번갈아 깜빡여요. 원래 그래요?',
+        alert: '네트워크실 지나가다 봤는데, TOR 배선판의 포트 불빛 하나가 초록이랑 주황으로 번갈아 깜빡여요. 원래 그래요?',
         severity: 'warning',
         alarm: { source: 'poll', device: 'TOR-01', text: 'TOR-01 포트 입력 오류(CRC) 증가' },
         room: 'network',

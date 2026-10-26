@@ -132,8 +132,8 @@ export const templates: IncidentTemplate[] = [
     id: 'd3-campus',
     day: 2,
     variants: [
-      { svc: 'lms', label: 'KHU LMS', team: 'LMS 운영팀', ms: 180 },
-      { svc: 'library', label: 'KHU 도서관', team: '도서관 시스템팀', ms: 140 },
+      { svc: 'lms', label: 'KHU LMS', what: '온라인 강의·과제 사이트', team: 'LMS 운영팀', ms: 180 },
+      { svc: 'library', label: 'KHU 도서관', what: '도서 검색·대출 사이트', team: '도서관 시스템팀', ms: 140 },
     ],
     make: (v) => {
       const svc = String(v.svc);
@@ -146,7 +146,7 @@ export const templates: IncidentTemplate[] = [
       };
       return {
         title: `${v.label} 응답 지연`,
-        alert: `${v.label} 접속이 너무 느리대요. 페이지 하나 여는 데 몇 초씩 걸린대요.`,
+        alert: `${v.label}(${v.what}) 접속이 너무 느리대요. 페이지 하나 여는 데 몇 초씩 걸린대요.`,
         severity: 'minor',
         // Campus services aren't devices in the NMS map: the alarm is pinned on the service (SMS row).
         alarm: { source: 'poll', device: svc, text: `${v.label} 응답시간 4초 이상` },

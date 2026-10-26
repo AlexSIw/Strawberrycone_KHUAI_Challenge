@@ -264,8 +264,8 @@ export const templates: IncidentTemplate[] = [
         bannedPhrases: [cidr, cidrSource(cidr), cidr.split('.').slice(0, 3).join('.'), 'fw deny'],
         solution: `매크로(자동 클릭 프로그램)들이 L4 세션 자리(30000)를 차지해서 학생들의 새 접속이 거부됐다. ssh FW-01 → fw top 에서 주소 하나당 요청 수가 사람의 수백 배인 출발지(${cidr}, ${BOT_LABEL})를 찾고 → fw deny ${cidr}. 학생 대역(175.223 · 211.234 · 59.10)은 막지 않는다(하나라도 막혀 있으면 안 풀린다). 10시 20분 넘어 학생이 줄어도 매크로가 빈자리를 채워서, 막기 전까지 세션은 가득 찬 채로 남는다.`,
         solutionSteps: [{ cmd: `fw deny ${cidr}`, host: 'FW-01' }],
-        concept: 'queue',
-        lesson: '사람보다 수백 배 빨리 누르는 매크로가 L4의 좌석(세션)을 차지했어요. 방화벽에서 그 출발지만 막자 학생들이 다시 들어왔어요. 너무 넓게 막으면 학생도 막혀요!',
+        concept: 'firewall',
+        lesson: '매크로(사람 대신 신청 버튼을 자동으로 누르는 프로그램)가 사람보다 수백 배 빨리 눌러서 L4의 좌석(세션)을 차지했어요. 방화벽은 들어오는 요청을 출발지별로 보고 막을 수 있어서, 그 출발지 대역만 막자 학생들이 다시 들어왔어요. 너무 넓게 막으면 학생도 막혀요!',
       };
     },
   },

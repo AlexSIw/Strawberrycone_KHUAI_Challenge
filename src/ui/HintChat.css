@@ -257,7 +257,7 @@
   font-size: 14px;
 }
 
-/* ----- calm view (no incidents) ----- */
+/* ----- no run yet ----- */
 .hc-calm {
   display: flex;
   flex-direction: column;
@@ -265,30 +265,9 @@
   align-items: stretch;
 }
 .hc-calm > .hc-calm-say { margin: 0; text-align: center; }
-.hc-calm-top {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-.hc-objectives {
-  background: var(--panel-2);
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-.hc-objectives h4 {
-  margin: 0 0 6px;
-  font-family: var(--pixel);
-  font-weight: 400;
-  font-size: 14px;
-}
-.hc-objectives ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.hc-objectives li { font-size: 14px; line-height: 1.5; }
-.hc-objectives li.done { color: var(--muted); text-decoration: line-through; }
+
+/* ----- mission mode (the mission being built; free questions) ----- */
+.hc-tab.mission { color: var(--muted); }
+.hc-tab.mission.on { color: var(--text); border-bottom-color: var(--tan); }
+.hc-head.mission { border-left-color: var(--tan); }
+.hc-sev.mission { color: var(--tan); border-color: #8a6a3c; }

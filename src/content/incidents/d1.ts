@@ -12,6 +12,11 @@ import { ifPhrases, reachesHost } from './d4';
 /** A node comes back to Ready once its rack is cooler than this (sim/k8s.ts updateNodes). */
 const NODE_SAFE_TEMP = 35;
 
+/** World flag prefix (+ rack id): world time facilities bring that rack's power back after a fire. */
+export const RACK_RESTORE = 'power:restoreAt:';
+/** Seconds after the fire's fix until facilities restore the rack (time to verify the fix on the backup path). */
+const RACK_RESTORE_AFTER = 30;
+
 /** k8s nodes in the racks the CRAC cools (rack 2: K8S-01 · K8S-02). */
 export const cracNodes = (w: World): string[] =>
   Object.entries(w.k8s?.nodes ?? {})
@@ -103,9 +108,11 @@ export const templates: IncidentTemplate[] = [
           p.racksDown = [...new Set([...(p.racksDown ?? []), rack])];
         },
         check: (w) => reachesHost(w, 'ops', 'n3') && reachesHost(w, 'ops', 'n4') && enrollServing(w),
-        // The fire is out; facilities bring the rack's power back (CORE-01 takes Active back: preempt).
+        // The fire is out; facilities bring the rack's power back a little later (D-1's onTick), so a
+        // `show interfaces trunk` right after the fix still shows the backup trunk at work. Then CORE-01
+        // takes Active back (preempt).
         onResolve: (w) => {
-          if (w.power?.racksDown) w.power.racksDown = w.power.racksDown.filter((r) => r !== rack);
+          w.flags[`${RACK_RESTORE}${rack}`] = w.t + RACK_RESTORE_AFTER;
         },
         hints: [
           '불난 랙에 있던 장비들은 NMS 지도에서 꺼져 있을 거야. 그 짝꿍들이 대신 일하고 있어? 그런데 왜 일부 노드만 연락이 끊겼을까? 끊긴 노드들의 공통점을 찾아봐.',
@@ -171,7 +178,7 @@ export const templates: IncidentTemplate[] = [
     variants: [{ fallback: '10.244.1.12' }],
     make: (v) => ({
       title: '과목조회 재배포 후 신청 실패',
-      alert: '과목조회 pod들이 재배포(전부 새로 다시 띄움)된 직후부터 신청이 전부 실패해요!',
+      alert: '과목조회(course) pod들이 재배포(전부 새로 다시 띄움)된 직후부터 신청이 전부 실패해요!',
       severity: 'critical',
       alarm: { source: 'poll', device: 'L4-01', text: '수강신청 응답 실패율 증가' },
       room: 'noc',

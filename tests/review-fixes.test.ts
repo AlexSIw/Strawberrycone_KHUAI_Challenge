@@ -66,7 +66,8 @@ describe('CLI wording', () => {
     expect(sh(run, 'scale enroll 20').out).toContain('최대 16개까지라서 16개로 맞췄어요');
     expect(sh(run, 'scale enroll 3').out).not.toContain('최대 16개');
     run = sh(run, 'cordon n1').run;
-    const rows = sh(run, 'nodes').out.split('\n');
+    // The table rows (the Korean gloss lines under it start with '(').
+    const rows = sh(run, 'nodes').out.split('\n').filter((r) => !r.startsWith('('));
     const rackCol = rows.map((r) => r.indexOf('rack'));
     expect(rows[0].indexOf('RACK')).toBe(rackCol[1]);
     expect(new Set(rackCol.slice(1)).size).toBe(1);

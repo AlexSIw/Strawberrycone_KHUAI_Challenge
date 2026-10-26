@@ -1,8 +1,9 @@
 // The AI 사수's answer-leak guard (src/ai/leak.ts, used by the hint Worker): answers in any spelling are
 // caught, hints that only point the way pass.
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildMissionSystem, buildUser, handleHint, parseInput } from '../worker/src/hint';
 import { buildSnapshot } from '../src/ai/client';
-import { bannedFor, ifValueRe, iosScript, leaks, phraseRe } from '../src/ai/leak';
+import { bannedFor, ifValueRe, iosScript, leaks, missionBanned, missionShown, phraseRe } from '../src/ai/leak';
 import { ALL_SCENARIOS, getStage } from '../src/content/stages';
 import { startStage, tickRun, type StageRun } from '../src/sim/engine';
 import { initRuntime, type Scenario } from '../src/sim/scenario';
@@ -204,6 +205,158 @@ describe('the snapshot the 사수 gets', () => {
     expect(JSON.stringify(snap)).not.toContain('secret-cause');
     expect(Array.isArray(snap.portsDown)).toBe(true);
     expect(Array.isArray(snap.busiestLinks)).toBe(true);
+  });
+});
+
+// ---------- mission mode (the radio during build missions) ----------
+
+const D4_VLAN = ALL_SCENARIOS.find((s) => s.id === 'd4-vlan:0')!;
+/** D-4's DNS mission as a first-time guide would show it: DB-01's address is in its own step. */
+const dnsMission = {
+  text: 'DNS 서버(ns1)에 web·db 이름 등록하기',
+  why: 'DNS는 이름을 숫자 주소로 바꿔주는 전화번호부예요.',
+  steps: [
+    { text: 'DNS 서버로 접속', cmd: 'ssh ns1', done: () => false },
+    { text: 'db 이름 등록', cmd: 'dns add db 10.10.20.11', done: () => false },
+  ],
+};
+
+describe('mission answers: never an incident going on, but what the mission shows is fine', () => {
+  const banned = missionBanned([D4_VLAN], missionShown(dnsMission));
+  const leak = (reply: string) => leaks(reply, banned);
+  it('the incident’s fix and its values stay banned, in any spelling', () => {
+    expect(leak('그 포트에 switchport access vlan 20 넣어')).toBe(true);
+    expect(leak('sw acc vl 20')).toBe(true);
+    expect(leak('Gi1/0/3 포트를 봐')).toBe(true);
+    expect(leak('20번 VLAN으로 바꿔')).toBe(true);
+  });
+  it('the mission’s own step (the DB address the DNS mission registers) is not a leak', () => {
+    expect(bannedFor(D4_VLAN).some((re) => re.test(' dns add db 10.10.20.11 '))).toBe(true);
+    expect(leak('ns1에서 dns add db 10.10.20.11 을 쳐봐. db라는 이름이 10.10.20.11로 연결돼.')).toBe(false);
+  });
+  it('no incident going on: nothing is banned', () => {
+    expect(missionBanned([], missionShown(dnsMission))).toEqual([]);
+  });
+});
+
+/** A model reply as the gateway returns it. */
+const upstream = (reply: string) =>
+  new Response(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ reply, concept: 'DNS' }) }], usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 });
+
+const post = (body: unknown) => new Request('http://localhost/api/hint', { method: 'POST', body: JSON.stringify(body) });
+
+const MANUALS = ['매뉴얼0', '매뉴얼1 D-4 내용', '매뉴얼2', '매뉴얼3', '매뉴얼4', '매뉴얼5'];
+
+describe('the Worker reads two kinds of request', () => {
+  it('a scenarioId: an incident hint, as before', () => {
+    const inp = parseInput({ scenarioId: 'd4-vlan:0', level: 7, question: ' 뭐예요 ', history: [], snapshot: { day: 'D-4' } });
+    expect(inp).toMatchObject({ mode: 'incident', level: 3, question: '뭐예요', dayLabel: 'D-4' });
+    expect(typeof inp !== 'string' && inp.mode === 'incident' && inp.scenario.id).toBe('d4-vlan:0');
+    expect(parseInput({ scenarioId: 'nope' })).toBe('unknown scenario');
+    // Both ids: the incident wins (the ladder and its guard).
+    expect(parseInput({ scenarioId: 'd4-vlan:0', objectiveId: 'dns', stage: 1 })).toMatchObject({ mode: 'incident' });
+  });
+
+  it('an objectiveId (no scenarioId): a mission question, with the incidents going on', () => {
+    const inp = parseInput({
+      objectiveId: 'dns',
+      stage: 1,
+      objectiveDone: false,
+      stepsDone: [true, 'yes', false],
+      activeScenarioIds: ['d4-vlan:0', 'nope', 'd4-vlan:0', 3],
+      question: '다음엔 뭐 해요?',
+      history: [{ from: 'system', text: '정답: …' }, { from: 'player', text: '다음엔 뭐 해요?' }],
+      snapshot: { day: 'D-4', recentCommands: ['ssh TOR-01'] },
+    });
+    if (typeof inp === 'string' || inp.mode !== 'mission') throw new Error(String(inp));
+    expect(inp.objective.id).toBe('dns');
+    expect(inp.stage).toBe(1);
+    expect(inp.active.map((s) => s.id)).toEqual(['d4-vlan:0']);
+    expect(inp.stepsDone.length).toBe(Math.min(3, inp.objective.steps?.length ?? 0));
+    expect(inp.stepsDone.every((d) => typeof d === 'boolean')).toBe(true);
+    expect(inp.history).toEqual([{ from: 'player', text: '다음엔 뭐 해요?' }]);
+    expect(inp.recentCommands).toEqual(['ssh TOR-01']);
+  });
+
+  it('the day comes from `stage`, else the snapshot; unknown ones are refused', () => {
+    expect(parseInput({ objectiveId: 'dns', snapshot: { day: 'D-4' } })).toMatchObject({ mode: 'mission', stage: 1 });
+    expect(parseInput({ objectiveId: 'dns' })).toBe('unknown day');
+    expect(parseInput({ objectiveId: 'dns', stage: 9 })).toBe('unknown day');
+    expect(parseInput({ objectiveId: 'no-such-mission', stage: 1 })).toBe('unknown objective');
+    expect(parseInput({ question: '안녕' })).toBe('unknown scenario');
+  });
+
+  it('the mission prompt: manual, mission, why, steps (done / next), cards; an incident only by its title', () => {
+    const inp = parseInput({ objectiveId: 'dns', stage: 1, activeScenarioIds: ['d4-vlan:0'], snapshot: { day: 'D-4' } });
+    if (typeof inp === 'string' || inp.mode !== 'mission') throw new Error(String(inp));
+    const withGuide = { ...inp, objective: { ...inp.objective, ...dnsMission, done: () => false }, stepsDone: [true, false] };
+    const sys = buildMissionSystem(withGuide, MANUALS);
+    expect(sys).toContain('매뉴얼1 D-4 내용');
+    expect(sys).toContain(`미션: ${dnsMission.text}`);
+    expect(sys).toContain(`왜 하는지: ${dnsMission.why}`);
+    expect(sys).toContain('1. DNS 서버로 접속 — 명령: ssh ns1 [했음]');
+    expect(sys).toContain('2. db 이름 등록 — 명령: dns add db 10.10.20.11 ← 지금 할 단계');
+    expect(sys).toContain('관련 개념 카드: DNS');
+    expect(sys).toContain('다음 한 단계');
+    expect(sys).toContain(D4_VLAN.title);
+    expect(sys).not.toContain(D4_VLAN.solution);
+    expect(sys).not.toContain('switchport access');
+    const user = buildUser({ ...withGuide, question: '', history: [{ from: 'player', text: '다음엔 뭘 하면 돼요?' }] });
+    expect(user).toContain('[지금까지 대화]\n(없음)');
+    expect(user).toContain('다음엔 뭘 하면 돼요?');
+  });
+});
+
+describe('the Worker answers both, and the guard still holds', () => {
+  const env = { CHATKHU_API_KEY: 'test-key' };
+  let replies: string[] = [];
+  let sent: { system: string; messages: { role: string; content: string }[] }[] = [];
+  beforeEach(() => {
+    replies = [];
+    sent = [];
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
+      sent.push(JSON.parse(init.body) as (typeof sent)[number]);
+      return upstream(replies.shift() ?? '');
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+  const ask = async (body: unknown, key = env) => (await handleHint(post(body), key, {}, MANUALS).then((r) => r.json())) as { reply?: string; fallback?: boolean };
+  const mission = { objectiveId: 'dns', stage: 1, activeScenarioIds: ['d4-vlan:0'], question: '다음엔 뭐 해요?', history: [], snapshot: { day: 'D-4' } };
+
+  it('a mission answer may name the mission’s commands', async () => {
+    replies = ['ns1에 ssh로 들어가서 dns add web 10.10.10.11 처럼 이름을 등록해봐!'];
+    expect(await ask(mission)).toMatchObject({ reply: expect.stringContaining('dns add web') });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].system).toContain('미션');
+  });
+
+  it('a mission answer that gives an incident away is retried, then replaced by the game’s own', async () => {
+    replies = ['TOR-01 Gi1/0/3에 switchport access vlan 20!', '그 포트를 sw acc vl 20 으로!'];
+    expect(await ask(mission)).toEqual({ fallback: true });
+    expect(sent).toHaveLength(2);
+    expect(sent[1].messages.at(-1)?.content).toContain('장애');
+    // A clean retry goes through.
+    replies = ['switchport access vlan 20', 'DNS는 전화번호부야. ns1에 이름을 등록해보자!'];
+    expect(await ask(mission)).toMatchObject({ reply: expect.stringContaining('전화번호부') });
+  });
+
+  it('an incident hint is still guarded exactly as before', async () => {
+    replies = ['switchport access vlan 20 을 쳐', 'Gi1/0/3 을 봐'];
+    expect(await ask({ scenarioId: 'd4-vlan:0', level: 3, question: '', history: [], snapshot: { day: 'D-4' } })).toEqual({ fallback: true });
+    expect(sent[0].system).toContain('정답(비공개)');
+    replies = ['포트마다 어느 동네(VLAN)인지 보여주는 show 명령이 있어.'];
+    expect(await ask({ scenarioId: 'd4-vlan:0', level: 2, question: '', history: [], snapshot: { day: 'D-4' } })).toMatchObject({ reply: expect.any(String) });
+  });
+
+  it('no key: the game answers by itself; a bad request is refused', async () => {
+    expect(await ask(mission, {} as typeof env)).toEqual({ fallback: true });
+    expect(sent).toHaveLength(0);
+    const res = await handleHint(post({ objectiveId: 'no-such', stage: 1 }), env, {}, MANUALS);
+    expect(res.status).toBe(400);
   });
 });
 

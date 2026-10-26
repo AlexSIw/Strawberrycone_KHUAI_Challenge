@@ -71,6 +71,7 @@ const dhcpCommands: Command[] = [
         lines.push(`${pad(p.name, 12)}${padW(p.label, 18)}${pad(`${p.network}/${p.mask}`, 16)}${pad(`.${p.start}-.${p.end}`, 11)}${rpad(String(v.size), 5)}${rpad(String(v.used), 6)}${free}${rpad(String(v.stale), 7)}${starving}`);
       }
       if (!net.dhcp.running) lines.push(yellow('dhcpd is not running'), dim('(DHCP 서비스가 멈춰 있어요)'));
+      lines.push(dim('(NETWORK 이 풀이 맡은 대역 · RANGE .a-.b 그 대역에서 나눠 줄 끝자리 범위 · FREE 아직 남은 주소)'));
       lines.push(dim('(SIZE 나눠 줄 수 있는 주소 수 · USED 빌려준 주소 · STALE 떠난 기기가 아직 쥐고 있는 주소 · STARVING 주소를 못 받은 기기)'));
       return out(...lines);
     },
@@ -96,6 +97,7 @@ const dhcpCommands: Command[] = [
         `  leases      ${v.used}/${v.size} used, ${v.free} free, ${v.stale} stale`,
         v.starving > 0 ? `  starving    ${red(String(v.starving))}  ${dim('(주소를 못 받은 기기 → 169.254.x.x 로 떨어져 인터넷이 안 돼요)')}` : '  starving    0',
         ...clients.map((c) => `  clients     ${c.label}: ${c.count} devices on ${c.switch} ${c.port}`),
+        dim('(dns = 받은 기기가 이름을 물어볼 DNS 서버 · leases = 빌려준 주소 / 전체 · stale = 떠난 기기가 아직 쥐고 있는 주소)'),
       );
     },
   },
@@ -211,6 +213,7 @@ const lbCommands: Command[] = [
         `${pad('Pool', 14)}${v.members.length} members, ${healthy === v.members.length ? green(`${healthy} healthy`) : red(`${healthy} healthy`)}`,
         `${pad('Health check', 14)}${lb.health.proto.toUpperCase()} ${lb.health.proto === 'http' ? `GET ${lb.health.path} ` : ''}port ${lb.health.port}`,
         dim('(VIP = 학생들이 접속하는 대표 주소. L4가 요청을 건강한 서버들에게 나눠 줘요)'),
+        dim('(Active unit = 지금 일하는 L4, standby = 고장에 대비한 예비 L4 · public = 인터넷 쪽에서 보이는 주소 · Sessions = 지금 붙어 있는 접속 수 / 최대)'),
       );
     },
   },
@@ -231,7 +234,7 @@ const lbCommands: Command[] = [
         lines.push(`${pad(m.name, 10)}${pad(m.host, 10)}${pad(ip, 16)}${pad(String(m.port), 7)}${pad(m.enabled ? 'enabled' : 'disabled', 10, m.enabled ? undefined : yellow)}${health}`);
       }
       if (!v.members.length) lines.push(dim('(멤버가 없어요)'));
-      lines.push(dim('(HEALTH DOWN = 상태 검사에 실패해서 요청을 안 보내는 서버)'));
+      lines.push(dim('(ADMIN disabled = 일부러 빼 둬서 요청을 안 보내는 서버 · HEALTH DOWN = 상태 검사에 실패해서 요청을 안 보내는 서버)'));
       return out(...lines);
     },
   },
@@ -304,6 +307,7 @@ const lbCommands: Command[] = [
         `${pad('interval', 10)}5s, 3 failures = DOWN`,
         `${pad('result', 10)}${v.members.filter((m) => m.healthy).length}/${v.members.length} UP`,
         dim(`(L4가 몇 초마다 각 서버의 ${h.proto === 'http' ? `${h.path} 주소` : `${h.port}번 포트`}를 두드려 보고, 대답이 없으면 요청을 안 보내요)`),
+        dim(h.proto === 'http' ? '(expect 200 OK = 정상 대답(200)이 와야 건강 · 5초마다 검사해서 3번 연속 실패하면 DOWN)' : '(5초마다 검사해서 3번 연속 실패하면 DOWN)'),
       );
     },
   },
@@ -434,8 +438,10 @@ const fwCommands: Command[] = [
         lines.push(`${pad(r.src, 20)}${padW(r.label, 20)}${rpad(String(r.addrs), 7)}${rpad(String(r.rps), 8)}${perCell}  ${fwCell(blocked)}`);
       }
       if (!rows.length) lines.push(dim('(지금은 들어오는 요청이 없어요)'));
+      if (rows.length) lines.push(dim('(ADDRS = 그 대역에서 요청을 보내는 주소 수 · FW 칸: allowed 통과 · BLOCKED 방화벽이 막음)'));
       if (partial) lines.push(dim('(PARTIAL = 그 대역의 일부 주소만 막혔어요. 나머지 주소는 그대로 들어와요)'));
-      lines.push(dim('(RPS = 초당 요청 수. 주소 하나가 사람보다 훨씬 많이 보내면 매크로·봇을 의심해요)'));
+      lines.push(dim('(RPS = 초당 요청 수 · 주소 하나가 사람보다 훨씬 많이 보내면 매크로·봇(사람 대신 버튼을 자동으로 누르는 프로그램)을 의심해요)'));
+      lines.push(dim('(여기는 방화벽에 들어온 모든 요청이에요 · 화면 위 "접속"은 학생 요청만 세요)'));
       return out(...lines);
     },
   },

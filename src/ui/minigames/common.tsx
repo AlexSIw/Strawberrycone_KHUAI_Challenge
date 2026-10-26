@@ -123,6 +123,11 @@ export function MiniGameFrame({ onEscape, ...props }: FrameProps) {
 /** Footer: the "완료!" stamp (always visible, even when the window scrolls) + the close button. */
 export function GameFooter({ done, children }: { done: boolean; children?: ReactNode }) {
   const close = () => gameStore.getState().closeModal();
+  // Done: the close button takes focus, so Enter (or Esc) closes the window right away.
+  const btn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (done) btn.current?.focus({ preventScroll: true });
+  }, [done]);
   return (
     <>
       {done ? (
@@ -133,7 +138,7 @@ export function GameFooter({ done, children }: { done: boolean; children?: React
       ) : (
         children && <div className="mg-foot-info">{children}</div>
       )}
-      <button type="button" className={`btn${done ? ' primary' : ''}`} onClick={close}>
+      <button ref={btn} type="button" className={`btn${done ? ' primary' : ''}`} onClick={close}>
         {done ? '좋아요, 닫기' : '닫기'}
       </button>
     </>

@@ -130,7 +130,8 @@ export function TitleScreen() {
               </>
             ) : (
               <>
-                <kbd>Enter</kbd> 또는 <strong>새로 시작</strong>을 눌러 첫 출근을 해요. 수강신청 날만 보고 싶다면 <strong>D-Day 바로 체험</strong>!
+                <kbd>Enter</kbd> 또는 <strong>새로 시작</strong>을 눌러 첫 출근을 해요. 수강신청 날만 보고 싶다면 <strong>D-Day 바로 체험</strong>! (앞 날들에 배우는 내용을
+                먼저 짧게 정리해 줘요)
               </>
             )}
           </p>

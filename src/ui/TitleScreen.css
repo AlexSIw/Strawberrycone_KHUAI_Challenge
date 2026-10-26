@@ -158,7 +158,17 @@
 .title-dday { border-color: #b08a2a; color: #ffd166; }
 .title-dday:hover { background: #3a2f1f; }
 
-.title-next { margin: 16px 0 0; font-size: 13px; color: var(--muted); }
+/* On its own dark chip, above the lion walking along the floor, so the end of the line stays readable. */
+.title-next {
+  position: relative;
+  z-index: 2;
+  margin: 16px 0 0;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(16, 13, 19, 0.92);
+  font-size: 13px;
+  color: var(--muted);
+}
 .title-next strong { color: var(--text); font-weight: 700; }
 
 @media (max-width: 900px) {

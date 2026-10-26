@@ -6,6 +6,8 @@ import { instance } from '../src/content/incidents';
 import { botsAllowed, studentFwShare } from '../src/content/incidents/dday';
 import { baseTopology } from '../src/content/topology';
 import { runCommand } from '../src/sim/commands';
+import { startStage } from '../src/sim/engine';
+import { syncNet } from '../src/sim/net';
 import { studentDelivery } from '../src/sim/net/health';
 import { dhcpView, fwAllows, fwBlocksCidr, fwSplit, lbView, STUDENT_BLOCKS } from '../src/sim/net/services';
 import type { FwRule, PlayContext, StageId, World } from '../src/sim/types';
@@ -176,6 +178,44 @@ describe('fw on FW-01 / FW-02', () => {
     const fw = run(baseTopology(), 'FW-02', 'help').text;
     expect(fw).toContain('fw top');
     expect(fw).not.toContain('lb status');
+  });
+});
+
+describe('Linux and appliance outputs end with a dim Korean line that says how to read them', () => {
+  const DIM = '\x1b[90m';
+  const dday = () => {
+    const w = baseTopology();
+    syncNet(w, 0);
+    return w;
+  };
+  /** [what world, host, line, stage, a word the gloss must explain] */
+  it.each<[string, () => World, string, string, StageId, string | RegExp]>([
+    ['D-1', () => startStage(4).world, 'ops', 'pods', 4, /Running.*Pending.*CrashLoopBackOff.*RESTARTS/],
+    ['D-1', () => startStage(4).world, 'ops', 'kubectl get pods', 4, /AGE.*NODE.*VERSION/],
+    ['D-1', () => startStage(4).world, 'ops', 'nodes', 4, /Ready.*NotReady.*SchedulingDisabled/],
+    ['D-1', () => startStage(4).world, 'ops', 'nodes', 4, /RACK.*TEMP.*PODS/],
+    ['D-1', () => startStage(4).world, 'ops', 'deploys', 4, /READY.*UP-TO-DATE/],
+    ['D-2', () => startStage(3).world, 'srv-db', 'docker ps', 3, /PORTS 의 a->b = 서버의 a번 문 → 컨테이너 안 b번 문/],
+    ['D-2', () => startStage(3).world, 'srv-db', 'docker images', 3, '태그'],
+    ['D-Day', dday, 'L4-01', 'lb status', 5, /Active unit.*standby.*public.*Sessions/],
+    ['D-Day', dday, 'L4-01', 'lb pool', 5, /ADMIN disabled.*HEALTH DOWN/],
+    ['D-Day', dday, 'L4-01', 'lb health', 5, /expect 200 OK.*3번 연속/],
+    ['D-Day', dday, 'FW-01', 'fw top', 5, /ADDRS.*allowed.*BLOCKED/],
+    ['D-Day', dday, 'FW-01', 'fw rules', 5, '위에서부터'],
+    ['D-Day', dday, 'dhcp01', 'dhcp pool list', 5, /NETWORK.*RANGE.*FREE/],
+    ['D-Day', dday, 'dhcp01', 'dhcp pool show lib-wifi', 5, /dns.*leases.*stale/],
+    ['D-Day', dday, 'ops', 'nslookup sugang', 5, /Server.*#53.*Address/],
+    ['D-Day', dday, 'ops', 'traceroute db', 5, /ms 세 개/],
+    ['D-Day', dday, 'ops', 'ping db', 5, /0% packet loss/],
+    ['D-Day', dday, 'ops', 'curl http://sugang/enroll', 5, /200 OK.*JSON/],
+    ['D-Day', dday, 'ops', 'curl http://sugang/nope', 5, /404 Not Found/],
+    ['D-Day', dday, 'ops', 'curl http://sugang:8080/', 5, '연결 거부'],
+  ])('%s %s: %s', (_day, make, host, line, stage, want) => {
+    const r = runCommand(line, make(), host, stage);
+    const gloss = r.lines.filter((l) => l.startsWith(DIM)).map(strip).join('\n');
+    expect(gloss).toMatch(typeof want === 'string' ? new RegExp(want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) : want);
+    // The gloss follows the table: the last line is always one.
+    expect(r.lines.at(-1)!.startsWith(DIM)).toBe(true);
   });
 });
 

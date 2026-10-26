@@ -24,8 +24,27 @@ async function holdKey(page: Page, key: string, ms: number): Promise<void> {
   await page.keyboard.up(key);
 }
 
-/** Press Enter (sometimes click the box) until the briefing is gone. */
-async function skipBriefing(page: Page, day: 0 | 5): Promise<void> {
+/** Presses Enter until the cards on screen (a card ignores keys in its first 0.3 s) are gone. */
+async function enterAwayCards(page: Page): Promise<void> {
+  const card = page.locator('.ccard-backdrop');
+  for (let i = 0; i < 8 && (await card.count()) > 0; i++) {
+    await page.waitForTimeout(350);
+    await page.keyboard.press('Enter');
+  }
+  await expect(card).toHaveCount(0);
+}
+
+/**
+ * Press Enter (sometimes click the box) until the briefing is gone, then read the first missions' 미션 브리핑
+ * away. A day started cold opens with its "지금까지" recap first: Enter goes on to the briefing.
+ */
+async function skipBriefing(page: Page, day: 0 | 5, recap = false): Promise<void> {
+  if (recap) {
+    await expect(page.locator('.rcp')).toBeVisible();
+    await page.waitForTimeout(350);
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.rcp')).toHaveCount(0);
+  }
   const box = introDialog(page, day);
   await expect(box).toBeVisible();
   const lines = getStage(day).intro.length;
@@ -35,6 +54,7 @@ async function skipBriefing(page: Page, day: 0 | 5): Promise<void> {
     await page.waitForTimeout(350);
   }
   await expect(box).toHaveCount(0);
+  await enterAwayCards(page);
 }
 
 /** The open window is fully on screen and the page itself never scrolls. */
@@ -137,7 +157,9 @@ test('타이틀 → D-Day 바로 체험 → HUD에 D-Day', async ({ page }, test
   await page.goto('/');
   await page.getByRole('button', { name: /D-Day 바로 체험/ }).click();
   await expect(page.locator('.hud')).toContainText('D-Day');
-  await skipBriefing(page, 5);
+  // Nothing before D-Day is cleared: the "지금까지" recap comes before the briefing.
+  await expect(page.locator('.rcp h2')).toHaveText(/지금까지/);
+  await skipBriefing(page, 5, true);
   await expect(page.locator('.hud')).toContainText(/D-Day/);
   await expect(page.locator('.hud-time')).toHaveText(/^\d{2}:\d{2}:\d{2}/);
   await page.screenshot({ path: testInfo.outputPath('08-dday.png') });
