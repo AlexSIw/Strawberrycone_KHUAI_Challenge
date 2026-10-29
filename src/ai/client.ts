@@ -299,7 +299,8 @@ export function cannedMission(run: StageRun, o: Objective | undefined, question 
   return safe(
     formatGuide({
       situation: `지금 미션은 "${o.text}"야.`,
-      todo: next ? `${next.text}${next.why ? ` (${next.why})` : ''}` : o.text,
+      // The step itself, short: its why is on the mission panel.
+      todo: next ? next.text : o.text,
       command: next?.cmd ?? (next ? '명령 없이 화면에서 해' : '미션 목록에서 남은 걸 확인해'),
     }),
   );

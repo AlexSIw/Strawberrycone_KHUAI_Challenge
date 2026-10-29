@@ -137,10 +137,10 @@ describe('the radio, mission mode, with no AI', () => {
     expect(missionInFocus(D4, fresh)?.id).toBe('ssh');
   });
 
-  it('answers in three lines: the mission, the next step (and why), its command in full', () => {
+  it('answers in three lines: the mission, the next step, its command in full', () => {
     expect(parseGuide(cannedMission(atVlan(), vlanMission))).toEqual({
       situation: `지금 미션은 "${vlanMission.text}"야.`,
-      todo: '관리자 모드로 (설정을 보려면 관리자여야 해요)',
+      todo: '관리자 모드로',
       command: 'enable',
     });
   });
