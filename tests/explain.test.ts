@@ -328,7 +328,7 @@ describe.each([
 });
 
 describe('D-Day', () => {
-  it('a cold start (D-Day 바로 체험) gets a primer: each tool with the role it plays today', () => {
+  it('a cold start (a day reached with earlier days skipped) gets a primer: each tool with the role it plays today', () => {
     const p = getStage(5).primer ?? [];
     expect(p.length).toBeGreaterThanOrEqual(4);
     for (const t of p) {

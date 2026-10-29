@@ -121,7 +121,7 @@ export interface StageDef {
   mapDevices?: string[];
   title: string;
   subtitle: string;
-  /** What the stage teaches, shown on stage select */
+  /** What the stage teaches, shown on the 완료한 날 다시 하기 screen */
   topics: string[];
   intro: DialogueLine[];
   outro: DialogueLine[];

@@ -226,7 +226,7 @@ test('D-5 … D-Day를 끝까지 플레이 (seed 1, UI)', async ({ page }) => {
       if (!nocShot && r.openAlarms > 0) {
         nocShot = true;
         await holdClock(page, async () => {
-          // The map first: the call (📞) and the alarm (🚨) as toasts, the HUD gone red.
+          // The map first: the phone report and the NMS alarm as toasts, the HUD gone red.
           await page.waitForTimeout(400);
           await shot(`${tag}-01-map-alarm`);
           await page.evaluate(() => (window as unknown as StoreWin).__khuStore.getState().openModal({ type: 'noc', tab: 'nms' }));
