@@ -8,7 +8,7 @@
   <a href="https://khu-dc-game.khu-dc-game-worker.workers.dev">khu-dc-game.khu-dc-game-worker.workers.dev</a> · 설치 없이 브라우저에서 바로 · AI 사수 쿠사수 대기 중
 </p>
 
-경희대학교 데이터센터의 신입 엔지니어(경희대 사자)가 되어 **닷새 동안 서버실을 직접 꾸리고, D-Day 아침 10시에 열리는 수강신청을 지켜 내는** 브라우저 픽셀 게임이에요.
+경희대학교 데이터센터의 신입 엔지니어가 되어 **5일 동안 서버실을 직접 꾸리고, D-Day 아침 10시에 열리는 수강신청을 지켜내는** 브라우저 픽셀 게임이에요.
 
 [![타이틀 화면 (누르면 게임이 열려요)](docs/screenshots/title.png)](https://khu-dc-game.khu-dc-game-worker.workers.dev)
 
