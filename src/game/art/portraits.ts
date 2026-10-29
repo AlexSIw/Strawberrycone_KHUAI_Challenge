@@ -297,17 +297,22 @@ export function portraitKey(who: Speaker, mood: Mood = 'neutral'): PortraitKey {
   }
 }
 
-const dataUrls = new Map<PortraitKey, string>();
+const dataUrls = new Map<PortraitKey, string | undefined>();
 
-/** The portrait as a 32 x 32 PNG data URL (1 px per art px), drawn once per key. Browser only: it needs a canvas. */
-export function portraitDataUrl(key: PortraitKey): string {
-  const cached = dataUrls.get(key);
-  if (cached) return cached;
+/**
+ * The portrait as a 32 x 32 PNG data URL (1 px per art px), drawn once per key. Browser only: it needs a canvas;
+ * without a 2D context it is undefined (remembered too), so the img just shows nothing.
+ */
+export function portraitDataUrl(key: PortraitKey): string | undefined {
+  if (dataUrls.has(key)) return dataUrls.get(key);
   const canvas = document.createElement('canvas');
   canvas.width = PORTRAIT_SIZE;
   canvas.height = PORTRAIT_SIZE;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return '';
+  if (!ctx) {
+    dataUrls.set(key, undefined);
+    return undefined;
+  }
   const { rows, palette } = PORTRAITS[key];
   new Painter(canvasTarget(ctx), 1).art(rows, palette);
   const url = canvas.toDataURL('image/png');
