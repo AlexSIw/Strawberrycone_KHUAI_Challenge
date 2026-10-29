@@ -11,6 +11,7 @@
 // Either answers {reply, concept}, or {fallback: true} (no key / upstream error / leak) and the game shows
 // its own answer.
 
+import { stripEmoji } from '../../src/ai/emoji';
 import { bannedFor, leaks, missionBanned, missionShown } from '../../src/ai/leak';
 import { CONCEPTS } from '../../src/content/concepts';
 import { ALL_SCENARIOS, getStage } from '../../src/content/stages';
@@ -204,6 +205,7 @@ const PERSONA = [
 
 /** Rules both modes share. */
 const COMMON_RULES = [
+  '- 이모지는 쓰지 마.',
   '- 게임은 날짜(D-5, D-4 … D-Day)로 진행돼. 진행 단계를 말할 땐 "스테이지"가 아니라 날짜(D-n)로 말해.',
   '- 플레이어는 수업 듣는 학생이 아니라 서버 일에 관심 있는 누구나야. 수업·강의·교수님·시험·과제·공부·복습·대회 이야기는 절대 꺼내지 마. "배운 것" 대신 "해본 것"·"겪은 것"이라고 말해. 플레이어가 먼저 그런 걸 물으면 한 문장으로 받고 게임 이야기로 돌아와.',
   '- 영어 약어나 전문용어(rps, pod, VLAN, NMS, 500 에러 같은 것)는 처음 쓸 때 바로 옆에 쉬운 말로 한 번 풀어줘. 예: "rps(1초에 들어오는 요청 수)". 진짜 용어는 지우지 말고 같이 써.',
@@ -487,11 +489,16 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
     const messages: ChatMessage[] = [{ role: 'user', content: buildUser(inp) }];
     const banned = bannedForInput(inp);
     const deadline = started + TIMEOUT_MS;
+    // Emoji go before the guard reads the reply, so one wedged inside an answer can't hide it.
+    const read = (text: string) => {
+      const o = parseReply(text);
+      return { ...o, reply: stripEmoji(o.reply) };
+    };
 
     let res = await callModel(env, model, system, messages, deadline);
     log.inputTokens += res.inputTokens;
     log.outputTokens += res.outputTokens;
-    let out = parseReply(res.text);
+    let out = read(res.text);
 
     if (leaks(out.reply, banned)) {
       log.leaked = true;
@@ -500,7 +507,7 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
       res = await callModel(env, model, system, messages, deadline);
       log.inputTokens += res.inputTokens;
       log.outputTokens += res.outputTokens;
-      out = parseReply(res.text);
+      out = read(res.text);
       if (leaks(out.reply, banned)) return json({ fallback: true }, 200, cors);
     }
 

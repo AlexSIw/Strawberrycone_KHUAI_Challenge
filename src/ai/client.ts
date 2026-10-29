@@ -2,7 +2,7 @@
 //  - incident: a hint on the ladder for one incident; falls back to the scenario's built-in hints;
 //  - mission: a question about the mission being built (or a term on screen); falls back to the mission's
 //    own why + next step + concept card (cannedMission).
-// Either falls back when the Worker isn't running, has no key, fails, or caught a leak.
+// Either falls back when the Worker isn't running, has no key, fails, or caught a leak. Emoji in a reply are dropped.
 import { CONCEPTS, type Concept } from '../content/concepts';
 import { getStage } from '../content/stages';
 import type { Objective } from '../content/types';
@@ -14,6 +14,7 @@ import { cableAt } from '../sim/net/basics';
 import type { Scenario } from '../sim/scenario';
 import { dayLabel, type World } from '../sim/types';
 import { guideOf, missionInFocus } from '../ui/objectiveStatus';
+import { stripEmoji } from './emoji';
 import { leaks, missionBanned, missionShown } from './leak';
 
 /**
@@ -124,8 +125,9 @@ export async function requestHintText(req: HintRequest): Promise<{ text: string;
     });
     if (!res.ok) throw new Error(`hint ${res.status}`);
     const data = (await res.json()) as { reply?: string; fallback?: boolean };
-    if (!data.reply || data.fallback) throw new Error('fallback');
-    return { text: data.reply, source: 'ai' };
+    const reply = stripEmoji(data.reply ?? '');
+    if (!reply || data.fallback) throw new Error('fallback');
+    return { text: reply, source: 'ai' };
   } catch {
     return { text: canned, source: 'canned' };
   }
@@ -163,7 +165,7 @@ export function conceptIn(question: string): Concept | undefined {
   return best?.c;
 }
 
-const cardLine = (c: Concept) => `📇 ${c.name}: ${c.analogy}. ${c.definition}`;
+const cardLine = (c: Concept) => `${c.name}: ${c.analogy}. ${c.definition}`;
 
 /**
  * Plain one-liners for words players ask about that have no card of their own (DB, 서버, trunk …), or whose
@@ -213,8 +215,7 @@ function openIncidentCards(run: StageRun): Set<string> {
 export function termAnswer(run: StageRun, question: string): string | undefined {
   const card = conceptIn(question);
   if (card && !openIncidentCards(run).has(card.id)) return cardLine(card);
-  const word = glossaryIn(question);
-  return word ? `📇 ${word}` : undefined;
+  return glossaryIn(question);
 }
 
 /**
@@ -292,8 +293,9 @@ export async function requestMissionText(req: MissionRequest): Promise<{ text: s
     });
     if (!res.ok) throw new Error(`hint ${res.status}`);
     const data = (await res.json()) as { reply?: string; fallback?: boolean };
-    if (!data.reply || data.fallback) throw new Error('fallback');
-    return { text: data.reply, source: 'ai' };
+    const reply = stripEmoji(data.reply ?? '');
+    if (!reply || data.fallback) throw new Error('fallback');
+    return { text: reply, source: 'ai' };
   } catch {
     return { text: canned, source: 'canned' };
   }

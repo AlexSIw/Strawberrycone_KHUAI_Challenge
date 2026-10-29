@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildMissionSystem, buildUser, handleHint, parseInput } from '../worker/src/hint';
 import { buildSnapshot } from '../src/ai/client';
+import { stripEmoji } from '../src/ai/emoji';
 import { bannedFor, ifValueRe, iosScript, leaks, missionBanned, missionShown, phraseRe } from '../src/ai/leak';
 import { ALL_SCENARIOS, getStage } from '../src/content/stages';
 import { startStage, tickRun, type StageRun } from '../src/sim/engine';
@@ -350,6 +351,21 @@ describe('the Worker answers both, and the guard still holds', () => {
     expect(sent[0].system).toContain('정답(비공개)');
     replies = ['포트마다 어느 동네(VLAN)인지 보여주는 show 명령이 있어.'];
     expect(await ask({ scenarioId: 'd4-vlan:0', level: 2, question: '', history: [], snapshot: { day: 'D-4' } })).toMatchObject({ reply: expect.any(String) });
+  });
+
+  it('the prompt asks for no emoji, and any in the reply are stripped before the guard and the player see it', async () => {
+    replies = ['DNS는 전화번호부야 📒 ns1에 이름을 등록해보자! 👍️'];
+    expect(await ask(mission)).toMatchObject({ reply: 'DNS는 전화번호부야 ns1에 이름을 등록해보자!' });
+    expect(sent[0].system).toContain('- 이모지는 쓰지 마.');
+    // An emoji wedged inside an incident's answer doesn't hide it from the guard.
+    replies = ['switch🔥port access vlan 20', 'sw acc vl 2🎉0'];
+    expect(await ask(mission)).toEqual({ fallback: true });
+    // Nothing but emoji is no answer.
+    replies = ['🎉🎉'];
+    expect(await ask(mission)).toEqual({ fallback: true });
+    // The UI's own marks stay.
+    expect(stripEmoji('VLAN 10 ↔ 20 ▶ 다음 ✔ ✓ ★ ● →')).toBe('VLAN 10 ↔ 20 ▶ 다음 ✔ ✓ ★ ● →');
+    expect(stripEmoji('1️⃣ 먼저 ⚠️ 확인!\n🎉 끝')).toBe('1 먼저 확인!\n끝');
   });
 
   it('no key: the game answers by itself; a bad request is refused', async () => {

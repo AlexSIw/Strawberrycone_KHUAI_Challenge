@@ -140,7 +140,7 @@ describe('the radio, mission mode, with no AI', () => {
     const text = cannedMission(atVlan(), vlanMission);
     expect(text).toContain(vlanMission.why!);
     expect(text).toContain('다음 단계: 관리자 모드로 → enable (설정을 보려면 관리자여야 해요)');
-    expect(text).toContain(`📇 ${CONCEPTS.vlan.name}: ${CONCEPTS.vlan.analogy}`);
+    expect(text).toContain(`${CONCEPTS.vlan.name}: ${CONCEPTS.vlan.analogy}`);
   });
 
   it('a question naming a card answers with that card first', () => {
@@ -154,7 +154,7 @@ describe('the radio, mission mode, with no AI', () => {
     expect(conceptIn('pod가 뭐예요')?.id).toBe('pod');
     expect(conceptIn('오늘 점심 뭐 먹지')).toBeUndefined();
     const text = cannedMission(atVlan(), vlanMission, 'DNS가 뭐예요?');
-    expect(text.startsWith(`📇 ${CONCEPTS.dns.name}`)).toBe(true);
+    expect(text.startsWith(`${CONCEPTS.dns.name}:`)).toBe(true);
     expect(text).toContain('다음 단계');
   });
 
@@ -166,7 +166,7 @@ describe('the radio, mission mode, with no AI', () => {
     expect(cannedMission(run, ssh)).toContain('지금은 열린 미션이 없어');
     expect(cannedMission(run, undefined)).toContain('지금은 열린 미션이 없어');
     // …but a term asked about still gets its card.
-    expect(cannedMission(run, undefined, 'VLAN이 뭐야?').startsWith('📇 VLAN')).toBe(true);
+    expect(cannedMission(run, undefined, 'VLAN이 뭐야?').startsWith(`${CONCEPTS.vlan.name}:`)).toBe(true);
   });
 
   it('what the mission shows is said even while an incident bans it (D-4: the DB address in the DNS step, during the VLAN incident)', () => {
@@ -215,7 +215,7 @@ describe('askMission (store)', () => {
     S().command('enable');
     await S().askMission('VLAN이 뭐예요?');
     const last = S().hints[MISSION_THREAD].at(-1)!;
-    expect(last.text.startsWith('📇 VLAN')).toBe(true);
+    expect(last.text.startsWith(`${CONCEPTS.vlan.name}:`)).toBe(true);
     expect(last.text).toContain('configure terminal');
   });
 
@@ -239,5 +239,13 @@ describe('askMission (store)', () => {
     const run = typeLines(startStage(1), ['ssh TOR-01']).run;
     const reply = await requestMissionText({ run, history: [], host: 'ops' });
     expect(reply).toEqual({ text: cannedMission(run, vlanMission), source: 'canned' });
+  });
+
+  it('emoji in the AI reply are dropped; a reply of nothing else gives the radio’s own answer', async () => {
+    const run = typeLines(startStage(1), ['ssh TOR-01']).run;
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ reply: '🎉 좋아! enable부터 쳐 봐 👏' }), { status: 200 }));
+    expect(await requestMissionText({ run, history: [], host: 'ops' })).toEqual({ text: '좋아! enable부터 쳐 봐', source: 'ai' });
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ reply: '👍️' }), { status: 200 }));
+    expect(await requestMissionText({ run, history: [], host: 'ops' })).toEqual({ text: cannedMission(run, vlanMission), source: 'canned' });
   });
 });
