@@ -112,9 +112,6 @@
 }
 .hud-btn kbd { font-size: 10px; padding: 0 4px; color: var(--muted); }
 .hud-btn.on { background: var(--navy); border-color: var(--blue); }
-.hud-speed { justify-content: center; gap: 4px; font-variant-numeric: tabular-nums; }
-/* As wide as "1.5x", so the bar doesn't shift as 1x → 1.5x → 2x */
-.hud-speed-value { display: inline-block; min-width: 31px; text-align: center; }
 
 .hud-confirm-text { margin: 0; line-height: 1.6; }
 
@@ -151,7 +148,6 @@
   .hud-kpi-value { font-size: 14px; }
   .hud-buttons { gap: 4px; }
   .hud-btn { padding: 4px 6px; }
-  .hud-speed { gap: 2px; }
 }
 @media (max-width: 440px) {
   .hud-kpi:nth-child(3) { display: none; }

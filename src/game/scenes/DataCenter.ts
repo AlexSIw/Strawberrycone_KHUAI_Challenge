@@ -70,7 +70,7 @@ import {
   type LedState,
 } from '../worldView';
 
-/** Walking speed (px/s) at 1x; the HUD's speed setting (store.moveSpeed) multiplies it. */
+/** Walking speed (px/s): about 4.4 tiles a second. */
 const SPEED = TILE * 4.375;
 /** Max distance from the lion's feet to a device's footprint for the [E] prompt */
 const INTERACT_RANGE = TILE * 1.1;
@@ -952,11 +952,9 @@ export class DataCenter extends Phaser.Scene {
     // doesn't need lining up to the pixel.
     if (vx === 0 && vy !== 0) vx = this.doorNudge(vy);
     const moving = vx !== 0 || vy !== 0;
-    // Read every frame, so a new speed applies at once, also mid-walk.
-    const mul = s.moveSpeed;
     if (moving) {
       const len = Math.hypot(vx, vy);
-      this.player.setVelocity((vx / len) * SPEED * mul, (vy / len) * SPEED * mul);
+      this.player.setVelocity((vx / len) * SPEED, (vy / len) * SPEED);
       this.facing = facingFor(vx, vy, this.facing);
     } else {
       this.player.setVelocity(0, 0);
@@ -965,8 +963,7 @@ export class DataCenter extends Phaser.Scene {
     // animation
     const fixing = s.fixing && !!s.modal;
     const anim = lionAnim({ moving, facing: this.facing, fixing });
-    // The run cycle speeds up with the walk, so the paws keep pace with the floor instead of sliding.
-    this.player.anims.timeScale = moving ? mul : 1;
+    this.player.anims.timeScale = 1;
     // Only on a change of pose: the interact animation plays once and then holds its last frame. Closing a
     // window opened on top (the radio over the terminal) comes back to the held frame instead of replaying it.
     // (A sheet that failed to load has no animation: don't warn "Missing animation" every frame.)

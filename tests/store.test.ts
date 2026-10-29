@@ -28,10 +28,8 @@ import {
   hasSave,
   incidentSpoilers,
   missionPreview,
-  nextMoveSpeed,
   pushWindow,
   SAVE_KEY,
-  SPEED_KEY,
   windowKey,
   type Modal,
   type SaveData,
@@ -582,30 +580,6 @@ describe('network gear sessions', () => {
     S().command('end', false);
     expect(S().terminal.history).toEqual(['enable']);
     expect(S().run!.ctx.commands).toContain('end');
-  });
-});
-
-describe('walking speed', () => {
-  it('cycles 1x → 1.5x → 2x → 1x and is remembered', () => {
-    expect(nextMoveSpeed(1)).toBe(1.5);
-    expect(nextMoveSpeed(1.5)).toBe(2);
-    expect(nextMoveSpeed(2)).toBe(1);
-    gameStore.setState({ moveSpeed: 1 });
-    S().cycleMoveSpeed();
-    expect(S().moveSpeed).toBe(1.5);
-    expect(storage.get(SPEED_KEY)).toBe('1.5');
-    S().cycleMoveSpeed();
-    expect(S().moveSpeed).toBe(2);
-    expect(storage.get(SPEED_KEY)).toBe('2');
-    S().cycleMoveSpeed();
-    expect(S().moveSpeed).toBe(1);
-    expect(storage.get(SPEED_KEY)).toBe('1');
-  });
-
-  it('a new day keeps the speed', () => {
-    gameStore.setState({ moveSpeed: 2 });
-    play(2);
-    expect(S().moveSpeed).toBe(2);
   });
 });
 

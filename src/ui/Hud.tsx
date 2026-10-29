@@ -34,7 +34,6 @@ export function Hud() {
   const run = useGame((s) => s.run);
   const screen = useGame((s) => s.screen);
   const modal = useGame((s) => s.modal?.type);
-  const speed = useGame((s) => s.moveSpeed);
   const busy = useGame((s) => s.screen !== 'playing' || !!s.dialogue);
   // Today's work is done: the exit button becomes 퇴근하기 (the outro also starts once every window is closed).
   const dayDone = useGame((s) => s.dayDone && s.screen === 'playing' && !s.dialogue);
@@ -199,10 +198,6 @@ export function Hud() {
           <SoundToggle className="hud-btn hud-sound">
             <kbd>M</kbd>
           </SoundToggle>
-          <button className="btn hud-btn hud-speed" onClick={press(() => store.cycleMoveSpeed())} title="이동 속도" aria-label={`이동 속도 ${speed}x`}>
-            <span className="hud-btn-label">속도</span>
-            <span className="hud-speed-value">{speed}x</span>
-          </button>
           {dayDone ? (
             <button className="btn primary hud-btn hud-leave" onClick={press(() => store.leaveWork())} title="오늘 일을 마치고 일일 리포트 보기">
               <span className="hud-btn-label">퇴근하기 ▶</span>

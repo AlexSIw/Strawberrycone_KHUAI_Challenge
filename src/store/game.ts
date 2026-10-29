@@ -113,10 +113,6 @@ export interface SaveData {
 /** 'select' is 완료한 날 다시 하기 (Calendar.tsx): the days cleared on this save, to play again. */
 export type Screen = 'title' | 'select' | 'playing' | 'results' | 'ending';
 
-/** Lion walking speed multiplier (the HUD's 속도 button). */
-export type MoveSpeed = 1 | 1.5 | 2;
-export const MOVE_SPEEDS: readonly MoveSpeed[] = [1, 1.5, 2];
-
 /** One terminal place's session (the 관리 PC desk, or one rack console), kept while the window is closed. */
 export interface TerminalSession {
   /** Host the session is on now: starts at the place's own host, then follows ssh / exit */
@@ -158,10 +154,6 @@ export interface GameState {
    * closing it brings back the one underneath, as it was (see openModal / closeModal).
    */
   modalStack: Modal[];
-  /** Lion walking speed (kept in localStorage) */
-  moveSpeed: MoveSpeed;
-  /** 1x → 1.5x → 2x → 1x */
-  cycleMoveSpeed(): void;
   dialogue: { lines: DialogueLine[]; index: number; then: 'play' | 'results' } | null;
   /**
    * The "지금까지" screen of a day started cold (some earlier day not cleared on this save: 이어서 하기 on an
@@ -312,29 +304,6 @@ function writeSave(s: SaveData): void {
   } catch {
     /* private mode etc. — progress just won't persist */
   }
-}
-
-export const SPEED_KEY = 'khu-dc-speed';
-
-function loadSpeed(): MoveSpeed {
-  try {
-    const v = Number(localStorage.getItem(SPEED_KEY));
-    return MOVE_SPEEDS.find((x) => x === v) ?? 1;
-  } catch {
-    return 1;
-  }
-}
-
-function writeSpeed(v: MoveSpeed): void {
-  try {
-    localStorage.setItem(SPEED_KEY, String(v));
-  } catch {
-    /* storage blocked: the speed just resets next visit */
-  }
-}
-
-export function nextMoveSpeed(v: MoveSpeed): MoveSpeed {
-  return MOVE_SPEEDS[(MOVE_SPEEDS.indexOf(v) + 1) % MOVE_SPEEDS.length];
 }
 
 // ---------- helpers ----------
@@ -637,12 +606,6 @@ export const gameStore = createStore<GameState>()((set, get) => {
     save: loadSave(),
     modal: null,
     modalStack: [],
-    moveSpeed: loadSpeed(),
-    cycleMoveSpeed: () => {
-      const moveSpeed = nextMoveSpeed(get().moveSpeed);
-      writeSpeed(moveSpeed);
-      set({ moveSpeed });
-    },
     dialogue: null,
     recap: null,
     previewed: [],

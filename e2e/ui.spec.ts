@@ -4,7 +4,7 @@
 //    backdrop), with the terminal session as it was;
 //  - IOS sessions: ssh into gear shows its prompt, `?` is answered on the keystroke, Ctrl+Z, exit, and a
 //    switch's own console stays on the switch;
-//  - the 속도 button cycles 1x → 1.5x → 2x, is remembered, and the lion really walks faster;
+//  - the lion walks at one speed, and Space dashes a short way forward;
 //  - the quiz: a wrong answer shows ✕ and the explanation, then starts over; once every answer is right it
 //    stays so while the concept book or the radio is opened on top of it;
 //  - the HUD fits narrow screens.
@@ -342,62 +342,18 @@ const readClock = (page: Page) =>
     return { speed: (lion.x - walk.x0) / (walk.ms / 1000), timeScale: lion.anims.timeScale };
   });
 
-test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', async ({ page }) => {
+test('걷기 속도: 한 가지 속도, 걷기 동작은 기본 속도로', async ({ page }) => {
   const problems = watchProblems(page);
   await start(page);
-  await page.evaluate(() => localStorage.removeItem('khu-dc-speed'));
-  await page.reload();
-  await exposeStore(page);
   await play(page, 3);
   await waitForLion(page);
+  // No speed button any more.
+  await expect(page.getByRole('button', { name: /이동 속도/ })).toHaveCount(0);
 
-  const button = page.getByRole('button', { name: /이동 속도/ });
-  await expect(button).toHaveText(/1x/);
-  await expect(button).toHaveAttribute('title', '이동 속도');
-
-  // 1x: the normal walk.
-  const slow = await walkSpeed(page);
-  expect(slow.speed).toBeGreaterThan(200);
-  expect(slow.speed).toBeLessThan(360);
-  expect(slow.timeScale).toBe(1);
-
-  await button.click();
-  await expect(button).toHaveText(/1\.5x/);
-  expect(await page.evaluate(() => localStorage.getItem('khu-dc-speed'))).toBe('1.5');
-  await button.click();
-  await expect(button).toHaveText(/2x/);
-  expect(await page.evaluate(() => localStorage.getItem('khu-dc-speed'))).toBe('2');
-
-  // 2x: twice as far in the same time, and the walk cycle plays twice as fast (no sliding).
-  const fast = await walkSpeed(page);
-  expect(fast.speed / slow.speed).toBeGreaterThan(1.6);
-  expect(fast.speed / slow.speed).toBeLessThan(2.4);
-  expect(fast.timeScale).toBe(2);
-
-  // Remembered after a reload.
-  await page.reload();
-  await exposeStore(page);
-  await play(page, 3);
-  await waitForLion(page);
-  await expect(page.getByRole('button', { name: /이동 속도/ })).toHaveText(/2x/);
-
-  // A change applies at once, also mid-walk: 2x → 1x while → is held.
-  await page.evaluate((spawn) => {
-    const lion = (window as GameWin).__khuGame!.scene.getScene('DataCenter')!.player!;
-    lion.body.reset(spawn.x, spawn.y);
-  }, PLAYER_SPAWN_PX);
-  await page.keyboard.down('ArrowRight');
-  await page.waitForTimeout(150);
-  await page.getByRole('button', { name: /이동 속도/ }).click(); // → 1x
-  await expect(page.getByRole('button', { name: /이동 속도/ })).toHaveText(/1x/);
-  await startClock(page);
-  await page.waitForTimeout(300);
-  const b = await readClock(page);
-  await page.keyboard.up('ArrowRight');
-  const midSpeed = b.speed;
-  expect(midSpeed).toBeGreaterThan(200);
-  expect(midSpeed).toBeLessThan(360);
-  expect(b.timeScale).toBe(1);
+  const walk = await walkSpeed(page);
+  expect(walk.speed).toBeGreaterThan(200);
+  expect(walk.speed).toBeLessThan(360);
+  expect(walk.timeScale).toBe(1);
 
   expect(problems).toEqual([]);
 });
