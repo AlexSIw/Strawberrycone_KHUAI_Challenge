@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { textureSpecs } from '../src/game/art';
 import { Painter, type PixelTarget } from '../src/game/art/painter';
 import { TILE } from '../src/game/map';
-import { OLD_UNIT, PX } from '../src/game/pixelArt';
+import { PX } from '../src/game/pixelArt';
 import { zoomFor } from '../src/game/view';
 
 describe('pixel density', () => {
-  it('a tile is 32 x 32 art px (the lion frame), or 16 for art not redrawn yet', () => {
+  it('a tile is 32 x 32 art px, the lion frame', () => {
     expect(TILE).toBe(32 * PX);
-    expect(TILE).toBe(16 * OLD_UNIT);
+  });
+
+  it('every world texture is drawn at that one density', () => {
+    for (const s of textureSpecs()) expect(s.unit, s.key).toBe(PX);
   });
 
   it('the camera only zooms to steps where an art pixel stays a whole number of screen px', () => {
