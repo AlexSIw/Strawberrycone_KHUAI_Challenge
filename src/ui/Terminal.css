@@ -182,6 +182,9 @@
   font-size: 13px;
   line-height: 1.35;
 }
+/* Severity icon before the title: a red siren for Critical, an amber warning sign otherwise */
+.term-inc-sev { color: var(--amber); }
+.term-inc-sev.critical { color: var(--red-2); }
 /* The caller's words, under the incident's title */
 .term-inc-alert {
   font-size: 12px;

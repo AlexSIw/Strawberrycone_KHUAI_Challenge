@@ -62,7 +62,7 @@ export const svcCommands: Command[] = [
       const s = w.app && svc(w.app, args[0] ?? '');
       if (!s) return err('사용법: svc deps <서비스>');
       const own = `${s.name}-db`;
-      const db = s.dbAccess.map((d) => (d === own || s.name === 'monolith' ? d : red(`${d}  ⚠ 남의 DB를 직접 읽는 중!`)));
+      const db = s.dbAccess.map((d) => (d === own || s.name === 'monolith' ? d : red(`${d}  ← 남의 DB를 직접 읽는 중!`)));
       return out(
         bold(`${s.name}`),
         `  API 호출 →  ${s.calls.length ? s.calls.join(', ') : dim('(없음)')}`,

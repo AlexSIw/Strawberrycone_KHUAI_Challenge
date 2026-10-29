@@ -12,6 +12,7 @@ import { ModalFrame } from './ModalFrame';
 import { unsavedGear } from './noc/facility';
 import { ObjectiveGuide, useTightScreen } from './ObjectivePanel';
 import { iosModeText, lockedText, objectiveStatus, termGuided, waitingText, type ObjectiveStatus } from './objectiveStatus';
+import { PixelIcon } from './PixelIcon';
 import './Terminal.css';
 
 // Dark palette that matches theme.css (warm ops-room colors).
@@ -768,10 +769,14 @@ export function Terminal({ host }: { host: string }) {
                   <li key={rt.id}>
                     <span className="term-inc-title">
                       <span>
-                        {def.severity === 'critical' ? '🚨' : '⚠️'} {def.title}
+                        <PixelIcon name={def.severity === 'critical' ? 'siren' : 'warn'} className={`term-inc-sev ${def.severity}`} /> {def.title}
                       </span>
                       {/* What the caller said (the toast with it may be hidden by this window). */}
-                      {def.alert && <small className="term-inc-alert">📞 {def.alert}</small>}
+                      {def.alert && (
+                        <small className="term-inc-alert">
+                          <PixelIcon name="phone" /> {def.alert}
+                        </small>
+                      )}
                     </span>
                     <span className="term-inc-acts">
                       {/* The alarm the NMS raised for it, not acknowledged yet: ACK from here too (MTTD stops). */}
@@ -811,10 +816,10 @@ export function Terminal({ host }: { host: string }) {
             </section>
           ) : dayDone && run ? (
             <section className="term-incidents term-goals term-done" aria-label="오늘 일 끝">
-              <h3>🎉 오늘 일 끝!</h3>
+              <h3>오늘 일 끝!</h3>
               {unsavedGear(run.world).length > 0 ? (
                 <p className="term-calm">
-                  💾 저장 안 한 장비: <b>{unsavedGear(run.world).join(', ')}</b>
+                  저장 안 한 장비: <b>{unsavedGear(run.world).join(', ')}</b>
                   <br />
                   <span className="muted">그 장비에서 write memory 하면 재부팅해도 설정이 남아요.</span>
                 </p>
@@ -823,7 +828,7 @@ export function Terminal({ host }: { host: string }) {
               )}
               <p className="term-goal-locked">창을 닫으면 퇴근해요.</p>
               <button type="button" className="btn primary term-leave-btn" onClick={() => gameStore.getState().leaveWork()}>
-                🏠 퇴근하기 ▶
+                퇴근하기 ▶
               </button>
             </section>
           ) : (
@@ -833,15 +838,19 @@ export function Terminal({ host }: { host: string }) {
                 <GoalList goals={goals} run={run} />
               ) : (
                 <>
-                  <p className="muted term-calm">{(goals && waitingText(goals)) ?? '지금은 조용해요 ✨'}</p>
-                  {goals && lockedText(goals) && <p className="term-goal-locked">🔒 {lockedText(goals)}</p>}
+                  <p className="muted term-calm">{(goals && waitingText(goals)) ?? '지금은 조용해요'}</p>
+                  {goals && lockedText(goals) && (
+                    <p className="term-goal-locked">
+                      <PixelIcon name="lock" /> {lockedText(goals)}
+                    </p>
+                  )}
                 </>
               )}
             </section>
           )}
           {heldCards > 0 && (
             <p className="term-held" role="status">
-              🃏 새 개념 카드 {heldCards}장! {run && cardsWaitForIncident(run) ? '장애를 해결하고 터미널을 닫으면 펼쳐져요.' : '터미널을 닫으면 펼쳐져요.'}
+              새 개념 카드 {heldCards}장! {run && cardsWaitForIncident(run) ? '장애를 해결하고 터미널을 닫으면 펼쳐져요.' : '터미널을 닫으면 펼쳐져요.'}
             </p>
           )}
         </aside>

@@ -189,7 +189,7 @@ export const webCommands: Command[] = [
     summary: '학생 공지에 적힌 수강신청 주소 보기',
     run(_a, { w }) {
       if (!w.notice) return out(dim('아직 올라온 학생 공지가 없어요.'));
-      return out(`📢 학생 공지: "수강신청은 http://web${w.notice.url} 에서!"`);
+      return out(`[학생 공지] "수강신청은 http://web${w.notice.url} 에서!"`);
     },
   },
   {
