@@ -201,7 +201,7 @@ export function iosModeText(mode: IosMode): IosModeText {
   const toConfig = 'exit: (config)#로 · end: #로';
   switch (mode.level) {
     case 'user':
-      return { mark: '>', name: '구경 모드 (보기만 해요)', back: 'exit: 장비에서 나가기' };
+      return { mark: '>', name: '사용자 모드 (보기만 해요)', back: 'exit: 장비에서 나가기' };
     case 'exec':
       return { mark: '#', name: '관리자 모드 (보고 저장해요)', back: 'exit: 장비에서 나가기' };
     case 'config':

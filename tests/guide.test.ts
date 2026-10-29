@@ -109,7 +109,7 @@ describe('first-time steps tick as the player really types', () => {
 
 describe('the IOS mode, in plain words', () => {
   it('names every mode and says how to go back', () => {
-    expect(iosModeText({ level: 'user' })).toEqual({ mark: '>', name: '구경 모드 (보기만 해요)', back: 'exit: 장비에서 나가기' });
+    expect(iosModeText({ level: 'user' })).toEqual({ mark: '>', name: '사용자 모드 (보기만 해요)', back: 'exit: 장비에서 나가기' });
     expect(iosModeText({ level: 'exec' })).toMatchObject({ mark: '#', name: expect.stringContaining('관리자 모드') });
     expect(iosModeText({ level: 'config' })).toMatchObject({ mark: '(config)#', name: '장비 전체 설정', back: expect.stringContaining('end') });
     expect(iosModeText({ level: 'config-if', ifs: ['Gi1/0/1'] })).toMatchObject({ mark: '(config-if)#', name: '포트 하나 설정 (Gi1/0/1)', back: 'exit: (config)#로 · end: #로' });
