@@ -2,13 +2,13 @@
 
 수강신청 전날. 오늘은 리허설이라 학생 접속이 하루 종일 1초에 1,500건(1,500 rps: 1초에 들어오는 요청 수) 들어와.
 신청 앱은 오늘부터 쿠버네티스(Kubernetes: 서버 여러 대를 대신 돌봐 주는 관리 프로그램)가 노드(일하는 서버) 4대 위에서 돌려. 아침엔 신청 pod가 0개라 사이트가 안 열려. 우리는 "원하는 상태"만 적으면 돼.
-VLAN 10(WEB)·40(K8S) 게이트웨이는 아직 CORE-01 혼자 맡고 있어(show standby brief 에 Standby unknown). 오늘 CORE-02를 짝(Standby)으로 세워. D-4에 만든 VLAN 20 게이트웨이는 선배가 그사이 CORE-02 짝을 세워 뒀고, 다른 VLAN(30·50·100)도 이미 짝이 있어.
+VLAN 10(WEB)·40(K8S) 게이트웨이는 아직 CORE-01 혼자 맡고 있어(show standby brief 에 Standby unknown). 오늘 CORE-02를 짝(Standby)으로 붙여. D-4에 만든 VLAN 20 게이트웨이는 선배가 그사이 CORE-02를 짝으로 붙여 뒀고, 다른 VLAN(30·50·100)도 이미 짝이 있어.
 퇴근 전에 이중화 점검표(HSRP · 업링크 묶음 · 전원 A/B)를 확인해. 터미널은 관제실 관리 PC(책상)에서 열어. 터미널은 관리 PC(ops)에서 시작해.
 
 ## 이번 날 목표
 1. 관제실 설계 보드에서 신청 서비스(enroll)의 "원하는 상태" 쓰기 (pod 2개 이상, 버전 enroll:v1)
 2. 관리 PC 터미널에서 pods 로 신청 pod가 Running인지 확인
-3. CORE-02에 VLAN 10·40 게이트웨이 짝 세우고 저장 (자기 주소 .3 · standby 1 ip .1 · priority 100 · preempt · no shutdown → write memory)
+3. CORE-02를 VLAN 10·40 게이트웨이 짝으로 붙이고 저장 (자기 주소 .3 · standby 1 ip .1 · priority 100 · preempt · no shutdown → write memory)
 4. 냉각이 돌아오면 비웠던 노드를 다시 열기 (uncordon). 랙 온도 장애를 해결한 뒤에 열려.
 5. 이중화 점검표: 코어에서 show standby brief · TOR-01에서 show etherchannel summary · 관제 화면 FMS에서 전원 A/B 보기
 - 3번을 끝내고 조금 뒤에 첫 장애가, 5번을 끝내면 두 번째 장애가 와.
@@ -66,7 +66,7 @@ VLAN 10(WEB)·40(K8S) 게이트웨이는 아직 CORE-01 혼자 맡고 있어(sho
 ### 관제 화면
 - NMS: 꺼진 장비는 회색. 장비를 누르면 포트·로그. 경보 목록의 확인(ACK).
 - SMS: 수강신청, 앱(login/course/enroll/notify) 상태, NotReady 노드.
-- FMS: 랙 온도·습도, 항온항습기 상태, 전원 A/B(PDU 전류), UPS. "📞 시설팀 통보" 버튼 = 시설 경보를 확인하고 시설팀에 알림.
+- FMS: 랙 온도·습도, 항온항습기 상태, 전원 A/B(PDU 전류), UPS. "시설팀 통보" 버튼 = 시설 경보를 확인하고 시설팀에 알림.
 
 ## 결과 읽는 법
 - pods: Running(초록) 정상, Pending(노랑) 준비 중. NODE `<none>` = 들어갈 노드 자리가 없어 기다림. AGE 몇 초짜리 = 방금 새로 뜬 pod.
