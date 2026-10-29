@@ -22,7 +22,20 @@ import { getStage } from '../src/content/stages';
 import type { Objective } from '../src/content/types';
 import { initRuntime, type Scenario, type Trigger } from '../src/sim/scenario';
 import { LAST_DAY, type StageId } from '../src/sim/types';
-import { gameStore, incidentSpoilers, missionPreview, nextMoveSpeed, pushWindow, SAVE_KEY, SPEED_KEY, windowKey, type Modal } from '../src/store/game';
+import {
+  clearedDays,
+  gameStore,
+  hasSave,
+  incidentSpoilers,
+  missionPreview,
+  nextMoveSpeed,
+  pushWindow,
+  SAVE_KEY,
+  SPEED_KEY,
+  windowKey,
+  type Modal,
+  type SaveData,
+} from '../src/store/game';
 
 const S = () => gameStore.getState();
 /** The open window and the ones waiting under it, top first, as window keys. */
@@ -714,6 +727,30 @@ describe('save', () => {
     gameStore.setState({ save: { unlocked: 42, seed: 7, best: {}, cards: [] } });
     S().continueGame();
     expect(S().run!.stage).toBe(LAST_DAY);
+  });
+
+  it('완료한 날 다시 하기 plays only a day cleared on this save, and never with "지금까지" (even past a day not cleared)', () => {
+    gameStore.setState({ save: { unlocked: 4, seed: 7, best: { 3: { stars: 2, points: 70 } }, cards: [] } });
+    S().goSelect();
+    S().replay(1);
+    expect(S().screen).toBe('select');
+    expect(S().run).toBeNull();
+    S().replay(3);
+    expect(S().screen).toBe('playing');
+    expect(S().run!.stage).toBe(3);
+    expect(S().recap).toBeNull();
+    expect(S().dialogue?.lines).toBe(getStage(3).intro);
+  });
+
+  it('hasSave (이어서 하기) and clearedDays (완료한 날 다시 하기) read the save', () => {
+    const done = { stars: 2, points: 70 };
+    const save = (over: Partial<SaveData>): SaveData => ({ unlocked: 0, seed: 7, best: {}, cards: [], ...over });
+    expect(hasSave(save({}))).toBe(false);
+    expect(hasSave(save({ cards: ['dns'] }))).toBe(false);
+    expect(hasSave(save({ unlocked: 2 }))).toBe(true);
+    expect(hasSave(save({ best: { 0: done } }))).toBe(true);
+    expect(clearedDays(save({ unlocked: 3 }))).toEqual([]);
+    expect(clearedDays(save({ best: { 4: done, 0: done, 2: done } }))).toEqual([0, 2, 4]);
   });
 });
 

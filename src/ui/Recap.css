@@ -10,8 +10,6 @@
   background: rgba(10, 6, 12, 0.82);
   animation: rcp-fade 0.2s ease-out;
 }
-/* The calendar's '지금까지 요약' (the calendar screen scrolls, so it is fixed to the viewport) */
-.rcp-backdrop.rcp-fixed { position: fixed; }
 
 .rcp {
   width: min(760px, 100%);

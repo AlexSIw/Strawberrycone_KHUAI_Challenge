@@ -218,6 +218,8 @@ export interface GameState {
   newGame(): void;
   /** 이어하기: the furthest day reached (save.unlocked, at most D-Day) */
   continueGame(): void;
+  /** 완료한 날 다시 하기: plays a day cleared on this save, never with "지금까지"; any other day does nothing. */
+  replay(stage: StageId): void;
   finishResults(next: 'next' | 'retry' | 'select'): void;
 
   // loop
@@ -294,6 +296,13 @@ export function loadSave(): SaveData {
   if (!raw || !validSeed(raw.seed)) writeSave(save);
   return save;
 }
+
+/** There is something to go on with (이어서 하기): a day reached or cleared. */
+export const hasSave = (s: SaveData): boolean => s.unlocked > 0 || Object.keys(s.best).length > 0;
+
+/** The days cleared on this save, in order: the ones 완료한 날 다시 하기 can play. */
+export const clearedDays = (s: SaveData): StageId[] =>
+  Array.from({ length: LAST_DAY + 1 }, (_, d) => d as StageId).filter((d) => !!s.best[d]);
 
 function writeSave(s: SaveData): void {
   try {
@@ -636,6 +645,9 @@ export const gameStore = createStore<GameState>()((set, get) => {
       get().play(0);
     },
     continueGame: () => get().play(Math.max(0, Math.min(LAST_DAY, get().save.unlocked)) as StageId),
+    replay: (stage) => {
+      if (get().save.best[stage]) get().play(stage, { recap: false });
+    },
 
     play: (stage, opts = {}) => {
       const def = getStage(stage);

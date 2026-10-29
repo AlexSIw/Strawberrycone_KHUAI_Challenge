@@ -1,4 +1,4 @@
-/* Calendar (day select) screen. Prefix: sel- */
+/* 완료한 날 다시 하기 (the day select screen). Prefix: sel- */
 .sel-screen {
   height: 100%;
   overflow-y: auto;
@@ -42,8 +42,6 @@
 }
 .sel-grid li { display: flex; flex-direction: column; gap: 6px; }
 .sel-grid li .sel-card { flex: 1; }
-/* '지금까지 요약' under a day's card (the recap of what the days before it built) */
-.sel-recap { font-size: 13px; padding: 6px 12px; }
 
 .sel-card {
   width: 100%;
@@ -63,13 +61,10 @@
 .sel-card:not(:disabled):active { transform: translateY(1px); border-bottom-width: 3px; }
 .sel-card:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 .sel-card.cleared { border-color: rgba(79, 209, 122, 0.55); }
-.sel-card.next { border-color: var(--red-2); box-shadow: 0 0 0 3px rgba(215, 38, 43, 0.25); animation: sel-glow 1.6s ease-in-out infinite; }
 .sel-card.dday { background: linear-gradient(160deg, #3a1b20, var(--panel) 60%); }
 .sel-card.dday .sel-no { background: #ffd166; border-color: #b08a2a; color: #2a1410; }
-
-@keyframes sel-glow {
-  50% { box-shadow: 0 0 0 6px rgba(215, 38, 43, 0.12); }
-}
+/* A day not cleared on this save: locked (이어서 하기 plays it) */
+.sel-card:disabled { border-style: dashed; border-bottom-width: 2px; opacity: 0.5; cursor: default; }
 
 .sel-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sel-no {
@@ -81,10 +76,6 @@
   border: 2px solid #8d1519;
 }
 .sel-date { flex: 1; font-family: var(--pixel); font-size: 13px; color: var(--tan); }
-.sel-new { font-family: var(--pixel); font-size: 12px; color: var(--red-2); animation: sel-blink 1s steps(2) infinite; }
-@keyframes sel-blink {
-  50% { opacity: 0.3; }
-}
 
 .sel-stars { font-size: 20px; letter-spacing: 2px; color: #3a3040; text-shadow: 2px 2px 0 var(--outline); }
 .sel-stars .on { color: #ffd166; }
@@ -96,54 +87,10 @@
 
 .sel-card-foot { margin-top: auto; padding-top: 8px; font-size: 13px; }
 .sel-best { color: var(--green); }
-.sel-go { color: var(--tan); font-family: var(--pixel); }
-
-/* Concept book summary */
-.sel-book { max-width: 1180px; margin: 22px auto 0; padding: 16px; }
-.sel-book-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.sel-book-head h2 { margin: 0; font-family: var(--pixel); font-weight: 400; font-size: 18px; }
-.sel-book-count { font-family: var(--pixel); color: var(--tan); }
-.sel-book-bar { flex: 1; min-width: 120px; height: 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
-.sel-book-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--red), var(--tan)); }
-.sel-book-help { margin: 8px 0 10px; font-size: 13px; color: var(--muted); }
-.sel-book-grid { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.sel-chip {
-  font-size: 12px;
-  padding: 5px 10px;
-  border-radius: 8px;
-  border: 2px dashed var(--line);
-  background: transparent;
-  color: var(--muted);
-  cursor: default;
-}
-.sel-chip.have { border-style: solid; border-color: var(--tan); background: #2f2226; color: var(--text); cursor: pointer; }
-.sel-chip.have:hover, .sel-chip.open { background: #47292d; }
-.sel-detail {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 2px solid var(--tan);
-  background: var(--panel-2);
-  font-size: 14px;
-  line-height: 1.6;
-  animation: sel-pop 0.2s ease-out;
-}
-.sel-detail strong { font-family: var(--pixel); font-weight: 400; font-size: 16px; }
-.sel-detail p { margin: 4px 0; }
-.sel-detail-analogy { font-family: var(--pixel); color: var(--tan); font-size: 16px; }
-.sel-detail .muted { font-size: 12px; }
-@keyframes sel-pop {
-  from { transform: scale(0.97); opacity: 0; }
-}
+.sel-locked { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-family: var(--pixel); }
 
 @media (max-width: 640px) {
   .sel-screen { padding: 16px 16px 28px; }
   .sel-head-text h1 { font-size: 22px; }
   .sel-grid { grid-template-columns: 1fr; }
 }
-
-/* A card not earned yet whose day has come: readable ahead, dashed so it never looks collected */
-.sel-chip.ahead { border-style: dashed; border-color: var(--muted); color: var(--text); cursor: pointer; }
-.sel-chip.ahead:hover { background: #2a2231; }
-.sel-detail.ahead { border-style: dashed; border-color: var(--muted); }
-.sel-detail-tag { display: inline-block; margin-bottom: 4px; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px dashed var(--muted); color: var(--muted); }

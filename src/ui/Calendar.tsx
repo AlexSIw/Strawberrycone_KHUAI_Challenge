@@ -1,41 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
-import { cardAccess, fixedIncidentCards } from '../content/cards';
-import { CONCEPTS } from '../content/concepts';
+import { useEffect, type KeyboardEvent } from 'react';
 import { STAGES } from '../content/stages';
 import { koDate } from '../sim/clock';
-import { LAST_DAY, type StageId } from '../sim/types';
-import { gameStore, useGame } from '../store/game';
-import { RecapPanel } from './Recap';
+import { LAST_DAY } from '../sim/types';
+import { clearedDays, gameStore, useGame } from '../store/game';
+import { PixelIcon } from './PixelIcon';
 import './Calendar.css';
-
-/** The calendar's '지금까지 요약' of a day: read it, then close it or start the day (without showing it again). */
-function RecapOverlay({ stage, onClose }: { stage: StageId; onClose: () => void }) {
-  const start = useRef<HTMLButtonElement>(null);
-  useEffect(() => start.current?.focus({ preventScroll: true }), []);
-  return (
-    <div className="rcp-backdrop rcp-fixed" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <RecapPanel
-        stage={stage}
-        titleId="rcp-title-calendar"
-        actions={
-          <>
-            <button className="btn" onClick={onClose}>
-              닫기 <kbd>Esc</kbd>
-            </button>
-            <button ref={start} className="btn primary rcp-go" onClick={() => gameStore.getState().play(stage, { recap: false })}>
-              {STAGES[stage].label} 시작 ▶
-            </button>
-          </>
-        }
-      />
-    </div>
-  );
-}
-
-/** Same count as the in-game 개념 도감 (📖, C): every concept card, in book order. */
-function cardTotals(cards: string[]) {
-  return { owned: new Set(cards.filter((c) => c in CONCEPTS)), collectible: Object.keys(CONCEPTS) };
-}
 
 function Stars({ n }: { n: number }) {
   return (
@@ -49,31 +18,31 @@ function Stars({ n }: { n: number }) {
   );
 }
 
-/** The week up to 수강신청: every day is open from the start (judges can jump to D-Day). */
+/** A held Enter (the key that opened this screen) must not start the card it lands on. */
+const ignoreHeldEnter = (e: KeyboardEvent<HTMLButtonElement>) => {
+  if (e.key === 'Enter' && e.repeat) e.preventDefault();
+};
+
+/** 완료한 날 다시 하기: the six days, the ones cleared on this save open to play again, the rest locked. */
 export function Calendar() {
   const save = useGame((s) => s.save);
-  const [openCard, setOpenCard] = useState<string | null>(null);
-  const [recapOf, setRecapOf] = useState<StageId | null>(null);
-  const { owned, collectible } = cardTotals(save.cards);
   const totalStars = Object.values(save.best).reduce((a, b) => a + b.stars, 0);
-  const nextDay = STAGES.find((st) => !save.best[st.id]) ?? null;
-  // The 도감 here reads ahead up to the furthest day reached (minus that day's incident cards, which give causes away).
-  const bookDay = Math.min(LAST_DAY, save.unlocked) as StageId;
-  const spoilers = fixedIncidentCards(bookDay);
+  const maxStars = STAGES.length * 3;
+  const cleared = clearedDays(save).length;
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (recapOf !== null) setRecapOf(null);
-      else gameStore.getState().goTitle();
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') gameStore.getState().goTitle();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [recapOf]);
+  }, []);
 
-  const play = (id: StageId) => gameStore.getState().play(id);
-  const detail = openCard ? CONCEPTS[openCard] : null;
-  const detailAhead = !!openCard && !owned.has(openCard);
+  // The first day to play gets the focus, a moment after the screen opens (so the Enter that opened it is let go).
+  useEffect(() => {
+    const id = window.setTimeout(() => document.querySelector<HTMLButtonElement>('.sel-card:not(:disabled)')?.focus({ preventScroll: true }), 300);
+    return () => window.clearTimeout(id);
+  }, []);
 
   return (
     <main className="sel-screen">
@@ -82,19 +51,15 @@ export function Calendar() {
           ◀ 처음 화면
         </button>
         <div className="sel-head-text">
-          <h1>📅 수강신청까지 달력</h1>
-          <p>
-            {nextDay
-              ? `다음 할 일: ${nextDay.label} 「${nextDay.title}」. 어느 날이든 바로 골라서 할 수 있어요.`
-              : '모든 날을 마쳤어요! 별 3개에 도전해보세요.'}
-          </p>
+          <h1>완료한 날 다시 하기</h1>
+          <p>{totalStars === maxStars ? '모든 날 별 3개! 마음에 드는 날을 다시 해 보세요.' : '끝낸 날을 골라 다시 해 보세요. 별 3개에 도전!'}</p>
         </div>
         <div className="sel-totals">
           <span title="모든 날에서 모은 별">
-            ★ {totalStars}/{STAGES.length * 3}
+            ★ {totalStars}/{maxStars}
           </span>
-          <span title="모은 개념 카드">
-            🃏 {owned.size}/{collectible.length}
+          <span title="끝낸 날">
+            {cleared}/{STAGES.length}일 완료
           </span>
         </div>
       </header>
@@ -102,19 +67,22 @@ export function Calendar() {
       <ol className="sel-grid">
         {STAGES.map((st) => {
           const best = save.best[st.id];
-          const isNext = nextDay?.id === st.id;
           const dday = st.id === LAST_DAY;
+          // Not cleared yet, and it is the day 이어서 하기 starts.
+          const upNext = !best && st.id === save.unlocked;
           return (
             <li key={st.id}>
               <button
-                className={`sel-card ${best ? 'cleared' : ''} ${isNext ? 'next' : ''} ${dday ? 'dday' : ''}`}
-                onClick={() => play(st.id)}
-                aria-label={`${st.label} ${koDate(st.date)} ${st.title}`}
+                className={`sel-card ${best ? 'cleared' : ''} ${dday ? 'dday' : ''}`}
+                disabled={!best}
+                onClick={() => gameStore.getState().replay(st.id)}
+                onKeyDown={ignoreHeldEnter}
+                aria-label={`${st.label} ${koDate(st.date)} ${st.title}${best ? '' : ' (잠김)'}`}
               >
                 <div className="sel-card-top">
                   <span className="sel-no">{st.label}</span>
                   <span className="sel-date">{koDate(st.date)}</span>
-                  {best ? <Stars n={best.stars} /> : isNext ? <span className="sel-new">NEXT</span> : null}
+                  {best && <Stars n={best.stars} />}
                 </div>
                 <h2 className="sel-title">{st.title}</h2>
                 <p className="sel-subtitle">{st.subtitle}</p>
@@ -126,59 +94,22 @@ export function Calendar() {
                   ))}
                 </div>
                 <div className="sel-card-foot">
-                  {best ? <span className="sel-best">최고 {best.points}점 · 다시 하기 ▶</span> : <span className="sel-go">{dday ? '실전 시작 ▶' : '출근하기 ▶'}</span>}
+                  {best ? (
+                    <span className="sel-best">최고 {best.points}점 · 다시 하기 ▶</span>
+                  ) : upNext ? (
+                    <span className="sel-locked">다음 차례 · '이어서 하기'로 시작</span>
+                  ) : (
+                    <span className="sel-locked">
+                      <PixelIcon name="lock" />
+                      아직 안 한 날
+                    </span>
+                  )}
                 </div>
               </button>
-              {st.id > 0 && (
-                <button className="btn sel-recap" onClick={() => setRecapOf(st.id)} aria-label={`${st.label} 전까지 지금까지 요약 보기`}>
-                  📚 지금까지 요약
-                </button>
-              )}
             </li>
           );
         })}
       </ol>
-
-      <section className="sel-book panel" aria-label="개념 도감">
-        <div className="sel-book-head">
-          <h2>📖 개념 도감</h2>
-          <span className="sel-book-count">
-            {owned.size} / {collectible.length}장
-          </span>
-          <div className="sel-book-bar" aria-hidden>
-            <i style={{ width: `${collectible.length ? (owned.size / collectible.length) * 100 : 0}%` }} />
-          </div>
-        </div>
-        <p className="sel-book-help">미션을 끝내고 장애를 해결하면 카드를 얻어요. 카드를 누르면 비유와 뜻을 볼 수 있어요. 점선 카드는 아직 못 받았지만 미리 읽을 수 있어요.</p>
-        <ul className="sel-book-grid">
-          {collectible.map((id) => {
-            const c = CONCEPTS[id];
-            const access = cardAccess(id, bookDay, owned, spoilers);
-            const readable = access !== 'locked';
-            return (
-              <li key={id}>
-                <button
-                  className={`sel-chip ${access === 'owned' ? 'have' : access === 'ahead' ? 'ahead' : ''} ${openCard === id ? 'open' : ''}`}
-                  disabled={!readable}
-                  onClick={() => setOpenCard(openCard === id ? null : id)}
-                  title={access === 'owned' ? c.analogy : access === 'ahead' ? '아직 못 받은 카드 · 미리 읽기' : '아직 못 모은 카드'}
-                >
-                  {readable ? c.name : '???'}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-        {detail && (
-          <div className={`sel-detail ${detailAhead ? 'ahead' : ''}`}>
-            {detailAhead && <span className="sel-detail-tag">아직 못 받은 카드 · 미리 읽기</span>}
-            <strong>{detail.name}</strong>
-            <p className="sel-detail-analogy">“{detail.analogy}”</p>
-            <p>{detail.definition}</p>
-          </div>
-        )}
-      </section>
-      {recapOf !== null && <RecapOverlay stage={recapOf} onClose={() => setRecapOf(null)} />}
     </main>
   );
 }
