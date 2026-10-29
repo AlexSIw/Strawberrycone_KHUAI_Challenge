@@ -1,7 +1,7 @@
 // What the objective list says right now: shared by the left ObjectivePanel and the terminal's side box,
 // so both always agree on what is open, what is locked (and what unlocks it) and what the player waits for.
 import type { GuideStep, Objective, StageDef } from '../content/types';
-import { activeScenarios, visibleObjectives, type StageRun } from '../sim/engine';
+import { activeScenarios, incidentsSettled, visibleObjectives, type StageRun } from '../sim/engine';
 import type { IosMode, PlayContext, World } from '../sim/types';
 
 /** What the next locked objective is waiting for. */
@@ -29,6 +29,8 @@ export interface ObjectiveStatus {
   lockedCount: number;
   /** Why the next of them is still locked (null when none is) */
   lockReason: LockReason | null;
+  /** The only objective not on the list yet is the day's finale (the 퇴근 퀴즈) */
+  finaleLocked: boolean;
   /** Some incident is going on */
   incident: boolean;
   /** An incident is going on and the open objectives are the steps that solve it (stage 5's container chain) */
@@ -60,7 +62,9 @@ export function objectiveStatus(def: StageDef, run: StageRun): ObjectiveStatus {
   if (locked.length) {
     const frontier = locked.filter((o) => (o.after ?? []).every((a) => shown.has(a)));
     const first = frontier[0];
-    if (!first || (first.after ?? []).some((a) => !isDone(a))) lockReason = 'objective';
+    // The finale waits for every other mission, then for every incident (one still to fire included).
+    if (first?.finale) lockReason = def.objectives.some((o) => !o.finale && !isDone(o.id)) ? 'objective' : incidentsSettled(def, run) ? 'soon' : 'incident';
+    else if (!first || (first.after ?? []).some((a) => !isDone(a))) lockReason = 'objective';
     else if ((first.afterIncidents ?? []).some((id) => !run.ctx.resolved.includes(id))) lockReason = 'incident';
     else lockReason = 'soon';
   }
@@ -76,6 +80,7 @@ export function objectiveStatus(def: StageDef, run: StageRun): ObjectiveStatus {
     total: def.objectives.length,
     lockedCount: locked.length,
     lockReason,
+    finaleLocked: locked.length === 1 && !!locked[0].finale,
     incident: active.length > 0,
     objectivesFixIncident: !!next && firedRoots(def, next).some((id) => active.includes(id)),
   };
@@ -84,6 +89,7 @@ export function objectiveStatus(def: StageDef, run: StageRun): ObjectiveStatus {
 /** The locked row under the list: how many objectives follow, and what opens them. */
 export function lockedText(st: ObjectiveStatus): string | null {
   if (!st.lockedCount || !st.lockReason) return null;
+  if (st.finaleLocked) return '퇴근 전 복습 퀴즈 (오늘 미션과 장애를 다 끝내면 열려요)';
   const n = st.lockedCount;
   const when =
     st.lockReason === 'incident'

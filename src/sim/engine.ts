@@ -88,13 +88,17 @@ export function startStage(id: StageId, seed = 1): StageRun {
   };
 }
 
-/** Objectives that are visible (their prerequisite objectives are done and gating incidents resolved). */
+/**
+ * Objectives that are visible (their prerequisite objectives are done and gating incidents resolved). A
+ * finale objective waits for every other objective and for every incident to be settled.
+ */
 export function visibleObjectives(def: StageDef, run: StageRun) {
   return def.objectives.filter(
     (o) =>
       (o.after ?? []).every((a) => a in run.objectivesDone) &&
       (o.afterIncidents ?? []).every((id) => run.ctx.resolved.includes(id)) &&
-      (o.afterFired ?? []).every((id) => run.scenarios.some((s) => s.id === id && s.state !== 'waiting')),
+      (o.afterFired ?? []).every((id) => run.scenarios.some((s) => s.id === id && s.state !== 'waiting')) &&
+      (!o.finale || (def.objectives.every((x) => x.finale || x.id in run.objectivesDone) && incidentsSettled(def, run))),
   );
 }
 
@@ -297,12 +301,18 @@ export function isOptional(def: StageDef, r: ScenarioRuntime): boolean {
   return !!scenarioOf(def, r.id).optional || r.trigger.type === 'condition';
 }
 
+/**
+ * Every planned incident is behind us: fixed, or optional and never fired. One still to fire (`waiting`, not
+ * optional) or going on (`active`) is not settled.
+ */
+export function incidentsSettled(def: StageDef, run: StageRun): boolean {
+  return run.scenarios.every((r) => r.state === 'resolved' || (r.state === 'waiting' && isOptional(def, r)));
+}
+
 /** Every mission done, and every incident that fired is fixed (optional ones that never fired don't count). */
 export function isCleared(run: StageRun): boolean {
   const def = getStage(run.stage);
-  const objectivesOk = def.objectives.every((o) => o.id in run.objectivesDone);
-  const scenariosOk = run.scenarios.every((r) => r.state === 'resolved' || (r.state === 'waiting' && isOptional(def, r)));
-  return objectivesOk && scenariosOk;
+  return def.objectives.every((o) => o.id in run.objectivesDone) && incidentsSettled(def, run);
 }
 
 /** The wall clock for the HUD: 'HH:MM' on weekdays, 'HH:MM:SS' on D-Day (it runs in phases). */

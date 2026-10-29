@@ -21,6 +21,11 @@ export interface Objective {
   afterIncidents?: string[];
   /** Only shown once these incidents have fired (active or already resolved) */
   afterFired?: string[];
+  /**
+   * The day's last mission (the 퇴근 퀴즈): shown only once every other objective is done and every incident
+   * is settled. Never a gate of an incident (days/index.ts keeps it out of the scheduler's objective list).
+   */
+  finale?: boolean;
   /** Concept card awarded when this objective is completed */
   concept?: string;
   /** "What just happened" line on that card */

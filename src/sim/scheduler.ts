@@ -33,7 +33,7 @@ export interface PlanInput {
   /** Always-on incidents: template id, how many variants it has, its trigger, and whether it may never fire */
   fixed: { template: string; variants: number; trigger: Trigger; optional?: boolean }[];
   extras: [number, number];
-  /** Today's mission ids (an extra drawn from today's own pool waits for all of them) */
+  /** Today's mission ids but the finale (an extra drawn from today's own pool waits for all of them) */
   objectiveIds: string[];
   /** Templates that may be drawn as extras today */
   pool: { template: string; variants: number; weight: number; sameDay: boolean }[];

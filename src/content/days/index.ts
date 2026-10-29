@@ -50,7 +50,8 @@ export function planIncidents(def: StageDef, seed: number): PlannedIncident[] {
       day: def.id,
       fixed: spec.fixed.map((f) => ({ template: f.template, variants: template(f.template).variants.length, trigger: f.trigger, optional: f.trigger.type === 'condition' })),
       extras: spec.extras,
-      objectiveIds: spec.objectives.map((o) => o.id),
+      // Not the finale: it waits for the incidents, so an incident waiting for it would never come.
+      objectiveIds: spec.objectives.filter((o) => !o.finale).map((o) => o.id),
       pool: poolTemplates(spec).map((t) => ({ template: t.id, variants: t.variants.length, weight: t.weight ?? 1, sameDay: t.day === spec.id })),
     },
     seed,
