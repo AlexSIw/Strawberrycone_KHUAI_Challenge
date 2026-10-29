@@ -150,7 +150,7 @@ export function TaskBar({ done, children }: { done?: boolean; children: ReactNod
   return (
     <div className={`mg-task${done ? ' done' : ''}`} role="status" aria-live="polite">
       <span className="mg-task-icon" aria-hidden>
-        {done ? '✅' : '👉'}
+        {done ? '✓' : '▶'}
       </span>
       <span className="mg-task-text">{children}</span>
     </div>

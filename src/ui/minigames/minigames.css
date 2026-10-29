@@ -18,7 +18,8 @@
   border-left-color: var(--green);
   background: #1d2a22;
 }
-.mg-task-icon { font-size: 18px; flex-shrink: 0; }
+.mg-task-icon { font-size: 18px; flex-shrink: 0; color: var(--amber); }
+.mg-task.done .mg-task-icon { color: var(--green); }
 .mg-task-text { flex: 1; }
 
 /* Wraps ModalFrame without adding a box (the backdrop stays positioned against the game root). */

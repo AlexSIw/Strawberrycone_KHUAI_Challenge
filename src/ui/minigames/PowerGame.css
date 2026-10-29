@@ -158,6 +158,16 @@
 .pw-table tr.off td { background: #201a26; }
 .pw-dev { font-family: var(--pixel); font-size: 14px; white-space: nowrap; }
 .pw-id { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+/* What the device is: labels are often bare IDs (TOR-01) */
+.pw-kind {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+}
 .pw-feeds { font-family: var(--pixel); font-size: 13px; }
 
 .pw-plug {

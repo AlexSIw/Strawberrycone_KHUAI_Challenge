@@ -116,7 +116,7 @@ export function RackGame() {
     setSelected(null);
     setSnapped(id);
     later(() => setSnapped((cur) => (cur === id ? null : cur)), 700);
-    showNote('ok', `철컥! ${d.label} 장착 완료 🔩`);
+    showNote('ok', `철컥! ${d.label} 장착 완료`);
   };
 
   const { drag, bind } = useDragDrop<string>(place);
@@ -134,7 +134,7 @@ export function RackGame() {
     const id = layout[rack][i];
     const d = id ? world.devices[id] : undefined;
     if (d) {
-      showNote('info', powered(world, d.id) ? `${d.label}: 장착 완료, 전원 ON ⚡` : `${d.label}: 장착 완료. LED가 꺼져 있는 건 아직 전기가 없어서예요.`);
+      showNote('info', powered(world, d.id) ? `${d.label}: 장착 완료, 전원 ON` : `${d.label}: 장착 완료. LED가 꺼져 있는 건 아직 전기가 없어서예요.`);
     } else {
       showNote('info', done ? '빈 칸이에요. 지금은 넣을 서버가 없어요.' : '먼저 카트에서 서버 상자를 하나 고르세요.');
     }
@@ -172,9 +172,9 @@ export function RackGame() {
 
       <div className="rk-floor">
         <div className="rk-cart" data-drop="cart">
-          <div className="rk-cart-title">📦 배송 카트</div>
+          <div className="rk-cart-title">배송 카트</div>
           <div className="rk-cart-shelf">
-            {onCart.length === 0 && <div className="rk-cart-empty">카트가 비었어요 🎉</div>}
+            {onCart.length === 0 && <div className="rk-cart-empty">카트가 비었어요!</div>}
             {onCart.map((d) => (
               <button
                 key={d.id}

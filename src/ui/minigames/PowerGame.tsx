@@ -5,13 +5,13 @@ import { setFeeds } from '../../sim/actions';
 import { feedLive, powered } from '../../sim/network';
 import type { Device } from '../../sim/types';
 import { gameStore } from '../../store/game';
+import { KIND_LABEL } from '../deviceKind';
 import { GameFooter, Led, MiniGameFrame, TaskBar, rackName, useDay, useWorld } from './common';
 import './PowerGame.css';
 
 type Feed = 'A' | 'B';
 
 const KIND_ORDER: Record<Device['kind'], number> = { server: 0, switch: 1, router: 2, internet: 5, firewall: 3, lb: 4 };
-const KIND_ICON: Record<Device['kind'], string> = { server: '🖥️', switch: '🔀', router: '🌐', internet: '☁️', firewall: '🧱', lb: '⚖️' };
 
 function feedText(feeds: Feed[]): string {
   if (feeds.length === 0) return '없음';
@@ -58,7 +58,7 @@ export function PowerGame() {
 
   let task: string;
   if (rows.length === 0) task = '아직 랙에 장착된 장비가 없어요. 먼저 서버실에서 서버를 장착하세요.';
-  else if (!mains && offRows.length) task = `⚡ 정전! 장비 ${offRows.length}대가 꺼졌어요. 정전에도 버티게 만들 방법을 찾아보세요.`;
+  else if (!mains && offRows.length) task = `정전! 장비 ${offRows.length}대가 꺼졌어요. 정전에도 버티게 만들 방법을 찾아보세요.`;
   else if (!mains) task = '정전이지만 모든 장비가 UPS 배터리로 버티고 있어요!';
   else if (pduDown && offRows.length) task = `PDU ${pduDown} 차단기가 내려갔어요! 장비 ${offRows.length}대가 꺼졌어요. 줄 하나가 끊겨도 버티게 만들 방법을 찾아보세요.`;
   else if (pduDown) task = `PDU ${pduDown} 차단기가 내려갔지만 모든 장비가 다른 줄로 버티고 있어요!`;
@@ -121,7 +121,7 @@ export function PowerGame() {
               <tr key={d.id} className={on ? 'on' : 'off'}>
                 <td>
                   <span className="pw-dev">
-                    <span aria-hidden>{KIND_ICON[d.kind]}</span> {d.label} <span className="pw-id">{d.id}</span>
+                    <span className="pw-kind">{KIND_LABEL[d.kind]}</span> {d.label} <span className="pw-id">{d.id}</span>
                   </span>
                 </td>
                 <td className="muted">{d.rack ? rackName(d.rack) : '네트워크실'}</td>
@@ -141,7 +141,7 @@ export function PowerGame() {
                           <i />
                           <i />
                         </span>
-                        {inn ? `🔌 ${f} 꽂힘` : `${f} 비어 있음`}
+                        {inn ? `${f} 꽂힘` : `${f} 비어 있음`}
                       </button>
                     </td>
                   );
@@ -160,7 +160,7 @@ export function PowerGame() {
 
       {notMounted.length > 0 && (
         <p className="pw-note muted">
-          📦 아직 랙에 없는 장비 {notMounted.length}대 ({notMounted.map((d) => d.label).join(', ')}) — 서버실에서 먼저 장착하면 여기에 나타나요.
+          아직 랙에 없는 장비 {notMounted.length}대 ({notMounted.map((d) => d.label).join(', ')}) — 서버실에서 먼저 장착하면 여기에 나타나요.
         </p>
       )}
     </MiniGameFrame>
