@@ -20,13 +20,17 @@
 .title-center {
   position: relative;
   z-index: 1;
-  margin: auto 0;
-  padding: 32px 16px calc(var(--title-floor-h) + 32px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  width: 100%;
+  min-height: 100%;
+  /* The title sits in the second quarter of the screen height (25%–50%), the buttons right under it. */
+  display: grid;
+  grid-template-rows: 25vh minmax(25vh, auto) auto 1fr;
+  justify-items: center;
+  padding: 0 16px calc(var(--title-floor-h) / 2 + 24px);
   text-align: center;
 }
+.title-head { grid-row: 2; align-self: center; display: flex; flex-direction: column; align-items: center; }
+.title-body { grid-row: 3; display: flex; flex-direction: column; align-items: center; width: 100%; }
 .title-kicker { margin: 0 0 6px; font-size: 15px; color: var(--muted); letter-spacing: 0.08em; }
 /*
  * Galmuri11 is drawn on a 12 px em, so the pixel-font sizes are whole multiples of 12 (stepped by media
@@ -54,35 +58,42 @@
   50% { transform: translateY(-3px); }
 }
 
-.title-pitch { margin: 16px 0 28px; font-size: 15px; line-height: 1.7; color: var(--text); word-break: keep-all; }
+.title-pitch { margin: 18px 0 24px; font-size: 15px; line-height: 1.7; color: var(--text); word-break: keep-all; }
 
-.title-buttons { display: flex; flex-direction: column; gap: 12px; width: min(320px, 100%); }
+.title-buttons { display: flex; flex-direction: column; gap: 14px; width: min(440px, 100%); }
 .title-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-height: 56px;
-  padding: 8px 16px;
-  font-size: 24px;
+  gap: 12px;
+  min-height: 76px;
+  padding: 10px 20px;
+  font-size: 36px;
 }
-.title-btn kbd { font-size: 12px; }
-.title-btn-note { font-size: 12px; padding: 1px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.28); }
-.title-btn:disabled:hover { background: var(--panel-2); }
+.title-btn kbd { font-size: 14px; }
+.title-btn-note { font-size: 14px; padding: 2px 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.28); }
+/* Disabled menu buttons stay opaque (dimmed by colour, not see-through), so the backdrop never shows through them. */
+.title-btn:disabled { opacity: 1; color: #7d7186; background: var(--panel); border-color: #3a3042; }
+.title-btn:disabled:hover { background: var(--panel); }
 .title-btn:disabled:active { transform: none; border-bottom-width: 4px; }
 
-@media (max-width: 900px), (max-height: 640px) {
+@media (max-width: 900px), (max-height: 800px) {
   .title-logo { font-size: 72px; text-shadow: 6px 6px 0 var(--outline); }
   .title-sub { font-size: 24px; text-shadow: 2px 2px 0 var(--outline); }
 }
+/* Shorter screens (1280 x 720 …): the same layout, buttons a step smaller so nothing scrolls. */
+@media (max-height: 800px) {
+  .title-center { padding-bottom: calc(var(--title-floor-h) / 2); }
+  .title-pitch { margin: 10px 0 16px; }
+  .title-buttons { gap: 12px; width: min(400px, 100%); }
+  .title-btn { min-height: 60px; font-size: 24px; }
+}
 @media (max-width: 560px) {
   .title-logo { font-size: 48px; text-shadow: 4px 4px 0 var(--outline); }
+  .title-btn { min-height: 56px; font-size: 24px; }
 }
 @media (max-width: 400px) {
   .title-logo { font-size: 36px; text-shadow: 3px 3px 0 var(--outline); }
-}
-@media (max-height: 640px) {
-  .title-center { padding-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .title-sub { animation: none; }

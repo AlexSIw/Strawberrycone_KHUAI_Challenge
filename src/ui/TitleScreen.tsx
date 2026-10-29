@@ -56,33 +56,37 @@ export function TitleScreen() {
         </div>
 
         <section className="title-center">
-          <p className="title-kicker">경희대학교 데이터센터 운영 시뮬레이션</p>
-          <h1 className="title-logo">
-            <span className="title-logo-khu">KHU</span> 데이터센터
-          </h1>
-          <p className="title-sub">수강신청을 지켜라!</p>
+          <header className="title-head">
+            <p className="title-kicker">경희대학교 데이터센터 운영 시뮬레이션</p>
+            <h1 className="title-logo">
+              <span className="title-logo-khu">KHU</span> 데이터센터
+            </h1>
+            <p className="title-sub">수강신청을 지켜라!</p>
+          </header>
 
-          <p className="title-pitch">서버를 몰라도 괜찮아요. D-5 첫 출근부터 수강신청 날까지, 학교 서버를 직접 지켜 내세요.</p>
+          <div className="title-body">
+            <p className="title-pitch">서버를 몰라도 괜찮아요. D-5 첫 출근부터 수강신청 날까지, 학교 서버를 직접 지켜 내세요.</p>
 
-          {/* A button that can't do anything yet stays in place, disabled, without its note. */}
-          <div className="title-buttons">
-            <button className={`btn title-btn${saved ? '' : ' primary'}`} onClick={() => newGame()} title="D-5부터 시작해요. 모은 별과 카드는 그대로예요.">
-              새로 시작
-              {!saved && <kbd>Enter</kbd>}
-            </button>
-            <button className={`btn title-btn${saved ? ' primary' : ''}`} disabled={!saved} onClick={() => continueGame()}>
-              이어서 하기
-              {saved && (
-                <>
-                  <small className="title-btn-note">{STAGES[Math.min(save.unlocked, LAST_DAY)].label}</small>
-                  <kbd>Enter</kbd>
-                </>
-              )}
-            </button>
-            <button className="btn title-btn" disabled={!canReplay} onClick={() => goSelect()}>
-              완료한 날 다시 하기
-              {canReplay && <small className="title-btn-note">★ {stars}</small>}
-            </button>
+            {/* A button that can't do anything yet stays in place, disabled, without its note. */}
+            <div className="title-buttons">
+              <button className={`btn title-btn${saved ? '' : ' primary'}`} onClick={() => newGame()} title="D-5부터 시작해요. 모은 별과 카드는 그대로예요.">
+                새로 시작
+                {!saved && <kbd>Enter</kbd>}
+              </button>
+              <button className={`btn title-btn${saved ? ' primary' : ''}`} disabled={!saved} onClick={() => continueGame()}>
+                이어서 하기
+                {saved && (
+                  <>
+                    <small className="title-btn-note">{STAGES[Math.min(save.unlocked, LAST_DAY)].label}</small>
+                    <kbd>Enter</kbd>
+                  </>
+                )}
+              </button>
+              <button className="btn title-btn" disabled={!canReplay} onClick={() => goSelect()}>
+                완료한 날 다시 하기
+                {canReplay && <small className="title-btn-note">★ {stars}</small>}
+              </button>
+            </div>
           </div>
         </section>
       </main>
