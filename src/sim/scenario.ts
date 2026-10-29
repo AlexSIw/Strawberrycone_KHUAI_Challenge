@@ -97,6 +97,12 @@ export interface Scenario {
   /** Answer text for "정답 보기" */
   solution: string;
   solutionSteps: SolutionStep[];
+  /** 쿠사수's "할 일": what has to be done, in a few words and without values (at most 40 characters) */
+  todo: string;
+  /** Commands to look with first, typed as-is on the fix's host; no values in them */
+  checks: string[];
+  /** How the fix is done when it isn't typed (a mini-game, a NOC button): the "명령" line's last part */
+  fixHow?: string;
   concept: string;
   /** One line shown when solved: what just happened */
   lesson: string;

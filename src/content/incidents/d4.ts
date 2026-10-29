@@ -68,6 +68,8 @@ export const templates: IncidentTemplate[] = [
         solutionSteps: [
           { ios: ['enable', 'configure terminal', `interface ${port}`, `switchport access vlan ${vlan}`, 'end', 'write memory'], host: 'TOR-01' },
         ],
+        todo: '바뀐 포트의 VLAN을 원래대로 되돌리기',
+        checks: ['show vlan brief', 'show logging'],
         concept: 'syslog',
         lesson: '포트의 VLAN이 바뀌면 케이블·불빛은 멀쩡해도 그 서버는 다른 동네로 이사 간 셈이라 대화가 끊겨요. 누가 언제 설정을 바꿨는지는 장비 일기장(show logging)에 남아요.',
       };
@@ -113,6 +115,8 @@ export const templates: IncidentTemplate[] = [
           ? { cmd: 'dhcp leases clear lib-wifi', host: 'dhcp01' }
           : { cmd: 'dhcp pool set lib-wifi range 10.20.31.100 10.20.31.230', host: 'dhcp01' },
       ],
+      todo: v.kind === 'stale' ? '묵은 임대를 비워 새 주소 자리 만들기' : '주소 풀의 범위를 넓히기',
+      checks: ['dhcp pool list'],
       concept: 'dhcp',
       lesson: '주소 풀(나눠줄 주소 묶음)이 바닥나면 새 기기는 주소를 못 받고 169.254로 시작하는 임시 주소를 스스로 붙여요. 그 주소로는 밖에 못 나가요. 풀이 왜 찼는지(진짜 사람 vs 묵은 흔적) 보고 고르는 게 핵심!',
     }),
@@ -150,6 +154,8 @@ export const templates: IncidentTemplate[] = [
               { cmd: 'dns add db 10.10.20.11', host: 'ns1' },
             ]
           : [{ cmd: 'dns add db 10.10.20.11', host: 'ns1' }],
+      todo: 'DNS 장부의 db 줄을 바로 적기',
+      checks: ['dns list'],
       concept: 'dns',
       lesson: '컴퓨터는 이름이 아니라 숫자 주소(IP)로 찾아가요. 이름을 숫자로 바꿔주는 DNS 장부에 줄이 없거나 틀리면, 길이 멀쩡해도 못 찾아가요.',
     }),
@@ -189,6 +195,8 @@ export const templates: IncidentTemplate[] = [
         solutionSteps: [
           { ios: ['enable', 'configure terminal', `interface ${port}`, 'shutdown', 'no shutdown', 'end', 'write memory'], host: 'TOR-01' },
         ],
+        todo: '막힌(err-disabled) 포트를 껐다가 다시 켜기',
+        checks: ['show interfaces status', 'show logging'],
         concept: 'syslog',
         lesson: '서버 자리에 스위치 신호(BPDU)가 들어오면 bpduguard가 그 포트를 막아요(err-disabled). 네트워크에 고리(루프)가 생기는 걸 막는 안전장치예요. 원인을 치우고 포트를 껐다 켜면 풀려요. 무슨 일이 있었는지는 장비 일기장이 알려줘요.',
       };
@@ -227,6 +235,8 @@ export const templates: IncidentTemplate[] = [
         bannedPhrases: [`vlan ${vlan}`, `VLAN ${vlan}`, `vlan${vlan}`, `Vlan${vlan}`],
         solution: `CORE-01의 VLAN ${vlan} 인터페이스(SVI: 그 VLAN의 게이트웨이)가 누군가에 의해 shutdown 됐다 (show ip interface brief → administratively down, show logging). CORE-01: enable → configure terminal → interface vlan ${vlan} → no shutdown → end → write memory`,
         solutionSteps: [{ ios: ['enable', 'configure terminal', `interface vlan ${vlan}`, 'no shutdown', 'end', 'write memory'], host: 'CORE-01' }],
+        todo: '꺼진 VLAN 게이트웨이(SVI)를 다시 켜기',
+        checks: ['show ip interface brief', 'show logging'],
         concept: 'gateway',
         lesson: '게이트웨이(.1)를 맡은 코어의 VLAN 인터페이스가 꺼지면 동네 안은 멀쩡해도 밖으로는 못 나가요. 지금은 VLAN 10·20의 게이트웨이를 코어 한 대만 맡고 있어서 여기가 단일 장애점이에요.',
       };

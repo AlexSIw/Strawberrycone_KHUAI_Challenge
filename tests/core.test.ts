@@ -160,6 +160,8 @@ function synth(id: string, over: Partial<Scenario> = {}): Scenario {
     bannedPhrases: [],
     solution: '',
     solutionSteps: [],
+    todo: '',
+    checks: [],
     concept: 'datacenter',
     lesson: '',
     ...over,

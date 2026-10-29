@@ -197,6 +197,8 @@ describe('the snapshot the 사수 gets', () => {
       bannedPhrases: [],
       solution: '',
       solutionSteps: [],
+      todo: '',
+      checks: [],
       concept: 'datacenter',
       lesson: '',
     };

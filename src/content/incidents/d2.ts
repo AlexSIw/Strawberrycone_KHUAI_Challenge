@@ -99,6 +99,8 @@ export const templates: IncidentTemplate[] = [
         { ios: ['enable', 'configure terminal', 'interface range te1/1/1 - 2', 'channel-group 1 mode active', 'end', 'write memory'], host: 'TOR-01' },
         { ios: ['enable', 'configure terminal', 'interface range te1/0/3 - 4', 'channel-group 1 mode active', 'end', 'write memory'], host: 'CORE-01' },
       ],
+      todo: '업링크 두 줄을 LACP로 묶어 함께 쓰기',
+      checks: ['show etherchannel summary', 'show spanning-tree'],
       concept: 'oversubscription',
       lesson: '서버 여러 대의 트래픽이 랙 스위치의 위쪽 길(업링크) 하나로 모여요. 케이블이 두 개여도 STP가 하나를 막아 두면 10G 한 줄뿐이죠. LACP로 묶으니 둘 다 일해서 20G가 됐어요.',
     }),
@@ -167,6 +169,8 @@ export const templates: IncidentTemplate[] = [
           { ios: ['enable', 'configure terminal', `spanning-tree vlan ${VLAN}`, 'end', 'write memory'], host: 'TOR-01' },
           { ios: ['enable', 'configure terminal', `spanning-tree vlan ${VLAN}`, 'end', 'write memory'], host: 'TOR-02' },
         ],
+        todo: '고리가 생긴 VLAN의 STP를 다시 켜기',
+        checks: ['show logging', 'show spanning-tree'],
         concept: 'stp',
         lesson: '같은 VLAN에 길이 두 개 생기면 고리(루프)가 돼서 방송이 끝없이 불어나요(브로드캐스트 스톰). STP가 하나를 막아 줘야 하는데 양쪽 다 꺼져 있었어요. 오늘 업링크 두 줄 중 하나가 막혀 있던 것도 바로 이 STP 덕분이에요.',
       };
@@ -200,6 +204,8 @@ export const templates: IncidentTemplate[] = [
         { cmd: 'docker rm -f enroll', host: APP_HOST },
         { cmd: 'docker run -p 80:8000 enroll:1.0', host: APP_HOST },
       ],
+      todo: '포트 연결(-p)을 앱 창구에 맞춰 컨테이너 다시 띄우기',
+      checks: ['docker ps'],
       concept: 'portMapping',
       lesson: 'Dockerfile의 EXPOSE는 "안쪽 창구 번호" 메모일 뿐! -p 바깥:안쪽 으로 서버의 문과 컨테이너 안 창구를 이어야 손님이 들어와요.',
     }),
@@ -247,6 +253,8 @@ export const templates: IncidentTemplate[] = [
         solutionSteps: shut
           ? [{ ios: ['enable', 'configure terminal', `interface ${port}`, 'no shutdown', 'end', 'write memory'], host: dev }]
           : [{ ios: ['enable', 'configure terminal', `interface ${port}`, 'channel-group 1 mode active', 'end', 'write memory'], host: dev }],
+        todo: shut ? '묶음에서 꺼진 멤버 포트를 다시 켜기' : '묶음에서 빠진 포트를 다시 묶기',
+        checks: ['show etherchannel summary', 'show logging'],
         concept: 'lacp',
         lesson: '묶음(LACP) 멤버 하나가 빠지면 길은 살아 있어도 폭이 절반이 돼요. 묶음은 양쪽이 똑같이 설정돼야 하고, 빠진 멤버는 show etherchannel summary 의 글자(P·D·s)로 바로 보여요.',
       };
@@ -296,6 +304,8 @@ export const templates: IncidentTemplate[] = [
         { cmd: 'docker rm -f enroll', host: APP_HOST },
         { cmd: 'docker run -p 80:8000 enroll:1.0', host: APP_HOST },
       ],
+      todo: '컨테이너를 이전 이미지 태그로 되돌리기',
+      checks: ['docker ps', 'docker images'],
       concept: 'rollback',
       lesson: '버전마다 이름표(태그)를 붙여 둔 덕분에 예전 태그로 바로 되돌렸어요(rollback). 늘 latest(최신) 한 이름만 썼다면 어디로 돌아갈지 몰랐을 거예요.',
     }),
@@ -336,6 +346,8 @@ export const templates: IncidentTemplate[] = [
         { cmd: 'docker rm -f db', host: DB_HOST },
         { cmd: 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8', host: DB_HOST },
       ],
+      todo: 'DB 컨테이너를 원래 볼륨을 붙여 다시 띄우기',
+      checks: ['docker volume ls', 'docker ps'],
       concept: 'volume',
       lesson: '데이터는 볼륨(사물함)에 그대로 있었어요. 새 컨테이너가 사물함을 안 붙였을 뿐! 컨테이너는 언제든 새로 만드는 일회용, 데이터는 볼륨에.',
     }),

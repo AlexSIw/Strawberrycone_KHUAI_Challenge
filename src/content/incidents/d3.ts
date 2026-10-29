@@ -50,6 +50,8 @@ export const templates: IncidentTemplate[] = [
       solutionSteps: [
         v.kind === 'path' ? { cmd: 'lb health set path /health', host: 'L4-01' } : { cmd: 'lb health set port 80', host: 'L4-01' },
       ],
+      todo: v.kind === 'path' ? '헬스체크 경로를 서버에 있는 것으로 맞추기' : '헬스체크 포트를 서버가 쓰는 것으로 맞추기',
+      checks: ['lb pool', 'lb health'],
       concept: 'mttd',
       lesson: '헬스체크가 틀리면 L4는 멀쩡한 서버도 "죽었다"며 손님을 안 보내요. 그리고 학생 민원과 경보 중 뭘 먼저 봤나요? 장애 시작부터 경보 확인(ACK)까지가 MTTD예요.',
     }),
@@ -91,6 +93,9 @@ export const templates: IncidentTemplate[] = [
         bannedPhrases: ifPhrases(port),
         solution: `TOR-01 ${port} ↔ 코어 스위치 사이 케이블이 끊어졌다. 남은 길로 서비스는 살아 있지만 이중화가 줄어든 상태(major). 네트워크실 TOR 배선판(케이블 점검)에서 그 케이블을 테스트하고 새것으로 교체한다.`,
         solutionSteps: [{ label: `TOR-01 ${port} 업링크 케이블 교체`, action: (w) => replaceCable(w, id) }],
+        todo: '끊어진 업링크 케이블을 새것으로 바꾸기',
+        checks: [],
+        fixHow: 'NMS에서 경보 포트를 보고 → 네트워크실 TOR 배선판(케이블 점검)에서 교체',
         concept: 'spof',
         lesson: '길이 여러 갈래라 하나가 끊겨도 서비스는 살았어요. 하지만 끊긴 채로 두면 다음 고장엔 버틸 게 줄어요. 그래서 "서비스 영향 없음"이어도 major예요.',
       };
@@ -123,6 +128,8 @@ export const templates: IncidentTemplate[] = [
       bannedPhrases: ['svc restart notify', 'restart notify'],
       solution: '알림 서비스만 재시작한다: svc restart notify (급히 고친 새 버전, 핫픽스가 반영됨)',
       solutionSteps: [{ cmd: 'svc restart notify', host: 'ops' }],
+      todo: '멈춘 서비스 하나만 다시 시작하기',
+      checks: ['svc list'],
       concept: 'isolation',
       lesson: '알림이 죽어도 신청은 됐어요! 기능별로 나눈 덕분에 장애가 번지지 않았어요(장애 격리).',
     }),
@@ -168,6 +175,9 @@ export const templates: IncidentTemplate[] = [
         bannedPhrases: [String(v.team)],
         solution: `우리 네트워크와 다른 서비스는 정상이고 ${v.label}만 느리다 → ${v.team}이 운영하는 서버 쪽 문제. NOC 경보 목록에서 "담당팀 이관"을 눌러 ${v.team}에 넘기고, 해결될 때까지 지켜본다.`,
         solutionSteps: [{ label: `담당팀 이관 → ${v.team} 조치`, action: back }],
+        todo: '우리 쪽 문제가 아니면 운영하는 팀에 넘기기',
+        checks: [],
+        fixHow: '명령 없이 NOC 경보 목록의 "담당팀 이관" 버튼',
         concept: 'escalation',
         lesson: '우리 길은 멀쩡하고 그 서비스만 느렸어요. 내 담당이 아닌 시스템은 증상을 정리해서 담당팀에 넘기는(이관) 게 맞아요. 넘긴 뒤에도 해결될 때까지 지켜보기!',
       };

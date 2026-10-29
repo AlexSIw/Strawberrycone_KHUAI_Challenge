@@ -76,6 +76,8 @@ async function plantIncident(page: Page, id: string, concept: string) {
           bannedPhrases: [],
           solution: '',
           solutionSteps: [],
+          todo: '',
+          checks: [],
           concept: card,
           lesson: '테스트',
         });

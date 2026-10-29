@@ -51,6 +51,9 @@ export const templates: IncidentTemplate[] = [
             },
           },
         ],
+        todo: '깜빡이는 포트의 케이블을 새것으로 바꾸기',
+        checks: [],
+        fixHow: 'NMS에서 CRC가 늘어나는 TOR-01 포트를 찾고 → 네트워크실 TOR 배선판에서 케이블 교체',
         concept: 'osi',
         lesson: '케이블이 반쯤 망가지면 불은 들어와도(링크 UP) 깨진 데이터가 섞여요(CRC 오류). 늘어나는 숫자를 보고 찾고, 문제 찾기는 언제나 L1(케이블)부터!',
       };
