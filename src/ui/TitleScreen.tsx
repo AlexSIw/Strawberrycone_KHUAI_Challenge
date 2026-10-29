@@ -1,28 +1,11 @@
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { STAGES } from '../content/stages';
 import { LAST_DAY } from '../sim/types';
 import { clearedDays, gameStore, hasSave, useGame } from '../store/game';
 import { Credits } from './Credits';
 import { SoundToggle } from './SoundToggle';
+import { TitleBackdrop } from './TitleBackdrop';
 import './TitleScreen.css';
-
-/** Decorative server racks with blinking LEDs. */
-function Rack({ units, seed }: { units: number; seed: number }) {
-  return (
-    <div className="title-rack" aria-hidden>
-      {Array.from({ length: units }, (_, i) => (
-        <div key={i} className="title-unit">
-          {[0, 1, 2].map((l) => {
-            const k = (seed * 7 + i * 3 + l * 5) % 11;
-            const style = { animationDelay: `${(k * 0.37).toFixed(2)}s`, animationDuration: `${0.6 + (k % 4) * 0.35}s` } as CSSProperties;
-            return <i key={l} className={`title-led ${k % 5 === 0 ? 'amber' : k % 7 === 0 ? 'red' : ''}`} style={style} />;
-          })}
-          <b />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function TitleScreen() {
   const save = useGame((s) => s.save);
@@ -69,15 +52,7 @@ export function TitleScreen() {
         </nav>
 
         <div className="title-bg" aria-hidden>
-          <div className="title-racks left">
-            <Rack units={9} seed={1} />
-            <Rack units={9} seed={2} />
-          </div>
-          <div className="title-racks right">
-            <Rack units={9} seed={3} />
-            <Rack units={9} seed={4} />
-          </div>
-          <div className="title-floor" />
+          <TitleBackdrop />
         </div>
 
         <section className="title-center">

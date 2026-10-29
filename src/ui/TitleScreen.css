@@ -1,77 +1,20 @@
 /* Title screen. Prefix: title- */
 .title-screen {
-  /* The floor strip: one map tile high (32 art px at 2x) */
-  --title-floor-h: 64px;
+  /* The backdrop's wall strip + floor: two map tiles high (32 art px each at 2x) */
+  --title-floor-h: 128px;
   position: relative;
   height: 100%;
   overflow: hidden auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  background:
-    radial-gradient(ellipse at 50% 35%, rgba(215, 38, 43, 0.22), transparent 60%),
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 16px 16px,
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 16px 16px,
-    linear-gradient(180deg, #120f17 0%, #1b1522 60%, #0e0b12 100%);
+  background: #120f17;
 }
 
-/* ---- background racks ---- */
+/* ---- background: the map's pixel art (TitleBackdrop) ---- */
 .title-bg { position: absolute; inset: 0; pointer-events: none; }
-.title-racks {
-  position: absolute;
-  bottom: var(--title-floor-h);
-  display: flex;
-  gap: 18px;
-  opacity: 0.55;
-}
-.title-racks.left { left: 3%; }
-.title-racks.right { right: 3%; }
-.title-rack {
-  width: 92px;
-  padding: 8px 6px;
-  background: #0d0b11;
-  border: 3px solid #2c2433;
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 2px #19141e, 0 6px 0 rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.title-unit {
-  height: 20px;
-  background: #1f1a25;
-  border: 2px solid #2f2737;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 5px;
-}
-.title-unit b { flex: 1; height: 4px; margin-left: 4px; background: repeating-linear-gradient(90deg, #2f2737 0 3px, transparent 3px 5px); }
-.title-led {
-  width: 5px;
-  height: 5px;
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green);
-  animation: title-led 1s steps(2) infinite;
-}
-.title-led.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
-.title-led.red { background: var(--red-2); box-shadow: 0 0 6px var(--red-2); }
-
-.title-floor {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: var(--title-floor-h);
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 2px, transparent 2px) 0 0 / var(--title-floor-h) 100%,
-    linear-gradient(180deg, #241d2b, #16121b);
-  border-top: 3px solid #3a2f43;
-}
-
-@keyframes title-led {
-  50% { opacity: 0.25; }
-}
+.title-backdrop { position: absolute; inset: 0; }
+.title-backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
 
 /* ---- center column ---- */
 .title-center {
@@ -132,12 +75,7 @@
   .title-logo { font-size: 72px; text-shadow: 6px 6px 0 var(--outline); }
   .title-sub { font-size: 24px; text-shadow: 2px 2px 0 var(--outline); }
 }
-@media (max-width: 900px) {
-  .title-racks { opacity: 0.25; }
-  .title-racks .title-rack:nth-child(2) { display: none; }
-}
 @media (max-width: 560px) {
-  .title-racks { display: none; }
   .title-logo { font-size: 48px; text-shadow: 4px 4px 0 var(--outline); }
 }
 @media (max-width: 400px) {
@@ -147,7 +85,7 @@
   .title-center { padding-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .title-led, .title-sub { animation: none; }
+  .title-sub { animation: none; }
 }
 
 /* ---- corner: sound + credits ---- */
