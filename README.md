@@ -1,13 +1,21 @@
 # KHU 데이터센터: 수강신청을 지켜라
 
+<h2 align="center"><a href="https://khu-dc-game.khu-dc-game-worker.workers.dev">▶ 지금 바로 플레이하기</a></h2>
+
+<p align="center">
+  <b>올클의 운명은 당신의 터미널에 달렸다.</b><br/>
+  오전 10시 정각, 수강신청 서버가 터지기 전에 출근하세요!<br/>
+  <a href="https://khu-dc-game.khu-dc-game-worker.workers.dev">khu-dc-game.khu-dc-game-worker.workers.dev</a> · 설치 없이 브라우저에서 바로 · AI 사수 쿠사수 대기 중
+</p>
+
 경희대학교 데이터센터의 신입 엔지니어(경희대 사자)가 되어 **닷새 동안 서버실을 직접 꾸리고, D-Day 아침 10시에 열리는 수강신청을 지켜 내는** 브라우저 픽셀 게임이에요.
 
-![타이틀 화면](docs/screenshots/title.png)
+[![타이틀 화면 (누르면 게임이 열려요)](docs/screenshots/title.png)](https://khu-dc-game.khu-dc-game-worker.workers.dev)
 
 - **팀**: strawberry cone
-- **플레이**: 브라우저에서 6일(D-5 → D-Day), 다 하면 1시간쯤
+- **플레이**: [링크](https://khu-dc-game.khu-dc-game-worker.workers.dev)를 누르면 바로 시작. 6일(D-5 → D-Day), 다 하면 1시간쯤. 키보드가 있는 PC 브라우저에서 해 주세요
 - **누구나**: 서버를 거의 몰라도 괜찮아요. 랙에 서버를 끼우는 것부터 시작해요
-- **AI 사수**: 막히면 쿠사수가 상황 · 할 일 · 명령을 3줄로 알려 줘요 (ChatKHU, 선택)
+- **AI 사수**: 막히면 쿠사수가 상황 · 할 일 · 명령을 3줄로 알려 줘요 (ChatKHU. 공개 사이트에선 켜져 있어요)
 
 **목차** · [이런 게임이에요](#이런-게임이에요) · [스크린샷](#스크린샷) · [바로 해보기](#바로-해보기) · [주요 기능](#주요-기능) · [6일 동안 하는 일](#6일-동안-하는-일) · [조작법](#조작법) · [AI 사수 쿠사수](#ai-사수-쿠사수-chatkhu) · [프로젝트 구조](#프로젝트-구조) · [개발자 안내](#개발자-안내) · [에셋 · 라이선스](#에셋--라이선스)
 
@@ -45,7 +53,9 @@ flowchart LR
 
 ## 바로 해보기
 
-필요한 것: **Node.js 20.19 이상** (22 LTS 권장)
+**온라인**: [khu-dc-game.khu-dc-game-worker.workers.dev](https://khu-dc-game.khu-dc-game-worker.workers.dev) 를 열면 끝이에요. 설치도 가입도 필요 없어요. 공개 사이트에는 AI 사수(ChatKHU)가 켜져 있어서, 터미널에 `hint` 만 치면 쿠사수가 바로 답해요.
+
+**내 컴퓨터에서**: **Node.js 20.19 이상** (22 LTS 권장)
 
 ```bash
 npm install
@@ -308,7 +318,7 @@ Playwright는 `http://localhost:5173` 의 개발 서버를 쓰고, 꺼져 있으
 <details>
 <summary><b>배포 (Cloudflare Workers)</b></summary>
 
-Worker 하나가 게임 정적 파일(`dist/`)과 `/api/hint` 를 함께 서빙해요.
+Worker 하나가 게임 정적 파일(`dist/`)과 `/api/hint` 를 함께 서빙해요. 지금 공개된 버전: [khu-dc-game.khu-dc-game-worker.workers.dev](https://khu-dc-game.khu-dc-game-worker.workers.dev) (Cloudflare Workers 무료 플랜).
 
 ```bash
 npm run build                                  # → dist/
@@ -319,7 +329,9 @@ npx wrangler deploy
 ```
 
 - 설정: `worker/wrangler.toml` (`[assets] directory = "../dist"`, SPA 모드, `/api/*` 만 Worker 코드가 먼저 처리)
-- 모델 바꾸기: `[vars] HINT_MODEL` (기본 `claude-haiku-5-5`)
+- 모델 바꾸기: `[vars] HINT_MODEL` (기본 `claude-haiku-5-5`, ChatKHU 게이트웨이에서 동작 확인)
+- 서버 키는 `wrangler secret put CHATKHU_API_KEY` 한 번이면 배포된 Worker에 바로 붙고, 다음 배포 때도 그대로 남아요. 이름은 꼭 `CHATKHU_API_KEY` 로 쓰고, 키 값은 물어볼 때만 붙여 넣으세요.
+- 게이트웨이는 User-Agent가 없는 요청을 막아요(403, `error code: 1010`). Worker가 알아서 붙여 보내요.
 - 번들만 확인: `cd worker && npx wrangler deploy --dry-run --outdir /tmp/khu-worker-dry`
 - Worker의 `npm run dev` 는 `dist/` 가 없으면 빈 폴더를 먼저 만들어요. `:8787` 에서 게임 화면까지 보려면 루트에서 `npm run build` 를 먼저 하세요.
 
@@ -338,6 +350,7 @@ npx wrangler deploy
 - `leaked`: AI 답에 정답 값이 들어가서 한 번 다시 물었는지. 두 번째도 그러면 기본 답으로 대체(`outcome: "fallback"`, `reason: "leak"`).
 - `reason`: 기본 답으로 돌아간 이유 (`leak` · `timeout` · `upstream` · `badkey`: 플레이어 키가 거절됨). 키가 없거나(`nokey`) 요청이 너무 많을 때(`rate`)는 AI를 부르지 않아서 기록이 남지 않아요.
 - `ownKey`: 플레이어가 넣은 키로 불렀는지 (`true` / `false`). 키 자체는 남기지 않아요. 연결 확인은 `{"event":"key-check", …, "outcome": "ok"}` 한 줄로 남아요.
+- `error`: 실패했을 때 게이트웨이가 한 말을 짧게 (예: `upstream 401: Invalid API key`, `upstream 403: error code: 1010`).
 - 로컬은 `wrangler dev` 터미널에 그대로 찍혀요. 배포본은 이렇게 모아요:
 
 ```bash
