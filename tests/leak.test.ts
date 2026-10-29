@@ -306,6 +306,19 @@ describe('the Worker reads two kinds of request', () => {
     expect(user).toContain('[지금까지 대화]\n(없음)');
     expect(user).toContain('다음엔 뭘 하면 돼요?');
   });
+
+  it('the 퇴근 퀴즈: the 사수 is told not to give its answers away (only there)', () => {
+    const rule = '퀴즈의 정답도, 몇 번(A·B·C·D) 보기가 맞는지도 절대 말하지 마';
+    for (const stage of [0, 1, 2, 3, 4]) {
+      const quiz = parseInput({ objectiveId: 'quiz', stage });
+      if (typeof quiz === 'string' || quiz.mode !== 'mission') throw new Error(String(quiz));
+      expect(quiz.objective.finale).toBe(true);
+      expect(buildMissionSystem(quiz, MANUALS)).toContain(rule);
+    }
+    const dns = parseInput({ objectiveId: 'dns', stage: 1 });
+    if (typeof dns === 'string' || dns.mode !== 'mission') throw new Error(String(dns));
+    expect(buildMissionSystem(dns, MANUALS)).not.toContain(rule);
+  });
 });
 
 describe('the Worker answers both, and the guard still holds', () => {
