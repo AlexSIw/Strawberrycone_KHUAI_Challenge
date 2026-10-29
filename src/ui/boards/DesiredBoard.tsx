@@ -83,7 +83,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
 
   const footer = (
     <>
-      <span className="dsb-foot-todo">👉 {todo}</span>
+      <span className="dsb-foot-todo">{todo}</span>
       {applied ? (
         <button className="btn primary" disabled={draft === null || draft === dep.replicas || replicas < 2} onClick={applyCount}>
           개수 바꾸기
@@ -105,7 +105,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
       <div className="dsb-layout">
         <div className="dsb-yaml" aria-label="원하는 상태 카드">
           <div className="dsb-yaml-head">
-            <span>📝 enroll-deployment.yaml</span>
+            <span>enroll-deployment.yaml</span>
             {applied && <span className="dsb-applied">적용됨</span>}
           </div>
           <div className="dsb-yaml-body">
@@ -164,7 +164,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
               }
             />
           </div>
-          {replicas === 1 && <p className="dsb-inline warn">⚠️ {ONE_MSG}</p>}
+          {replicas === 1 && <p className="dsb-inline warn">{ONE_MSG}</p>}
         </div>
 
         <div className="dsb-side">
