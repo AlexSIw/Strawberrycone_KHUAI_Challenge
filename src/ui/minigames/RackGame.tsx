@@ -151,7 +151,6 @@ export function RackGame() {
   return (
     <MiniGameFrame
       title="서버실 · 랙에 서버 장착"
-      icon="🗄️"
       size="wide"
       onEscape={() => {
         if (!selected) return false;

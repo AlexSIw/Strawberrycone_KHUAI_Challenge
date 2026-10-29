@@ -34,7 +34,7 @@ export function PowerGame() {
 
   if (!world.power) {
     return (
-      <MiniGameFrame title="전기실 · PDU" icon="⚡" size="narrow" footer={<GameFooter done={false} />}>
+      <MiniGameFrame title="전기실 · PDU" size="narrow" footer={<GameFooter done={false} />}>
         <TaskBar done>전원 정상 — 지금은 여기서 할 일이 없어요.</TaskBar>
         <p className="muted" style={{ margin: 0, lineHeight: 1.7 }}>
           모든 장비가 안정적으로 전기를 받고 있어요.
@@ -77,7 +77,6 @@ export function PowerGame() {
   return (
     <MiniGameFrame
       title="전기실 · PDU A/B"
-      icon="⚡"
       size="wide"
       footer={<GameFooter done={done}>{done ? '모든 장비가 두 줄로 ON! 상태 LED와 PDU 불빛으로 전기가 어디서 오는지 늘 확인할 수 있어요.' : null}</GameFooter>}
     >

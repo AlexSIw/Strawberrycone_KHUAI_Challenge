@@ -3,7 +3,6 @@ import { gameStore } from '../store/game';
 
 interface Props {
   title: ReactNode;
-  icon?: string;
   size?: 'normal' | 'wide' | 'narrow';
   children: ReactNode;
   footer?: ReactNode;
@@ -14,7 +13,7 @@ interface Props {
 }
 
 /** Window chrome shared by every overlay (terminal, mini-games, boards…). Esc closes it. */
-export function ModalFrame({ title, icon, size = 'normal', children, footer, onClose, className = '' }: Props) {
+export function ModalFrame({ title, size = 'normal', children, footer, onClose, className = '' }: Props) {
   const close = onClose ?? (() => gameStore.getState().closeModal());
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -31,7 +30,6 @@ export function ModalFrame({ title, icon, size = 'normal', children, footer, onC
     <div className={`modal-backdrop ${className}`.trim()} onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className={`modal panel ${size === 'normal' ? '' : size}`} role="dialog" aria-modal="true">
         <div className="modal-head">
-          {icon && <span style={{ fontSize: 20 }}>{icon}</span>}
           <h2>{title}</h2>
           <button className="btn ghost" onClick={close} aria-label="닫기">
             ✕ <span className="muted" style={{ fontSize: 12 }}>Esc</span>

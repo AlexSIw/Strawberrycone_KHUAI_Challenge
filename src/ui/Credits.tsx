@@ -15,7 +15,6 @@ export function Credits({ onClose }: { onClose: () => void }) {
   return (
     <ModalFrame
       title="크레딧"
-      icon="🎵"
       size="narrow"
       onClose={onClose}
       footer={

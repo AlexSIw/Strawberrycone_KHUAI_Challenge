@@ -77,7 +77,7 @@ export function DockerfileBoard() {
   if (done) return <Finished celebrate={justDone} />;
   if (!problemSeen) {
     return (
-      <ModalFrame title="설계 보드 · 레시피 카드" icon="📋" size="narrow">
+      <ModalFrame title="설계 보드 · 레시피 카드" size="narrow">
         <p style={{ lineHeight: 1.7, margin: 0 }}>새 서버(srv-new)에 신청 앱을 설치하는 중이에요.</p>
         <p className="muted">
           새 서버 배포 결과부터 확인해봐요: 관리 PC 터미널에서 <code>ssh srv-new</code> → <code>deploy log</code>
@@ -115,7 +115,6 @@ function Recipe({ onSolved }: { onSolved: () => void }) {
   return (
     <ModalFrame
       title="설계 보드 · 레시피 카드 (Dockerfile)"
-      icon="📋"
       size="wide"
       footer={
         <>
@@ -204,7 +203,7 @@ function Recipe({ onSolved }: { onSolved: () => void }) {
 
 function Finished({ celebrate }: { celebrate: boolean }) {
   return (
-    <ModalFrame title="설계 보드 · 레시피 카드 (Dockerfile)" icon="📋" size="wide">
+    <ModalFrame title="설계 보드 · 레시피 카드 (Dockerfile)" size="wide">
       <div className="dfb-mentor">
         <Portrait who="mentor" size={44} />
         <p>

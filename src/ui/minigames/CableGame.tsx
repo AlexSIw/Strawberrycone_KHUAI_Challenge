@@ -363,7 +363,6 @@ export function CableGame({ mode }: { mode: 'build' | 'repair' }) {
   return (
     <MiniGameFrame
       title={mode === 'build' ? `케이블 연결 · ${labelOf(world, SWITCH)}` : `케이블 점검 · ${labelOf(world, SWITCH)}`}
-      icon="🔌"
       size="wide"
       onEscape={() => {
         if (!selected) return false;

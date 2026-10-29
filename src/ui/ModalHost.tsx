@@ -38,7 +38,7 @@ function renderWindow(modal: Modal) {
       return <Terminal key={modal.host} host={modal.host} />;
     case 'consolePick':
       return (
-        <ModalFrame title="콘솔 연결할 서버 고르기" icon="🔌" size="narrow">
+        <ModalFrame title="콘솔 연결할 서버 고르기" size="narrow">
           <p className="muted">이 랙에는 서버가 여러 대 있어요. 콘솔 케이블을 어디에 꽂을까요?</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {modal.hosts.map((h) => (
@@ -78,7 +78,7 @@ function renderWindow(modal: Modal) {
       return <ConceptsBook />;
     case 'inspect':
       return (
-        <ModalFrame title="살펴보기" icon="🔎" size="narrow">
+        <ModalFrame title="살펴보기" size="narrow">
           <p style={{ lineHeight: 1.7, margin: 0 }}>{modal.text}</p>
         </ModalFrame>
       );

@@ -733,7 +733,7 @@ export function Terminal({ host }: { host: string }) {
   };
 
   return (
-    <ModalFrame title={`터미널 — ${storeHost || host}`} icon="💻" size="wide">
+    <ModalFrame title={`터미널 — ${storeHost || host}`} size="wide">
       <p className="term-next muted">
         {iosMode ? '명령을 입력하고 Enter. 막히면 ?를 눌러보세요. 줄임말도 돼요.' : '명령어를 입력하고 Enter. 모르겠으면 "명령어 도움말"에서 골라보세요.'}
       </p>

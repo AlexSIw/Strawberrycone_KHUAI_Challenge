@@ -27,7 +27,7 @@ export function DesiredBoard() {
   const dep = k8s?.deployments[APP];
   if (!k8s || !dep) {
     return (
-      <ModalFrame title="설계 보드" icon="📋" size="narrow">
+      <ModalFrame title="설계 보드" size="narrow">
         <p className="muted">오늘은 원하는 상태 카드를 쓰지 않아요.</p>
       </ModalFrame>
     );
@@ -97,7 +97,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
   );
 
   return (
-    <ModalFrame title="설계 보드 · 원하는 상태 카드" icon="📋" size="wide" footer={footer}>
+    <ModalFrame title="설계 보드 · 원하는 상태 카드" size="wide" footer={footer}>
       <p className="dsb-lead">
         몇 개를 띄울지, 어떤 버전인지 적으면 <b>쿠버네티스</b>가 알아서 맞춰요. <span className="muted">(원하는 상태 = desired state)</span>
       </p>

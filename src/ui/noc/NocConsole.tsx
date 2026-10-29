@@ -102,7 +102,7 @@ export function NocConsole({ tab: asked }: { tab?: NocTab }) {
   };
 
   return (
-    <ModalFrame title="관제 화면 (NOC)" icon="🖥️" size="wide">
+    <ModalFrame title="관제 화면 (NOC)" size="wide">
       <div className="noc-tabs" role="tablist" aria-label="관제 화면">
         {TABS.map((t) => (
           <button

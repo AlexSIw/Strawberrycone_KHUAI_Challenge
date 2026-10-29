@@ -45,7 +45,7 @@ export function DecomposeBoard() {
   const app = useGame((s) => s.run?.world.app);
   if (!app) {
     return (
-      <ModalFrame title="설계 보드" icon="📋" size="narrow">
+      <ModalFrame title="설계 보드" size="narrow">
         <p className="muted">오늘은 설계 보드를 쓰지 않아요.</p>
       </ModalFrame>
     );
@@ -109,7 +109,6 @@ function Puzzle() {
     return (
       <ModalFrame
         title="설계 보드 · 서비스 분리"
-        icon="📋"
         size="wide"
         footer={
           <>
@@ -229,7 +228,6 @@ function Puzzle() {
   return (
     <ModalFrame
       title="설계 보드 · 모놀리스 쪼개기"
-      icon="📋"
       size="wide"
       footer={
         <>
@@ -391,7 +389,7 @@ function ArchView({ services }: { services: Record<string, AppService> }) {
   const foreignDb = flagForeignDb && list.some((s) => s.dbAccess.some((d) => d !== `${s.name}-db`));
 
   return (
-    <ModalFrame title="설계 보드 · 현재 구조 (MSA)" icon="📋" size="wide">
+    <ModalFrame title="설계 보드 · 현재 구조 (MSA)" size="wide">
       <p className="dcb-todo">
         이미 기능별 서비스로 나눴어요. 이 그림은 보기 전용이고, 조치는 <b>관리 PC 터미널</b>에서 해요.
       </p>

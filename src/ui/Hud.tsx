@@ -222,7 +222,6 @@ export function Hud() {
       {confirmExit && (
         <ModalFrame
           title="오늘 일을 그만두고 나갈까요?"
-          icon="🚪"
           size="narrow"
           className="modal-over"
           onClose={() => setConfirmExit(false)}

@@ -25,7 +25,7 @@ export function ConceptsBook() {
   };
 
   return (
-    <ModalFrame title="개념 도감" icon="📖" size="wide">
+    <ModalFrame title="개념 도감" size="wide">
       <div className="cbk-top">
         <p className="cbk-todo">
           👉 미션을 끝내고 장애를 해결할 때마다 개념 카드가 하나씩 모여요. <kbd>C</kbd> 키로 언제든 열 수 있어요.

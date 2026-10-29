@@ -145,7 +145,7 @@ function Waiting({ run }: { run: StageRun }) {
   const left = Math.max(0, stageAt(def.clock, '10:30:00') - run.ctx.stageTime);
   const list = fired(run);
   return (
-    <ModalFrame title="설계 보드 · 장애 보고서" icon="📋" size="narrow">
+    <ModalFrame title="설계 보드 · 장애 보고서" size="narrow">
       <div className="pmb-wait">
         <div className="pmb-wait-title">10:30 1차 마감 뒤에 작성해요</div>
         {left > 0 ? (
@@ -227,7 +227,6 @@ function Write({ run }: { run: StageRun }) {
     return (
       <ModalFrame
         title="설계 보드 · 장애 보고서"
-        icon="📋"
         size="wide"
         footer={
           <>
@@ -287,7 +286,6 @@ function Write({ run }: { run: StageRun }) {
   return (
     <ModalFrame
       title="설계 보드 · 장애 보고서 (Postmortem)"
-      icon="📋"
       size="wide"
       footer={
         <>
