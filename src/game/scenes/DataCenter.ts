@@ -67,7 +67,7 @@ import {
   type LedState,
 } from '../worldView';
 
-/** Walking speed (px/s) at 1x; the HUD's 🏃 setting (store.moveSpeed) multiplies it. */
+/** Walking speed (px/s) at 1x; the HUD's speed setting (store.moveSpeed) multiplies it. */
 const SPEED = TILE * 4.375;
 /** Max distance from the lion's feet to a device's footprint for the [E] prompt */
 const INTERACT_RANGE = TILE * 1.1;

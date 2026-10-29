@@ -76,7 +76,7 @@ export function cableBoard(def: StageDef, w: World, mode: 'build' | 'repair'): C
   return { sw, ports, servers, others };
 }
 
-/** Every cable the cable window can test and replace (🔍 / 🔁) today. */
+/** Every cable the cable window can test and replace today. */
 export function cableGameCables(def: StageDef, w: World, mode: 'build' | 'repair'): Set<string> {
   const b = cableBoard(def, w, mode);
   const ids = new Set(b.others.map((o) => o.cable.id));
