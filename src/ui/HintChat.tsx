@@ -7,6 +7,7 @@ import { dayLabel, type RoomId } from '../sim/types';
 import { gameStore, MISSION_THREAD, useGame, type HintMessage } from '../store/game';
 import { ModalFrame } from './ModalFrame';
 import { guideOf, objectiveStatus, waitingText } from './objectiveStatus';
+import { PixelIcon } from './PixelIcon';
 import { Portrait } from './Portrait';
 import { useStageState } from './useStageState';
 import './HintChat.css';
@@ -47,7 +48,6 @@ const CALM_LINES: Record<number, string> = {
 
 /** Severity tone for the colors (the stylesheet has two: red and amber). */
 const tone = (sev: AlarmSev) => (sev === 'critical' || sev === 'major' ? 'critical' : 'warning');
-const sevBadge = (sev: AlarmSev) => `${tone(sev) === 'critical' ? '🚨' : '⚠️'} ${SEV_LABEL[sev]}`;
 
 /**
  * Incident the pending answer belongs to. The store only keeps a yes/no `hintPending`, so without
@@ -219,7 +219,7 @@ function MissionView({ run, tabbed }: { run: StageRun; tabbed: boolean }) {
     <div className="hc-incident hc-mission" {...(tabbed ? { role: 'tabpanel', id: 'hc-panel', 'aria-labelledby': 'hc-tab-mission' } : {})}>
       <header className="hc-head mission">
         <div className="hc-head-title">
-          <span className="hc-sev mission">🎯 지금 미션</span>
+          <span className="hc-sev mission">지금 미션</span>
           {o ? <b>{o.text}</b> : <span className="muted">{waitingText({ ...st, incident: false }) ?? '지금은 열린 미션이 없어요.'}</span>}
         </div>
         {guide && (
@@ -320,12 +320,12 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
     <div className="hc-incident" role="tabpanel" id="hc-panel" aria-labelledby={`hc-tab-${sc.id}`}>
       <header className={`hc-head ${resolved ? 'resolved' : tone(sc.severity)}`}>
         <div className="hc-head-title">
-          <span className={`hc-sev ${tone(sc.severity)}`}>{sevBadge(sc.severity)}</span>
+          <span className={`hc-sev ${tone(sc.severity)}`}>{SEV_LABEL[sc.severity]}</span>
           <b>{sc.title}</b>
-          {resolved && <span className="hc-badge ok">✅ 해결됨</span>}
+          {resolved && <span className="hc-badge ok">✓ 해결됨</span>}
         </div>
         <p className="hc-alert">“{sc.alert}”</p>
-        <p className="hc-room muted">📍 먼저 가볼 곳: {ROOM_NAME[sc.room]}</p>
+        <p className="hc-room muted">먼저 가볼 곳: {ROOM_NAME[sc.room]}</p>
       </header>
 
       {showLadder && !resolved && (
@@ -345,7 +345,7 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
             plain
             msg={{
               from: 'mentor',
-              text: resolved ? '해결했구나! 잘했어. 👏' : '무슨 일이야? "힌트 받기"를 누르면 차근차근 알려줄게. 궁금한 걸 직접 물어봐도 돼.',
+              text: resolved ? '해결했구나! 잘했어.' : '무슨 일이야? "힌트 받기"를 누르면 차근차근 알려줄게. 궁금한 걸 직접 물어봐도 돼.',
               source: 'canned',
             }}
           />
@@ -357,7 +357,7 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
       </div>
 
       {resolved ? (
-        <p className="hc-done ok">🎉 이 장애는 해결됐어요. 다른 탭이나 목표를 확인해보세요.</p>
+        <p className="hc-done ok">이 장애는 해결됐어요. 다른 탭이나 목표를 확인해보세요.</p>
       ) : (
         <div className="hc-controls">
           <div className="hc-buttons">
@@ -459,7 +459,7 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
   }, [selectedId, saveTab]);
 
   return (
-    <ModalFrame title="쿠사수 무전기 📻" size="narrow">
+    <ModalFrame title="쿠사수 무전기" size="narrow">
       <p className="hc-next muted">
         {selected ? '막히면 힌트를 받아봐요. 궁금한 걸 직접 물어봐도 돼요.' : '미션을 하다 막히거나 모르는 말이 나오면 물어봐요.'}
       </p>
@@ -476,7 +476,8 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
               className={`hc-tab ${selected?.sc.id === t.sc.id ? 'on' : ''} ${t.resolved ? 'resolved' : tone(t.sc.severity)}`}
               onClick={() => setPicked(t.sc.id)}
             >
-              {t.resolved ? '✅' : tone(t.sc.severity) === 'critical' ? '🚨' : '⚠️'} {t.sc.title}
+              <PixelIcon name={t.resolved ? 'check' : tone(t.sc.severity) === 'critical' ? 'siren' : 'warn'} />
+              {t.sc.title}
             </button>
           ))}
           {run && (
@@ -489,7 +490,7 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
               className={`hc-tab mission ${selected ? '' : 'on'}`}
               onClick={() => setPicked(MISSION_THREAD)}
             >
-              🎯 미션
+              미션
             </button>
           )}
         </div>

@@ -81,7 +81,7 @@ export function objectiveStatus(def: StageDef, run: StageRun): ObjectiveStatus {
   };
 }
 
-/** The 🔒 row under the list: how many objectives follow, and what opens them. */
+/** The locked row under the list: how many objectives follow, and what opens them. */
 export function lockedText(st: ObjectiveStatus): string | null {
   if (!st.lockedCount || !st.lockReason) return null;
   const n = st.lockedCount;
@@ -113,8 +113,8 @@ export function waitingText(st: ObjectiveStatus): string | null {
 export function nextStepText(st: ObjectiveStatus): string | null {
   if (st.incident) {
     return st.objectivesFixIncident
-      ? '🚨 장애 발생! 아래 목표를 차례로 하면 해결돼요. 막히면 쿠사수에게 물어봐요.'
-      : '🚨 장애부터 해결하세요! 막히면 쿠사수에게 물어봐요.';
+      ? '장애 발생! 아래 목표를 차례로 하면 해결돼요. 막히면 쿠사수에게 물어봐요.'
+      : '장애부터 해결하세요! 막히면 쿠사수에게 물어봐요.';
   }
   return waitingText(st);
 }

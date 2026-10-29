@@ -85,7 +85,7 @@ function Line({ line, index, total }: { line: DialogueLine; index: number; total
         </div>
         <div className="dlg-main">
           <div className="dlg-name">
-            {isTip ? '💡 도움말' : speakerName(who)}
+            {isTip ? '도움말' : speakerName(who)}
             <span className="dlg-count">
               {index + 1}/{total}
             </span>
@@ -116,7 +116,7 @@ function Line({ line, index, total }: { line: DialogueLine; index: number; total
             }}
             title="남은 대화를 모두 건너뛰어요"
           >
-            건너뛰기 ⏭
+            건너뛰기 »
           </button>
         )}
       </div>

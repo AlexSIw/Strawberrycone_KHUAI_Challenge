@@ -9,9 +9,9 @@ const conceptOr = (id: string): Concept => CONCEPTS[id] ?? { id, name: id, analo
 
 /**
  * One popup at a time from store.concepts, in three kinds:
- *  - 🧭 미션 브리핑 (kind 'preview'): a mission just appeared; what it is for and the cards to read first.
- *  - ✅ 배운 것 정리 (kind 'recap'): a mission is done; its card(s) join the collection, with what just happened.
- *  - ✨ 새 개념 카드 획득 (an incident's card): after an incident is fixed ("개념 카드 복습" when already collected).
+ *  - 미션 브리핑 (kind 'preview'): a mission just appeared; what it is for and the cards to read first.
+ *  - 배운 것 정리 (kind 'recap'): a mission is done; its card(s) join the collection, with what just happened.
+ *  - 새 개념 카드 획득 (an incident's card): after an incident is fixed ("개념 카드 복습" when already collected).
  * The game is paused until it's dismissed. Cards earned in a working window (terminal, NOC, mini-game…) or
  * during an incident wait (store.heldConcepts), and briefings wait for working windows too, so nothing lands
  * on what the player is typing or looking at.
@@ -79,7 +79,7 @@ export function ConceptCardPopup() {
   const c = conceptOr(popup.concept);
   const no = CONCEPT_IDS.indexOf(c.id) + 1;
   const recap = popup.kind === 'recap';
-  const banner = recap ? '✅ 배운 것 정리' : popup.review ? '📖 개념 카드 복습' : '✨ 새 개념 카드 획득! ✨';
+  const banner = recap ? '배운 것 정리' : popup.review ? '개념 카드 복습' : '새 개념 카드 획득!';
   const label = recap ? `배운 것 정리: ${c.name}` : `${popup.review ? '개념 카드 복습' : '새 개념 카드'}: ${c.name}`;
 
   return (
@@ -96,7 +96,7 @@ export function ConceptCardPopup() {
           <header className="ccard-head">
             {no > 0 && <span className="ccard-no">No.{String(no).padStart(2, '0')}</span>}
             <h2 className="ccard-name">{c.name}</h2>
-            {recap && <span className={`ccard-badge ${popup.review ? '' : 'new'}`}>{popup.review ? '📖 복습' : '🃏 새 카드'}</span>}
+            {recap && <span className={`ccard-badge ${popup.review ? '' : 'new'}`}>{popup.review ? '복습' : '새 카드'}</span>}
           </header>
           <div className="ccard-art">
             <span className="ccard-quote" aria-hidden>
@@ -124,19 +124,19 @@ export function ConceptCardPopup() {
           {more}
           {button('계속하기')}
         </div>
-        <p className="ccard-tip">모은 카드는 📖 도감(C)에서 다시 볼 수 있어요.</p>
+        <p className="ccard-tip">모은 카드는 도감(C)에서 다시 볼 수 있어요.</p>
       </div>
     </div>
   );
 }
 
-/** 🧭 미션 브리핑: the new mission, why it matters today, and its cards to read first. Nothing is awarded yet. */
+/** 미션 브리핑: the new mission, why it matters today, and its cards to read first. Nothing is awarded yet. */
 function Briefing({ popup, more, button }: { popup: ConceptPopup; more: ReactNode; button: ReactNode }) {
   const cards = (popup.cards ?? []).map(conceptOr);
   return (
     <div className="ccard-backdrop" role="dialog" aria-modal="true" aria-label={`미션 브리핑: ${popup.mission ?? ''}`}>
       <div className="ccard-wrap ccard-wrap-brief" key={popup.scenarioId}>
-        <div className="ccard-banner">🧭 미션 브리핑</div>
+        <div className="ccard-banner">미션 브리핑</div>
         <article className="ccard ccard-brief">
           <header className="ccard-brief-head">
             <span className="ccard-brief-tag">새 미션</span>
@@ -145,7 +145,7 @@ function Briefing({ popup, more, button }: { popup: ConceptPopup; more: ReactNod
           {popup.why && <p className="ccard-why">{popup.why}</p>}
           {cards.length > 0 && (
             <section className="ccard-ahead" aria-label="먼저 알고 가기">
-              <h3>📘 먼저 알고 가기</h3>
+              <h3>먼저 알고 가기</h3>
               <ul>
                 {cards.map((c) => (
                   <li key={c.id} className="ccard-mini">
@@ -162,7 +162,7 @@ function Briefing({ popup, more, button }: { popup: ConceptPopup; more: ReactNod
           {more}
           {button}
         </div>
-        <p className="ccard-tip">{cards.length ? '이 카드는 미션을 끝내면 받아요. 📖 도감(C)에서도 미리 읽을 수 있어요.' : '미션 목록은 왼쪽 패널에 있어요.'}</p>
+        <p className="ccard-tip">{cards.length ? '이 카드는 미션을 끝내면 받아요. 도감(C)에서도 미리 읽을 수 있어요.' : '미션 목록은 왼쪽 패널에 있어요.'}</p>
       </div>
     </div>
   );

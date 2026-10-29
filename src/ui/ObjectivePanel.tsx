@@ -5,6 +5,7 @@ import { openAlarms } from '../sim/alarms';
 import type { StageRun } from '../sim/engine';
 import { gameStore, useGame } from '../store/game';
 import { guideOf, lockedText, objectiveStatus, waitingText } from './objectiveStatus';
+import { PixelIcon } from './PixelIcon';
 import './ObjectivePanel.css';
 
 const startsCollapsed = () => {
@@ -145,7 +146,7 @@ export function ObjectiveGuide({ o, run, compact, variant }: { o: Objective; run
               setWhyOpen(!whyOpen);
             }}
           >
-            <span aria-hidden>💡</span> 이게 뭐고, 왜 해요? <span className="og-caret" aria-hidden>{whyOpen ? '▾' : '▸'}</span>
+            이게 뭐고, 왜 해요? <span className="og-caret" aria-hidden>{whyOpen ? '▾' : '▸'}</span>
           </button>
           {whyOpen && <p className="og-why-text">{o.why}</p>}
         </div>
@@ -255,11 +256,11 @@ export function ObjectivePanel() {
         aria-expanded={!collapsed}
         title={collapsed ? '목표 펼치기' : '목표 접기'}
       >
-        <span className="obj-head-title">🎯 오늘의 미션</span>
+        <span className="obj-head-title">오늘의 미션</span>
         <span className="obj-head-count">
           {st.doneCount}/{st.total}
         </span>
-        {alarms.length > 0 && <span className="obj-head-alert">🔔 {alarms.length}</span>}
+        {alarms.length > 0 && <span className="obj-head-alert">경보 {alarms.length}</span>}
         <span className="obj-head-caret" aria-hidden>
           {collapsed ? '▸' : '▾'}
         </span>
@@ -307,7 +308,7 @@ export function ObjectivePanel() {
             {locked && (
               <li className="obj-item locked">
                 <span className="obj-check" aria-hidden>
-                  🔒
+                  <PixelIcon name="lock" />
                 </span>
                 <span className="obj-text">{locked}</span>
               </li>
@@ -326,11 +327,11 @@ export function ObjectivePanel() {
             <span className="obj-alarm-count">
               {alarms.length ? (
                 <>
-                  🔔 경보 {alarms.length}
+                  경보 {alarms.length}
                   {critical > 0 && <b> · Critical {critical}</b>}
                 </>
               ) : (
-                '🔕 경보 없음'
+                '경보 없음'
               )}
             </span>
             <span className="obj-alarm-go">

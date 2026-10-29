@@ -25,7 +25,7 @@ export function RecapPanel({ stage, actions, titleId }: { stage: StageId; action
         <span className="rcp-kicker">
           {def.label} 「{def.title}」 시작 전
         </span>
-        <h2 id={titleId}>📚 지금까지</h2>
+        <h2 id={titleId}>지금까지</h2>
         <p className="rcp-lead">
           {span ? `${span}에 한 일과 배운 개념을 짧게 정리했어요. 오늘은 이 위에서 시작해요.` : '오늘 쓸 도구를 먼저 짚고 가요.'}
         </p>
@@ -34,7 +34,7 @@ export function RecapPanel({ stage, actions, titleId }: { stage: StageId; action
       <div className="rcp-body">
         {built.length > 0 && (
           <section className="rcp-sec" aria-label="지금까지 만든 것">
-            <h3>🏗️ 지금까지 만든 것</h3>
+            <h3>지금까지 만든 것</h3>
             <ul className="rcp-built">
               {built.map((b) => (
                 <li key={b}>{b}</li>
@@ -45,7 +45,7 @@ export function RecapPanel({ stage, actions, titleId }: { stage: StageId; action
 
         {concepts.length > 0 && (
           <section className="rcp-sec" aria-label="알고 가면 좋은 개념">
-            <h3>🃏 알고 가면 좋은 개념</h3>
+            <h3>알고 가면 좋은 개념</h3>
             <p className="rcp-help">누르면 뜻이 펼쳐져요.</p>
             <div className="rcp-cards">
               {concepts.map((id) => {
@@ -67,7 +67,7 @@ export function RecapPanel({ stage, actions, titleId }: { stage: StageId; action
 
         {primer.length > 0 && (
           <section className="rcp-sec" aria-label="오늘 쓸 도구">
-            <h3>🧰 오늘 쓸 도구</h3>
+            <h3>오늘 쓸 도구</h3>
             <table className="rcp-tools">
               <thead>
                 <tr>

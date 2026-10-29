@@ -4,6 +4,7 @@ import { CONCEPTS } from '../content/concepts';
 import { STAGES } from '../content/stages';
 import { incidentSpoilers, useGame } from '../store/game';
 import { ModalFrame } from './ModalFrame';
+import { PixelIcon } from './PixelIcon';
 import './ConceptsBook.css';
 
 // 개념 도감: every concept card. Collected ones are readable; so are the ones whose day has come (first met on an
@@ -28,7 +29,7 @@ export function ConceptsBook() {
     <ModalFrame title="개념 도감" size="wide">
       <div className="cbk-top">
         <p className="cbk-todo">
-          👉 미션을 끝내고 장애를 해결할 때마다 개념 카드가 하나씩 모여요. <kbd>C</kbd> 키로 언제든 열 수 있어요.
+          미션을 끝내고 장애를 해결할 때마다 개념 카드가 하나씩 모여요. <kbd>C</kbd> 키로 언제든 열 수 있어요.
           <br />
           <span className="muted">아직 못 받은 카드도 오늘까지 배울 내용이면 미리 읽을 수 있어요. 일부 카드는 그날 운에 따라 생기는 장애에서 나와요.</span>
         </p>
@@ -50,8 +51,8 @@ export function ConceptsBook() {
             return (
               <div key={c.id} className="cbk-card locked" aria-label="잠긴 카드">
                 <div className="cbk-no">{no}</div>
-                <div className="cbk-lock" aria-hidden>
-                  🔒
+                <div className="cbk-lock">
+                  <PixelIcon name="lock" scale={4} />
                 </div>
                 <div className="cbk-name">???</div>
                 <div className="cbk-where">{where(c.id)} 얻을 수 있어요</div>
@@ -65,7 +66,7 @@ export function ConceptsBook() {
               {ahead && <div className="cbk-ahead-tag">아직 못 받은 카드 · 미리 읽기</div>}
               <h3 className="cbk-name">{c.name}</h3>
               <div className="cbk-analogy">
-                <span className="cbk-label">🧩 비유</span>
+                <span className="cbk-label">비유</span>
                 {c.analogy}
               </div>
               <p className="cbk-def">{c.definition}</p>

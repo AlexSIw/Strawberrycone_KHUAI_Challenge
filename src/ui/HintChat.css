@@ -21,12 +21,19 @@
   padding: 6px 10px;
   cursor: pointer;
   color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .hc-tab:hover { background: #3a2f43; }
 .hc-tab.on { color: var(--text); background: #3a2f43; }
 .hc-tab.on.critical { border-bottom-color: var(--red-2); }
 .hc-tab.on.warning { border-bottom-color: var(--amber); }
 .hc-tab.on.resolved { border-bottom-color: var(--green); }
+/* Status icon: siren / warning / check, the main cue on a tab that isn't open */
+.hc-tab.critical .pxi { color: var(--red-2); }
+.hc-tab.warning .pxi { color: var(--amber); }
+.hc-tab.resolved .pxi { color: var(--green); }
 
 /* ----- incident header ----- */
 .hc-incident {

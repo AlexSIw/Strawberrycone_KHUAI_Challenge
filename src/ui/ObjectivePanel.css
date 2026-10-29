@@ -87,7 +87,7 @@
 .obj-progress { color: var(--muted); font-variant-numeric: tabular-nums; }
 .obj-item.current .obj-progress { color: var(--tan); }
 .obj-item.locked { opacity: 0.6; font-size: 13px; color: var(--muted); }
-.obj-item.locked .obj-check { border-style: dashed; font-size: 10px; }
+.obj-item.locked .obj-check { border: 0; color: inherit; }
 .obj-fold-btn {
   padding: 0;
   border: 0;
