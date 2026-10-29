@@ -1,4 +1,4 @@
-// Hand-placed pixel sprites as text grids (1 char = one 3 px "pixel"; '.' = transparent).
+// Hand-placed pixel sprites as text grids (1 char = one art pixel of PX screen px; '.' = transparent).
 // Kept free of imports so it can be previewed outside Phaser.
 
 export const PX = 3;
@@ -143,22 +143,6 @@ export const BOX: string[] = [
   'oTTTTTTTTTTTTTTo',
   'oTTTTTTTTTTTTTTo',
   '.oooooooooooooo.',
-];
-
-/** 10 x 12 speech bubble with "!" (alert) */
-export const BUBBLE_ALERT: string[] = [
-  '.oooooooo.',
-  'orrrrrrrro',
-  'orrrwwrrro',
-  'orrrwwrrro',
-  'orrrwwrrro',
-  'orrrwwrrro',
-  'orrrrrrrro',
-  'orrrwwrrro',
-  'orrrrrrrro',
-  '.ooorrooo.',
-  '...orro...',
-  '....oo....',
 ];
 
 /** 10 x 12 speech bubble with "?" */
