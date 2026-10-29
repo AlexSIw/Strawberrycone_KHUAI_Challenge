@@ -3,6 +3,25 @@
 import type { Scenario } from '../sim/scenario';
 import { fixShapes } from './blanks';
 
+/**
+ * Why the game answered by itself: no ChatKHU key on the Worker (nokey), no Worker behind /api (offline), too
+ * many requests (rate), no reply in time (timeout), a gateway error or an unusable reply (upstream), or the
+ * answer gave too much away twice (leak).
+ */
+export type FallbackReason = 'nokey' | 'offline' | 'rate' | 'timeout' | 'upstream' | 'leak';
+
+export const FALLBACK_REASONS: readonly FallbackReason[] = ['nokey', 'offline', 'rate', 'timeout', 'upstream', 'leak'];
+
+/** The line 쿠사수 puts above its own answer, so the player knows it isn't ChatKHU's. A leak says nothing. */
+export const FALLBACK_NOTICE: Record<FallbackReason, string | null> = {
+  nokey: 'ChatKHU API랑 연결이 안 돼 있어서 기본 힌트만 제공드려요.',
+  offline: 'ChatKHU API랑 연결이 안 돼 있어서 기본 힌트만 제공드려요.',
+  rate: 'ChatKHU 요청이 많아서 잠시 기본 힌트로 드려요.',
+  timeout: 'ChatKHU 응답이 없어서 이번엔 기본 힌트로 드려요.',
+  upstream: 'ChatKHU 응답이 없어서 이번엔 기본 힌트로 드려요.',
+  leak: null,
+};
+
 /** What a button or the terminal's `hint` asks on the player's behalf. */
 export const GUIDE_ASK = '지금 뭘 하면 돼요?';
 

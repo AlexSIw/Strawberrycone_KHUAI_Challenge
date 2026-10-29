@@ -237,7 +237,16 @@ describe('askMission (store)', () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ fallback: true }), { status: 200 }));
     const run = typeLines(startStage(1), ['ssh TOR-01']).run;
     const reply = await requestMissionText({ run, history: [], host: 'ops' });
-    expect(reply).toEqual({ text: cannedMission(run, vlanMission), source: 'canned' });
+    expect(reply).toEqual({ text: cannedMission(run, vlanMission), source: 'canned', reason: 'upstream' });
+    // The Worker says why; no Worker at all (the fetch fails, a proxy's error page) is no ChatKHU connection.
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ fallback: true, reason: 'nokey' }), { status: 200 }));
+    expect(await requestMissionText({ run, history: [], host: 'ops' })).toMatchObject({ source: 'canned', reason: 'nokey' });
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
+    expect(await requestMissionText({ run, history: [], host: 'ops' })).toMatchObject({ source: 'canned', reason: 'offline' });
+    vi.stubGlobal('fetch', async () => new Response('Bad Gateway', { status: 502 }));
+    expect(await requestMissionText({ run, history: [], host: 'ops' })).toMatchObject({ source: 'canned', reason: 'offline' });
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ fallback: true, reason: 'rate' }), { status: 429 }));
+    expect(await requestMissionText({ run, history: [], host: 'ops' })).toMatchObject({ source: 'canned', reason: 'rate' });
   });
 
   it('emoji in the AI reply are dropped; a reply of nothing else gives the radio’s own answer', async () => {
@@ -245,6 +254,6 @@ describe('askMission (store)', () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ reply: '🎉 좋아! enable부터 쳐 봐 👏' }), { status: 200 }));
     expect(await requestMissionText({ run, history: [], host: 'ops' })).toEqual({ text: '좋아! enable부터 쳐 봐', source: 'ai' });
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ reply: '👍️' }), { status: 200 }));
-    expect(await requestMissionText({ run, history: [], host: 'ops' })).toEqual({ text: cannedMission(run, vlanMission), source: 'canned' });
+    expect(await requestMissionText({ run, history: [], host: 'ops' })).toEqual({ text: cannedMission(run, vlanMission), source: 'canned', reason: 'upstream' });
   });
 });

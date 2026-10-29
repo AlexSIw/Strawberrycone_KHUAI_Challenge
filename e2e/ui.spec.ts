@@ -157,6 +157,8 @@ test('터미널 옆 상자: 조용할 땐 지금 목표, 장애가 나면 지금
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('쿠사수> 상황: 수강신청 사이트 접속 불가');
   const log = await page.evaluate(() => (window as unknown as Win).__store.getState().terminal.log.join('\n'));
   expect(log).toContain('lb health set');
+  // No Worker in the tests: 쿠사수 says the answer is the game's own.
+  expect(log).toContain('ChatKHU API랑 연결이 안 돼 있어서 기본 힌트만 제공드려요.');
   await expect(title(page)).toHaveText(/터미널 — ops/);
   await expect.poll(() => inputRow(page)).toBe('ops@khu-dc:~$');
   // The radio has the same answer as a 상황·할 일·명령 card, and 정답 보기 is there without any hint ladder.
@@ -164,6 +166,7 @@ test('터미널 옆 상자: 조용할 땐 지금 목표, 장애가 나면 지금
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
   await expect(page.locator('.hc-guide dt').first()).toHaveText('상황');
   await expect(page.locator('.hc-guide dt')).toHaveText(['상황', '할 일', '명령']);
+  await expect(page.locator('.hc-notice').first()).toHaveText('ChatKHU API랑 연결이 안 돼 있어서 기본 힌트만 제공드려요.');
   await page.getByRole('button', { name: '정답 보기' }).click();
   await expect(page.getByRole('alertdialog', { name: '정답 보기 확인' })).toContainText('15점');
   await page.getByRole('button', { name: '아니요' }).click();
@@ -220,13 +223,19 @@ test('창 위에 연 창은 닫으면 원래 창으로: 터미널 세션 그대�
   await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostname');
 
-  // The `hint` command answers in the terminal itself: no window on top, the prompt back as it was.
+  // The `hint` command answers in the terminal itself: no window on top, the prompt back as it was. With ChatKHU
+  // answering (here a stand-in for the Worker), there is no notice line.
+  await page.route('**/api/hint', (route) =>
+    route.fulfill({ json: { reply: '상황: 신청 앱을 띄우는 중이야.\n할 일: 앱 켜기\n명령: server start', kind: 'guide', concept: '' } }),
+  );
   await focusTerminal(page);
   await page.keyboard.press('Control+U');
   await typeLine(page, 'hint');
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hint');
   await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().hintPending)).toBe(false);
-  await expect.poll(() => rows(page).then((r) => r.some((l) => l.startsWith('쿠사수>')))).toBe(true);
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('쿠사수> 상황: 신청 앱을 띄우는 중이야.');
+  expect((await rows(page)).join('\n')).not.toContain('ChatKHU');
+  await page.unroute('**/api/hint');
   await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
 

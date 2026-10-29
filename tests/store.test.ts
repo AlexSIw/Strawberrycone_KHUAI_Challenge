@@ -122,17 +122,33 @@ describe('the terminal `hint`', () => {
     expect(windows()).toEqual(['terminal:ops']);
     expect(out.lines.map(plain)).toEqual(['쿠사수> 생각 중…']);
     await vi.waitFor(() => expect(S().hintPending).toBe(false));
-    expect(S().terminal.log.slice(-3).map(plain)).toEqual([
+    expect(S().terminal.log.slice(-4).map(plain)).toEqual([
+      // No Worker: it says so, then answers by itself.
+      'ChatKHU API랑 연결이 안 돼 있어서 기본 힌트만 제공드려요.',
       '쿠사수> 상황: s-hint 장애',
       '        할 일: 꺼진 포트 다시 켜기',
       '        명령: ssh TOR-01 → (확인) show logging → (고치기) enable → conf t → interface <포트> → no shutdown → end → wr',
     ]);
     expect(S().terminalFeed).toMatchObject({ origin: 'ops' });
     expect(S().hints['s-hint'].map((m) => m.from)).toEqual(['player', 'mentor']);
+    expect(S().hints['s-hint'][1]).toMatchObject({ source: 'canned', notice: 'ChatKHU API랑 연결이 안 돼 있어서 기본 힌트만 제공드려요.' });
     // H opens the radio on that incident.
     expect(S().windowState['hint:tab']).toEqual({ v: 's-hint' });
     expect(S().terminal.history).toEqual(['hint']);
     expect(S().run!.ctx.events).not.toContain('open:mentor');
+  });
+
+  it('an AI answer comes with no notice; neither does the game’s own answer after a leak', async () => {
+    const reply = '상황: 포트 하나가 꺼졌어.\n할 일: 다시 켜기\n명령: show interfaces status';
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ reply, kind: 'guide' }), { status: 200 }));
+    S().command('hint');
+    await vi.waitFor(() => expect(S().hintPending).toBe(false));
+    expect(S().terminal.log.slice(-3).map(plain)).toEqual(['쿠사수> 상황: 포트 하나가 꺼졌어.', '        할 일: 다시 켜기', '        명령: show interfaces status']);
+    expect(S().terminal.log.map(plain).join('\n')).not.toContain('ChatKHU');
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ fallback: true, reason: 'leak' }), { status: 200 }));
+    await S().askHint('s-hint');
+    expect(S().hints['s-hint'].at(-1)).toMatchObject({ source: 'canned' });
+    expect(S().hints['s-hint'].at(-1)).not.toHaveProperty('notice');
   });
 
   it('one question at a time: a second `hint` while the first is on its way says so', async () => {

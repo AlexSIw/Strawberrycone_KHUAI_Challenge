@@ -402,7 +402,7 @@ describe('the Worker answers both, and the guard still holds', () => {
 
   it('a mission answer that gives an incident away is retried, then replaced by the game’s own', async () => {
     replies = ['TOR-01 Gi1/0/3에 switchport access vlan 20!', '그 포트를 sw acc vl 20 으로!'];
-    expect(await ask(mission)).toEqual({ fallback: true });
+    expect(await ask(mission)).toEqual({ fallback: true, reason: 'leak' });
     expect(sent).toHaveLength(2);
     expect(sent[1].messages.at(-1)?.content).toContain('장애');
     // A clean retry goes through.
@@ -415,14 +415,14 @@ describe('the Worker answers both, and the guard still holds', () => {
     const blank = JSON.stringify({ kind: 'guide', situation: 'TOR-01 포트 VLAN이 바뀌었어.', todo: 'VLAN 되돌리기', command: 'show vlan brief 로 찾고 → interface <포트> → switchport access vlan <번호>' });
     const body = { scenarioId: 'd4-vlan:0', want: 'guide', question: '', history: [], snapshot: { day: 'D-4' } };
     replies = [valued, valued];
-    expect(await ask(body)).toEqual({ fallback: true });
+    expect(await ask(body)).toEqual({ fallback: true, reason: 'leak' });
     expect(sent[1].messages.at(-1)?.content).toContain('빈칸');
     expect(sent[0].messages[0].content).toContain('guide로');
     replies = [valued, blank];
     expect(await ask(body)).toMatchObject({ kind: 'guide', reply: expect.stringContaining('명령: show vlan brief 로 찾고 → interface <포트>') });
     // A guide missing a line: the game answers instead.
     replies = [JSON.stringify({ kind: 'guide', situation: 'a', todo: 'b' })];
-    expect(await ask(body)).toEqual({ fallback: true });
+    expect(await ask(body)).toEqual({ fallback: true, reason: 'upstream' });
   });
 
   it('an explanation comes back as kind explain, and the log line holds neither the key nor the question', async () => {
@@ -438,7 +438,7 @@ describe('the Worker answers both, and the guard still holds', () => {
 
   it('an incident hint is still guarded exactly as before', async () => {
     replies = ['switchport access vlan 20 을 쳐', 'Gi1/0/3 을 봐'];
-    expect(await ask({ scenarioId: 'd4-vlan:0', level: 3, question: '', history: [], snapshot: { day: 'D-4' } })).toEqual({ fallback: true });
+    expect(await ask({ scenarioId: 'd4-vlan:0', level: 3, question: '', history: [], snapshot: { day: 'D-4' } })).toEqual({ fallback: true, reason: 'leak' });
     expect(sent[0].system).toContain('정답(비공개)');
     replies = ['포트마다 어느 동네(VLAN)인지 보여주는 show 명령이 있어.'];
     expect(await ask({ scenarioId: 'd4-vlan:0', level: 2, question: '', history: [], snapshot: { day: 'D-4' } })).toMatchObject({ reply: expect.any(String) });
@@ -450,17 +450,35 @@ describe('the Worker answers both, and the guard still holds', () => {
     expect(sent[0].system).toContain('- 이모지는 쓰지 마.');
     // An emoji wedged inside an incident's answer doesn't hide it from the guard.
     replies = ['switch🔥port access vlan 20', 'sw acc vl 2🎉0'];
-    expect(await ask(mission)).toEqual({ fallback: true });
+    expect(await ask(mission)).toEqual({ fallback: true, reason: 'leak' });
     // Nothing but emoji is no answer.
     replies = ['🎉🎉'];
-    expect(await ask(mission)).toEqual({ fallback: true });
+    expect(await ask(mission)).toEqual({ fallback: true, reason: 'upstream' });
     // The UI's own marks stay.
     expect(stripEmoji('VLAN 10 ↔ 20 ▶ 다음 ✔ ✓ ★ ● →')).toBe('VLAN 10 ↔ 20 ▶ 다음 ✔ ✓ ★ ● →');
     expect(stripEmoji('1️⃣ 먼저 ⚠️ 확인!\n🎉 끝')).toBe('1 먼저 확인!\n끝');
   });
 
+  it('a gateway that times out, or fails: the game answers by itself and says why', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new DOMException('slow', 'TimeoutError');
+    });
+    expect(await ask(mission)).toEqual({ fallback: true, reason: 'timeout' });
+    vi.stubGlobal('fetch', async () => new Response('bad gateway', { status: 502 }));
+    expect(await ask(mission)).toEqual({ fallback: true, reason: 'upstream' });
+  });
+
+  it('too many questions from one place: 429, reason rate', async () => {
+    const from = (ip: string) => new Request('http://localhost/api/hint', { method: 'POST', body: JSON.stringify(mission), headers: { 'cf-connecting-ip': ip } });
+    replies = Array.from({ length: 25 }, () => 'DNS는 전화번호부야.');
+    let res = await handleHint(from('rate-test'), env, {}, MANUALS);
+    for (let i = 0; i < 25 && res.status !== 429; i++) res = await handleHint(from('rate-test'), env, {}, MANUALS);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ fallback: true, reason: 'rate' });
+  });
+
   it('no key: the game answers by itself; a bad request is refused', async () => {
-    expect(await ask(mission, {} as typeof env)).toEqual({ fallback: true });
+    expect(await ask(mission, {} as typeof env)).toEqual({ fallback: true, reason: 'nokey' });
     expect(sent).toHaveLength(0);
     const res = await handleHint(post({ objectiveId: 'no-such', stage: 1 }), env, {}, MANUALS);
     expect(res.status).toBe(400);

@@ -11,11 +11,11 @@
 // The model answers one of two kinds, short: a guide (상황 / 할 일 / 명령, three lines) when the player doesn't
 // know what to do, or an explanation (1–2 sentences) for "what is X / how do I". `want: 'guide'` (the terminal's
 // `hint`, the radio's buttons) asks for a guide; 'auto' lets the question decide.
-// Either answers {reply, kind, concept}, or {fallback: true} (no key / upstream error / leak) and the game shows
-// its own answer.
+// Either answers {reply, kind, concept}, or {fallback: true, reason} and the game shows its own answer, saying
+// why (reason: nokey / rate / timeout / upstream / leak; see FALLBACK_NOTICE).
 
 import { fixShapes } from '../../src/ai/blanks';
-import { formatGuide, GUIDE_ASK, parseGuide } from '../../src/ai/answer';
+import { formatGuide, GUIDE_ASK, parseGuide, type FallbackReason } from '../../src/ai/answer';
 import { stripEmoji } from '../../src/ai/emoji';
 import { bannedFor, leaks, maskValues, missionBanned, missionShown } from '../../src/ai/leak';
 import { CONCEPTS } from '../../src/content/concepts';
@@ -512,6 +512,8 @@ interface LogLine {
   retried: boolean;
   replyLength: number;
   outcome: 'ok' | 'fallback' | 'error';
+  /** Why the game answers by itself (outcome fallback / error) */
+  reason?: FallbackReason;
   inputTokens: number;
   outputTokens: number;
   questionLength: number;
@@ -533,11 +535,11 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
   const inp = parseInput(raw);
   if (typeof inp === 'string') return json({ error: inp }, 400, cors);
 
-  if (!env.CHATKHU_API_KEY) return json({ fallback: true }, 200, cors);
+  if (!env.CHATKHU_API_KEY) return json({ fallback: true, reason: 'nokey' }, 200, cors);
 
   const started = Date.now();
   const ip = request.headers.get('cf-connecting-ip') ?? 'local';
-  if (rateLimited(ip, started)) return json({ fallback: true, reason: 'rate_limited' }, 429, cors);
+  if (rateLimited(ip, started)) return json({ fallback: true, reason: 'rate' }, 429, cors);
 
   const model = env.HINT_MODEL || DEFAULT_MODEL;
   const log: LogLine = {
@@ -582,7 +584,10 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
       log.inputTokens += res.inputTokens;
       log.outputTokens += res.outputTokens;
       out = read(res.text);
-      if (leaks(out.reply, banned)) return json({ fallback: true }, 200, cors);
+      if (leaks(out.reply, banned)) {
+        log.reason = 'leak';
+        return json({ fallback: true, reason: 'leak' }, 200, cors);
+      }
     }
 
     const reply = out.reply.slice(0, MAX_REPLY).trim();
@@ -596,7 +601,10 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
   } catch (e) {
     log.outcome = 'error';
     log.error = e instanceof Error ? e.message.slice(0, 120) : 'unknown';
-    return json({ fallback: true }, 200, cors);
+    // Out of time: our own deadline between calls, or the fetch's timeout signal.
+    const late = (e instanceof UpstreamError && e.message.includes('out of time')) || (e instanceof Error && e.name === 'TimeoutError');
+    log.reason = late ? 'timeout' : 'upstream';
+    return json({ fallback: true, reason: log.reason }, 200, cors);
   } finally {
     log.latencyMs = Date.now() - started;
     // One line per AI call for `wrangler tail` (AI usage log). Never logs the key or the question text.

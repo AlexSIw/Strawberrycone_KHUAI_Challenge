@@ -1,6 +1,6 @@
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
-import { GUIDE_ASK, terminalLines } from '../ai/answer';
+import { FALLBACK_NOTICE, GUIDE_ASK, terminalLines } from '../ai/answer';
 import { hintTarget, NO_MISSION, requestHintText, requestMissionText, type Want } from '../ai/client';
 import { missionCards } from '../content/cards';
 import { CONCEPTS } from '../content/concepts';
@@ -70,6 +70,8 @@ export interface HintMessage {
   from: 'mentor' | 'player' | 'system';
   text: string;
   source?: 'ai' | 'canned' | 'solution';
+  /** Why a mentor answer is the game's own ('ChatKHU API랑 연결이 안 돼 있어서 …'), shown with it */
+  notice?: string;
 }
 
 /** Key of the radio's mission thread in `hints` (the others are incident ids). */
@@ -576,7 +578,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     const reply = sc ? await requestHintText({ run, scenario: sc, ...where }) : await requestMissionText({ run, ...where });
     const cur = get();
     if (cur.stageEpoch !== s.stageEpoch) return null;
-    const msg: HintMessage = { from: 'mentor', text: reply.text, source: reply.source };
+    const notice = reply.reason ? FALLBACK_NOTICE[reply.reason] : null;
+    const msg: HintMessage = { from: 'mentor', text: reply.text, source: reply.source, ...(notice ? { notice } : {}) };
     set({ hintPending: false, hintThread: null, hints: { ...cur.hints, [thread]: [...(cur.hints[thread] ?? history), msg] } });
     return msg;
   };
@@ -612,7 +615,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
     const { terminalOrigin: origin, stageEpoch: epoch } = s;
     const host = s.terminal.host;
     void askInThread(thread, undefined, 'guide').then((msg) => {
-      if (msg) pushTerminal(origin, host, epoch, terminalLines(msg.text));
+      if (msg) pushTerminal(origin, host, epoch, [...(msg.notice ? [dim(msg.notice)] : []), ...terminalLines(msg.text)]);
     });
     return [dim('쿠사수> 생각 중…')];
   };

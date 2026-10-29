@@ -73,6 +73,7 @@ function MentorBubble({ msg, plain = false }: { msg: HintMessage; plain?: boolea
           {!plain && <span className={`hc-badge ${msg.source === 'ai' ? 'ai' : 'canned'}`}>{msg.source === 'ai' ? 'AI' : '기본 답'}</span>}
         </div>
         <MentorText text={msg.text} />
+        {msg.notice && <p className="hc-notice">{msg.notice}</p>}
       </div>
     </div>
   );

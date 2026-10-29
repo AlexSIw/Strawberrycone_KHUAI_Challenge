@@ -15,7 +15,7 @@ import { cableAt } from '../sim/net/basics';
 import type { Scenario } from '../sim/scenario';
 import { dayLabel, type World } from '../sim/types';
 import { guideOf, missionInFocus } from '../ui/objectiveStatus';
-import { formatGuide, incidentGuide } from './answer';
+import { FALLBACK_REASONS, formatGuide, incidentGuide, type FallbackReason } from './answer';
 import { stripEmoji } from './emoji';
 import { leaks, missionBanned, missionShown } from './leak';
 
@@ -122,6 +122,43 @@ export function hintTarget(run: StageRun, host: string): HintTarget | null {
   return o && !(o.id in run.objectivesDone) ? { kind: 'mission' } : null;
 }
 
+/** A mentor answer: the AI's, or the game's own (`reason` says why, when it asked and got none). */
+export interface MentorReply {
+  text: string;
+  source: 'ai' | 'canned';
+  reason?: FallbackReason;
+}
+
+const isReason = (r: unknown): r is FallbackReason => FALLBACK_REASONS.includes(r as FallbackReason);
+
+/**
+ * POST /api/hint: the AI's reply, or why there is none. No answer at all (the fetch failed, or what came back
+ * isn't the Worker's JSON: a dev proxy with no Worker behind it, a 404) means no ChatKHU connection.
+ */
+async function askWorker(body: Record<string, unknown>): Promise<{ reply: string } | { reason: FallbackReason }> {
+  let res: Response;
+  try {
+    res = await fetch('/api/hint', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (e) {
+    return { reason: e instanceof Error && e.name === 'TimeoutError' ? 'timeout' : 'offline' };
+  }
+  // Not the Worker's JSON (a proxy's error page, the game's own index.html): no Worker behind /api.
+  const data = await res.json().then(
+    (d: unknown) => (d && typeof d === 'object' ? (d as { reply?: string; fallback?: boolean; reason?: unknown }) : null),
+    () => null,
+  );
+  if (!data) return { reason: 'offline' };
+  if (data.fallback) return { reason: isReason(data.reason) ? data.reason : res.status === 429 ? 'rate' : 'upstream' };
+  if (!res.ok) return { reason: res.status === 404 || res.status >= 500 ? 'offline' : 'upstream' };
+  const reply = stripEmoji(data.reply ?? '');
+  return reply ? { reply } : { reason: 'upstream' };
+}
+
 export interface HintRequest {
   run: StageRun;
   scenario: Scenario;
@@ -133,29 +170,16 @@ export interface HintRequest {
   iosMode?: string | null;
 }
 
-export async function requestHintText(req: HintRequest): Promise<{ text: string; source: 'ai' | 'canned' }> {
-  const canned = cannedIncident(req.run, req.scenario, req.question, req.host);
-  try {
-    const res = await fetch('/api/hint', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        scenarioId: req.scenario.id,
-        want: wantOf(req.want, req.question),
-        question: req.question ?? '',
-        history: req.history.slice(-8),
-        snapshot: buildSnapshot(req.run, req.host, req.iosMode),
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new Error(`hint ${res.status}`);
-    const data = (await res.json()) as { reply?: string; fallback?: boolean };
-    const reply = stripEmoji(data.reply ?? '');
-    if (!reply || data.fallback) throw new Error('fallback');
-    return { text: reply, source: 'ai' };
-  } catch {
-    return { text: canned, source: 'canned' };
-  }
+export async function requestHintText(req: HintRequest): Promise<MentorReply> {
+  const got = await askWorker({
+    scenarioId: req.scenario.id,
+    want: wantOf(req.want, req.question),
+    question: req.question ?? '',
+    history: req.history.slice(-8),
+    snapshot: buildSnapshot(req.run, req.host, req.iosMode),
+  });
+  if ('reply' in got) return { text: got.reply, source: 'ai' };
+  return { text: cannedIncident(req.run, req.scenario, req.question, req.host), source: 'canned', reason: got.reason };
 }
 
 // ---------- mission mode ----------
@@ -292,35 +316,23 @@ export interface MissionRequest {
   iosMode?: string | null;
 }
 
-export async function requestMissionText(req: MissionRequest): Promise<{ text: string; source: 'ai' | 'canned' }> {
+export async function requestMissionText(req: MissionRequest): Promise<MentorReply> {
   const { run } = req;
   const o = req.objective ?? missionInFocus(getStage(run.stage), run);
   const canned = cannedMission(run, o, req.question);
   // Nothing on the list yet (the day's first mission is still locked): the radio's own answer is all there is.
   if (!o) return { text: canned, source: 'canned' };
-  try {
-    const res = await fetch('/api/hint', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        objectiveId: o.id,
-        stage: run.stage,
-        objectiveDone: o.id in run.objectivesDone,
-        stepsDone: guideOf(o, run)?.rows.map((r) => r.done) ?? [],
-        activeScenarioIds: activeScenarios(run).map((a) => a.rt.id),
-        want: wantOf(req.want, req.question),
-        question: req.question ?? '',
-        history: req.history.slice(-8),
-        snapshot: buildSnapshot(run, req.host, req.iosMode),
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new Error(`hint ${res.status}`);
-    const data = (await res.json()) as { reply?: string; fallback?: boolean };
-    const reply = stripEmoji(data.reply ?? '');
-    if (!reply || data.fallback) throw new Error('fallback');
-    return { text: reply, source: 'ai' };
-  } catch {
-    return { text: canned, source: 'canned' };
-  }
+  const got = await askWorker({
+    objectiveId: o.id,
+    stage: run.stage,
+    objectiveDone: o.id in run.objectivesDone,
+    stepsDone: guideOf(o, run)?.rows.map((r) => r.done) ?? [],
+    activeScenarioIds: activeScenarios(run).map((a) => a.rt.id),
+    want: wantOf(req.want, req.question),
+    question: req.question ?? '',
+    history: req.history.slice(-8),
+    snapshot: buildSnapshot(run, req.host, req.iosMode),
+  });
+  if ('reply' in got) return { text: got.reply, source: 'ai' };
+  return { text: canned, source: 'canned', reason: got.reason };
 }
