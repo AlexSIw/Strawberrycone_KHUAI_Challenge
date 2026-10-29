@@ -89,6 +89,8 @@ interface Cover {
   y1: number;
 }
 
+/** Widest floor texture baked at once (px): the smallest WebGL max texture size still in use. */
+const FLOOR_BAND_PX = 2048;
 const DEPTH = { floor: 0, wallDecor: 2, label: 3, overhead: 5000, overlay: 6000, marker: 7000, prompt: 8000, arrow: 8500 };
 
 // Verbs stay neutral ("전원 설정", not "UPS 연결하기") so the prompt never hints at an incident's answer.
@@ -324,22 +326,30 @@ export class DataCenter extends Phaser.Scene {
   // ---------- building the world ----------
 
   private buildFloor(): void {
-    const rt = this.add.renderTexture(0, 0, WORLD_W, WORLD_H).setOrigin(0).setDepth(DEPTH.floor);
-    rt.beginDraw();
-    for (let ty = 0; ty < MAP_H; ty++) {
-      for (let tx = 0; tx < MAP_W; tx++) {
-        let key: string;
-        if (isWall(tx, ty)) {
-          // In 3/4 view a wall shows its painted face when there is floor in front (below) of it.
-          key = isWall(tx, ty + 1) ? 'wall-top' : `wall-face-${ty === 11 ? 1 : 0}`;
-        } else {
-          key = floorKey(roomAt(tx, ty), tx, ty);
+    // Baked in bands at most 2048 px wide: some GPUs can't hold one texture the size of the whole map.
+    const band = Math.max(1, Math.floor(FLOOR_BAND_PX / TILE));
+    for (let x0 = 0; x0 < MAP_W; x0 += band) {
+      const cols = Math.min(band, MAP_W - x0);
+      const rt = this.add.renderTexture(x0 * TILE, 0, cols * TILE, WORLD_H).setOrigin(0).setDepth(DEPTH.floor);
+      rt.beginDraw();
+      for (let ty = 0; ty < MAP_H; ty++) {
+        for (let tx = x0; tx < x0 + cols; tx++) {
+          let key: string;
+          if (isWall(tx, ty)) {
+            // In 3/4 view a wall shows its painted face when there is floor in front (below) of it.
+            key = isWall(tx, ty + 1) ? 'wall-top' : `wall-face-${ty === 11 ? 1 : 0}`;
+          } else {
+            key = floorKey(roomAt(tx, ty), tx, ty);
+          }
+          rt.batchDrawFrame(key, undefined, (tx - x0) * TILE, ty * TILE);
         }
-        rt.batchDrawFrame(key, undefined, tx * TILE, ty * TILE);
       }
+      // a door straddling two bands is drawn into both (each band clips its half)
+      for (const r of ROOMS) {
+        if (r.door && r.door.x < x0 + cols && r.door.x + r.door.w > x0) rt.batchDrawFrame('door', undefined, (r.door.x - x0) * TILE, r.door.y * TILE);
+      }
+      rt.endDraw();
     }
-    for (const r of ROOMS) if (r.door) rt.batchDrawFrame('door', undefined, r.door.x * TILE, r.door.y * TILE);
-    rt.endDraw();
 
     // wall decorations
     this.add.image(27 * TILE, 15 * TILE + 6 * PX, 'banner').setOrigin(0).setDepth(DEPTH.wallDecor);
