@@ -64,7 +64,7 @@ AI 키 없이도 끝까지 플레이할 수 있어요. 그때 쿠사수는 장�
 | **진짜 장비 같은 터미널** | 관리 PC의 리눅스 셸, `ssh CORE-01` 로 들어가는 스위치 명령줄(Cisco IOS 스타일: 줄임말 · `?` · Tab · `% Invalid input`), L4 · 방화벽 · DHCP · DNS 서버의 전용 명령 |
 | **관제 화면 (NOC)** | NMS(네트워크 지도 · 경보) · SMS(서비스) · FMS(전기 · 냉각). 장비가 스스로 알리는 경보는 바로, 숫자로 재는 경보는 다음 감시 주기에 떠요 |
 | **장애 24종 · 변형 37가지** | 증상만 보여 주고, 고쳤는지는 실제 상태(도달성, 링크, 헬스체크)로 판정해요. 어떤 장애가 섞일지는 저장 파일마다 정해진 seed로 뽑아요 |
-| **AI 사수 쿠사수** | 터미널 `hint` 와 무전기(H). 상황 · 할 일 · 명령 3줄, 명령은 값만 빈칸. 무료이고, ChatKHU가 없으면 기본 답으로 |
+| **AI 사수 쿠사수** | 터미널 `hint` 와 무전기(H). 상황 · 할 일 · 명령 3줄, 명령은 값만 빈칸. 무료이고, ChatKHU가 없으면 기본 답으로. 플레이어가 자기 ChatKHU 키를 넣을 수도 있어요 |
 | **일일 리포트** | 가용성 · 평균 탐지 시간(MTTD) · 평균 복구 시간(MTTR) · 별 1–3개. 오늘 얻은 개념 카드와 내일 미리보기 |
 | **개념 도감 (C)** | 하루하루 얻는 개념 카드. 어려운 말을 생활 속 비유로 풀어 둬요 |
 | **픽셀 아트 · 사운드** | 32×32 픽셀 사자 캐릭터와 같은 밀도로 그린 맵, 배경음악과 효과음, Space 대시 |
@@ -207,6 +207,18 @@ AI에게 보내는 프롬프트는 [`worker/src/hint.ts`](worker/src/hint.ts) �
 3. 다른 터미널의 루트에서 `npm run dev`. Vite가 `/api` 요청을 `:8787` 로 넘겨줘요(`vite.config.ts` 의 proxy).
 4. 게임 터미널에서 `hint`. "ChatKHU API랑 연결이 안 돼 있어서 …" 줄이 없고 무전기 배지가 **AI** 면 연결된 거예요. "ChatKHU 응답이 없어서 …" 가 나오면 키를 다시 확인하세요.
 
+### 플레이어가 자기 키 넣기
+
+서버에 키가 없어도, 플레이어가 각자 자기 ChatKHU 키를 넣으면 AI 사수가 켜져요.
+
+1. 타이틀 화면 오른쪽 위 **ChatKHU 키**, 또는 게임 중 무전기(H) 위쪽의 **ChatKHU 키** 를 눌러요.
+2. 키를 붙여 넣고 **연결 확인** (ChatKHU를 아주 짧게 한 번 불러요) → **저장**.
+3. 기본은 이 탭에서만 기억해요. **이 브라우저에 기억하기** 를 켜면 브라우저를 닫아도 남아요 (공용 PC에서는 끄세요). **지우기** 로 언제든 지워요.
+
+- 쓰는 순서: 플레이어 키 → 서버 키(`CHATKHU_API_KEY`) → 기본 힌트.
+- 키는 브라우저에만 있고, 힌트를 물을 때만 `x-chatkhu-key` 헤더로 Worker를 거쳐 ChatKHU로 가요. Worker는 그 한 번에만 쓰고 저장하거나 기록하지 않아요. (브라우저가 ChatKHU를 직접 부르지 않는 건, 프롬프트에 장애의 정답이 들어 있어서 개발자 도구로 보이면 안 되기 때문이에요.)
+- 틀린 키면 "넣은 ChatKHU 키가 맞지 않아서 기본 힌트로 드려요. …" 가 나와요.
+
 ## 프로젝트 구조
 
 **기술 스택**: TypeScript 5.9 · React 19 · Phaser 3.90 (맵) · Zustand 5 (상태) · xterm.js 5 (터미널) · Vite 7 · Vitest 4 · Playwright · Cloudflare Workers (`/api/hint`, ChatKHU 프록시)
@@ -302,7 +314,7 @@ Worker 하나가 게임 정적 파일(`dist/`)과 `/api/hint` 를 함께 서빙�
 npm run build                                  # → dist/
 cd worker
 npx wrangler login                             # 처음 한 번
-npx wrangler secret put CHATKHU_API_KEY        # 키는 secret 으로 (파일에 적지 않기)
+npx wrangler secret put CHATKHU_API_KEY        # (선택) 키는 secret 으로. 없으면 플레이어가 각자 키를 넣어요
 npx wrangler deploy
 ```
 
@@ -324,7 +336,8 @@ npx wrangler deploy
 
 - `want`: `guide`(터미널 `hint`, 무전기 버튼: 3줄로 답하라고 함) · `auto`(질문을 보고 AI가 고름). `kind`: AI가 실제로 준 답 (`guide` 3줄 · `explain` 짧은 설명).
 - `leaked`: AI 답에 정답 값이 들어가서 한 번 다시 물었는지. 두 번째도 그러면 기본 답으로 대체(`outcome: "fallback"`, `reason: "leak"`).
-- `reason`: 기본 답으로 돌아간 이유 (`leak` · `timeout` · `upstream`). 키가 없거나(`nokey`) 요청이 너무 많을 때(`rate`)는 AI를 부르지 않아서 기록이 남지 않아요.
+- `reason`: 기본 답으로 돌아간 이유 (`leak` · `timeout` · `upstream` · `badkey`: 플레이어 키가 거절됨). 키가 없거나(`nokey`) 요청이 너무 많을 때(`rate`)는 AI를 부르지 않아서 기록이 남지 않아요.
+- `ownKey`: 플레이어가 넣은 키로 불렀는지 (`true` / `false`). 키 자체는 남기지 않아요. 연결 확인은 `{"event":"key-check", …, "outcome": "ok"}` 한 줄로 남아요.
 - 로컬은 `wrangler dev` 터미널에 그대로 찍혀요. 배포본은 이렇게 모아요:
 
 ```bash
