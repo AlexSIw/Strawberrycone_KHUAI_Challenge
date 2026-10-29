@@ -127,7 +127,7 @@ function spotLabel(spot: SpotDef, kind: InteractionKind, def: StageDef): string 
 }
 
 /** How far a spot's sprite sticks up above its footprint, in tiles (for placing the prompt); others stick up half a tile. */
-const OVERHANG: Partial<Record<SpotId, number>> = { monitor: 1, board: 1, mentor: 0.375 };
+const OVERHANG: Partial<Record<SpotId, number>> = { monitor: 1, board: 1, mentor: 0.125 };
 const overhangPx = (id: SpotId) => (OVERHANG[id] ?? 0.5) * TILE;
 
 const SCROLL_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -539,11 +539,11 @@ export class DataCenter extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(y + 0.5);
     this.mentorBubble = this.add
-      .image(x + TILE / 2, y - 72, 'bubble-question')
+      .image(x + TILE / 2, y - 60, 'bubble-question')
       .setOrigin(0.5, 1)
       .setDepth(DEPTH.marker - 1)
       .setVisible(false);
-    this.tweens.add({ targets: this.mentorBubble, y: y - 80, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: this.mentorBubble, y: y - 68, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     solids.add(this.add.zone(x, (s.y + 0.6) * TILE, TILE * 0.8, TILE * 0.8));
   }
 

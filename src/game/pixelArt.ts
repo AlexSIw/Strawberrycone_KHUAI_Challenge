@@ -31,57 +31,6 @@ export const COLORS = {
   yellow: 0xf3c63f,
 } as const;
 
-/** Mentor 쿠사수: dark hair, glasses, headset, navy hoodie with a KHU red stripe. Two idle frames (breathing + mic bob). */
-export const MENTOR_PALETTE: Record<string, number> = {
-  o: COLORS.outline,
-  h: 0x2b2230,
-  H: 0x463a4f,
-  s: 0xf2c9a0,
-  S: 0xd9a67c,
-  g: 0x1a1a1a,
-  w: 0xcfe8ff,
-  e: 0x2a1410,
-  m: 0xb5655a,
-  n: COLORS.navy,
-  N: COLORS.navyDark,
-  L: COLORS.navyLight,
-  r: COLORS.red,
-  k: 0x2a2a2e,
-  K: 0x55555c,
-  p: 0x2e2a36,
-  b: 0x5a463a,
-  c: COLORS.cream,
-};
-
-const MENTOR_BASE: string[] = [
-  '.....oooooo.....',
-  '...ookkkkkkoo...',
-  '..ohhHhhhhhhho..',
-  '.kohhhhhhhhhhok.',
-  '.kohhssssssshhok',
-  'kKohsgggsgggsoKk',
-  'kKossgwgsgwgssok',
-  'kKosssggsggsssok',
-  '.kossssssssssok.',
-  '..oossssmsssoKk.',
-  '...ooSSSSSSoo.k.',
-  '..onLccLLccLnok.',
-  '.onnnncnncnnnno.',
-  '.orrrrrrrrrrrro.',
-  '.onnnnnnnnnnnno.',
-  '.osnnnnnnnnnnso.',
-  '..ooNNNNNNNNoo..',
-  '...oppppopppo...',
-  '...oppo..oppo...',
-  '..obbbo..obbbo..',
-];
-
-/** Frame 2: head and shoulders dip one pixel (breathing). */
-export const MENTOR_FRAMES: string[][] = [
-  MENTOR_BASE,
-  ['................', ...MENTOR_BASE.slice(0, 10), ...MENTOR_BASE.slice(11)],
-];
-
 export const PLANT_PALETTE: Record<string, number> = {
   o: COLORS.outline,
   g: 0x3f9b4f,
