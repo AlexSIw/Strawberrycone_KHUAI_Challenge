@@ -7,7 +7,7 @@
 
 - **하루에 한 층씩**: 물리(랙 · 전원 · 케이블) → 네트워크(VLAN · 게이트웨이 · DHCP · DNS) → 서비스(포트 · L4 · MSA) → 컨테이너와 링크(Docker · LACP · STP) → 이중화(쿠버네티스 · HSRP) → 수강신청 당일.
 - **진짜 장비처럼**: 관리 PC의 리눅스 셸, `ssh CORE-01` 로 들어가는 스위치 명령줄(Cisco IOS 스타일), L4 · 방화벽 · DHCP · DNS 서버의 전용 명령.
-- **증상만 알려줘요**: 장애가 나면 "사이트가 안 열려요" 같은 증상과 경보만 와요. 관제 화면(NMS / SMS / FMS)에서 경보를 확인(ACK)하고, 터미널로 원인을 찾아 직접 고쳐요. 막히면 AI 사수 **쿠사수**가 정답 대신 힌트를 줘요.
+- **증상만 알려줘요**: 장애가 나면 "사이트가 안 열려요" 같은 증상과 경보만 와요. 관제 화면(NMS / SMS / FMS)에서 경보를 확인(ACK)하고, 터미널로 원인을 찾아 직접 고쳐요. 막히면 터미널에서 `hint` 를 치세요. AI 사수 **쿠사수**가 지금 상황 · 할 일 · 명령을 3줄로 알려 줘요(무료). 명령은 모양까지만, 정답 값(포트 이름, VLAN 번호, IP …)은 빈칸이에요.
 - **하루가 끝나면 일일 리포트**: 가용성, 평균 탐지 시간(MTTD), 평균 복구 시간(MTTR)을 실제 운영팀처럼 받아요.
 
 ## 스크린샷
@@ -27,7 +27,7 @@ npm install
 npm run dev          # → http://localhost:5173
 ```
 
-AI 없이도 끝까지 플레이할 수 있어요. 그때 힌트는 각 장애에 미리 적어둔 3단계 힌트로 나와요.
+AI 없이도 끝까지 플레이할 수 있어요. 그때 쿠사수는 장애마다 미리 적어둔 상황 · 할 일 · 명령 3줄로 답하고, "ChatKHU API랑 연결이 안 돼 있어서 기본 힌트만 제공드려요." 라고 한 줄 알려 줘요.
 
 ### 처음 화면
 
@@ -49,7 +49,9 @@ npm run dev                      # → http://localhost:8787 (wrangler dev)
 Worker의 `npm run dev` 는 `dist/` 가 없으면 빈 폴더를 먼저 만들어요. 개발 중엔 `/api` 만 쓰니까 빌드할 필요가 없어요.
 (`:8787` 에서 게임 화면까지 보고 싶을 때만 루트에서 `npm run build` 를 먼저 하세요.)
 `.dev.vars` 는 `.gitignore` 에 들어 있어요. **API 키는 절대 커밋하지 마세요.**
-키가 없거나, 응답이 늦거나(12초), AI가 정답(명령어, 포트 이름, IP, VLAN 번호 …)을 너무 직접 말하면 자동으로 기본 힌트로 돌아가요.
+키가 없거나 응답이 늦으면(12초) 기본 힌트(같은 상황 · 할 일 · 명령 3줄)로 자동으로 돌아가고, 쿠사수가 그 이유를 한 줄로 알려 줘요. 예: "ChatKHU API랑 연결이 안 돼 있어서 기본 힌트만 제공드려요."
+쿠사수는 명령 모양까지 알려 주지만, 포트 이름 · IP · VLAN 번호 같은 값은 `<포트>` · `<번호>` 빈칸으로 남겨요. 값을 그대로 말하면 한 번 다시 묻고, 그래도 그러면 기본 힌트로 돌아가요.
+무전기(H)에 질문을 쓰면 AI가 질문을 보고 답해요: "뭐 해야 돼?" 같은 질문엔 3줄, "VLAN이 뭐야?" · "약자가 뭐야?" · "어떻게 해?" 같은 질문엔 한두 문장으로요.
 
 ## 하루하루 배우는 것
 
@@ -76,7 +78,7 @@ Worker의 `npm run dev` 는 `dist/` 가 없으면 빈 폴더를 먼저 만들어
 | Space | 대시: 앞으로 짧게(2칸) 도약해요. 잔상이 남고, 0.5초 뒤에 다시 쓸 수 있어요 |
 | E | 앞에 있는 장비와 상호작용 (랙, 스위치, PDU, 관리 PC, 관제실 모니터, 설계 보드 …) |
 | N / Tab | 관제 화면(NOC) 열기/닫기 |
-| H | 쿠사수 무전기 (힌트) 열기/닫기 |
+| H | 쿠사수 무전기 열기/닫기 (힌트 받기 · 질문하기, 무료) |
 | C | 개념 도감 열기/닫기 |
 | M | 소리 켜기/끄기 (HUD와 타이틀 화면의 소리 버튼과 같아요. 설정은 저장돼요) |
 | Esc | 열린 창 닫기 (창 위에서 연 창이면 원래 창으로 돌아가요. 터미널은 하던 그대로) |
@@ -98,7 +100,7 @@ ops@khu-dc:~$ curl -v http://sugang/enroll
 ops@khu-dc:~$ ssh web                    # 서버로 들어가기 (돌아올 땐 exit)
 ```
 
-`ip addr`, `hostname`, `hint`(쿠사수 부르기)는 언제나 돼요. 날이 갈수록 `server …`(D-3), `svc …`(D-3), `docker …`(D-2), `kubectl` · `pods` · `nodes` · `drain` · `rollout undo` · `env …`(D-1) 가 늘어나요.
+`ip addr`, `hostname`, `hint`(터미널에서 바로 쿠사수의 상황 · 할 일 · 명령 3줄, 무료. 스위치 프롬프트에서도 돼요)는 언제나 돼요. 날이 갈수록 `server …`(D-3), `svc …`(D-3), `docker …`(D-2), `kubectl` · `pods` · `nodes` · `drain` · `rollout undo` · `env …`(D-1) 가 늘어나요.
 
 ### 네트워크 장비: `ssh CORE-01`
 
@@ -155,7 +157,7 @@ N 이나 Tab, 또는 관제실 모니터 앞에서 E.
 | MTTD (평균 탐지 시간) | 장애가 시작되고 경보를 확인(ACK)하기까지 |
 | MTTR (평균 복구 시간) | 장애가 시작되고 다 고치기까지 |
 | 미션 · 장애 · 담당팀 이관 | 끝낸 미션 수, 일어난 장애 수, 다른 팀에 넘긴 수 |
-| 힌트 감점 · 정답 보기 | 힌트(1단계 관찰 질문 → 2단계 방향 → 3단계 도구 종류)와 "정답 보기"는 점수가 조금씩 깎여요 |
+| 정답 보기 | 힌트와 질문은 무료예요. "정답 보기"(값까지 다 채운 정답)만 한 번에 15점 깎여요 |
 
 별(★ 1–3개)과 점수, 오늘 얻은 개념 카드, 내일 미리보기도 함께 나와요. D-Day 리포트 다음엔 수료증 엔딩이 기다려요.
 
@@ -185,7 +187,7 @@ src/
     noc/              관제 화면: NMS 지도 · 경보 목록 · 장비 상세 / SMS / FMS
   audio/            소리: engine.ts (Web Audio, 크로스페이드) · director.ts (게임 상태 → 음악/경보/코인/징글) · logic.ts (테스트하는 순수 규칙)
   game/             Phaser 3 맵과 사자 캐릭터
-  ai/               client.ts (/api/hint 호출 + 실패 시 기본 힌트) · leak.ts (정답 유출 검사, Worker와 같이 씀)
+  ai/               client.ts (/api/hint 호출 + 실패 시 기본 답과 그 이유) · answer.ts (상황 · 할 일 · 명령 3줄) · blanks.ts (정답 값을 빈칸으로 둔 명령 모양) · leak.ts (정답 값 유출 검사). 셋 다 Worker와 같이 씀
 worker/             Cloudflare Worker: dist 정적 서빙 + POST /api/hint (ChatKHU 프록시)
 tests/              vitest: 네트워크 · IOS · 장비 명령 · 엔진 · 저장 · 소리, 하루 자동 플레이 (autoplay.ts)
 e2e/                Playwright: 스모크, 창 · 터미널, 저장, 소리, 6일 전체 플레이
@@ -201,7 +203,8 @@ public/assets/audio/  배경음악 · 효과음 · 대화 소리 (출처와 라�
    - `title`, `alert` (플레이어가 보는 **증상**. 원인은 쓰지 않기), `severity` (`critical` · `major` · `minor` · `warning`)
    - `alarm` (NMS 경보: `source` 가 `trap` · `syslog` 면 바로, `poll` 이면 다음 폴링 때 떠요), `room`
    - `inject` (세상을 망가뜨리기), `check` (고쳐졌는지: 플래그 말고 실제 상태로. 예: 도달성, 링크 상태, L4 헬스)
-   - `hints` 3개 (관찰 질문 → 방향 → 도구 종류. 명령 · 값 · IP · 포트 이름은 쓰지 않기), `bannedPhrases` (AI가 말하면 안 되는 표현. 정답 명령과 그 안의 IP · 포트 · VLAN은 줄임말까지 자동으로 막아요)
+   - `hints` 3개 (명령 · 값 · IP · 포트 이름 없이 쓴 짧은 힌트), `bannedPhrases` (AI가 말하면 안 되는 **값**: 어느 포트 · VLAN · 앱 · 서버인지. 값이 든 정답 명령과 그 안의 IP · 포트 · VLAN은 줄임말까지 자동으로 막아요. 값 없는 명령 모양(`access vlan`, `no shutdown` …)은 넣지 마세요: 쿠사수가 보여 줘도 되는 부분이에요)
+   - `todo` (쿠사수의 "할 일" 한 줄, 값 없이 40자 안쪽), `checks` (먼저 볼 확인 명령, 값 없이), 명령 없이 고치는 장애면 `fixHow`. 고치는 명령의 모양(값은 빈칸)은 `solutionSteps` 에서 자동으로 만들어요(`src/ai/blanks.ts`)
    - `solution` (정답 보기 문구), `solutionSteps` (정답을 실제로 하는 단계: `{cmd, host}` · `{ios: [...], host}` · `{action, label}`)
    - 필요하면 `escalate` (담당팀 이관), 그리고 `concept`, `lesson`
 2. `day` 에 처음 나오는 날을, `until` 에 마지막 날을 적어요. 그날의 가르치는 장애로 쓰려면 `src/content/days/dayN.ts` 의 `fixed` 에 넣고, 아니면 그날부터 `until` 까지 섞이는 장애 후보로 자동으로 들어가요 (`weight` 로 뽑힐 비율 조절).
@@ -238,10 +241,12 @@ npx wrangler deploy
 `/api/hint` 는 AI를 부를 때마다 JSON 한 줄을 `console.log` 로 남겨요. API 키와 질문 원문은 남기지 않아요.
 
 ```json
-{"event":"hint","ts":"2026-10-29T11:31:23.749Z","scenarioId":"d4-dns:0","level":2,"model":"claude-haiku-5-5","latencyMs":1830,"leaked":false,"retried":false,"replyLength":54,"outcome":"ok","inputTokens":2310,"outputTokens":61,"questionLength":0}
+{"event":"hint","ts":"2026-10-29T11:31:23.749Z","mode":"incident","scenarioId":"d4-dns:0","want":"guide","kind":"guide","model":"claude-haiku-5-5","latencyMs":1830,"leaked":false,"retried":false,"replyLength":96,"outcome":"ok","inputTokens":2310,"outputTokens":61,"questionLength":0}
 ```
 
-- `leaked`: AI 답에 정답 표현(`bannedPhrases`, 정답 명령, 그 안의 IP · 포트 · VLAN · 인터페이스 이름)이 들어가서 한 번 다시 물었는지. 두 번째도 유출되면 기본 힌트로 대체(`outcome: "fallback"`).
+- `want`: `guide`(터미널 `hint`, 무전기 버튼: 3줄로 답하라고 함) · `auto`(질문을 보고 AI가 고름). `kind`: AI가 실제로 준 답 (`guide` 3줄 · `explain` 짧은 설명).
+- `leaked`: AI 답에 정답 값(`bannedPhrases`, 값이 든 정답 명령, 그 안의 IP · 포트 · VLAN · 인터페이스 이름)이 들어가서 한 번 다시 물었는지. 두 번째도 유출되면 기본 힌트로 대체(`outcome: "fallback"`, `reason: "leak"`).
+- `reason`: 기본 힌트로 돌아간 이유 (`leak` · `timeout` · `upstream`). 키가 없거나(`nokey`) 요청이 너무 많을 때(`rate`)는 AI를 부르지 않아서 기록이 남지 않아요.
 - 로컬: `wrangler dev` 터미널에 그대로 찍혀요.
 - 배포본: 아래처럼 모아서 AI 사용 기록으로 정리할 수 있어요.
 
