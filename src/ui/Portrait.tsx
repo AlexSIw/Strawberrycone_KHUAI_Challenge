@@ -80,9 +80,8 @@ export function Portrait({ who, mood = 'neutral', size = 96 }: { who: Speaker; m
   const frame: CSSProperties = {
     width: size,
     height: size,
-    borderRadius: 12,
-    background: 'linear-gradient(180deg, #3a2f43, #241d2b)',
-    border: '2px solid var(--line)',
+    // No frame of its own: the face sits straight on whatever panel holds it.
+    background: 'transparent',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
