@@ -1,12 +1,13 @@
 import { useSyncExternalStore, type ReactNode } from 'react';
 import { audio } from '../audio/engine';
+import { PixelIcon } from './PixelIcon';
 
-/** Is sound muted (the 🔊/🔇 setting, also toggled with M)? */
+/** Is sound muted (the sound on/off setting, also toggled with M)? */
 export function useMuted(): boolean {
   return useSyncExternalStore(audio.subscribe, audio.isMuted, audio.isMuted);
 }
 
-/** 🔊/🔇 button. Drops focus after a click so a later Enter/Space doesn't press it again. */
+/** Sound on/off button. Drops focus after a click so a later Enter/Space doesn't press it again. */
 export function SoundToggle({ className = '', children }: { className?: string; children?: ReactNode }) {
   const muted = useMuted();
   return (
@@ -21,7 +22,7 @@ export function SoundToggle({ className = '', children }: { className?: string; 
       aria-label="소리"
       aria-pressed={!muted}
     >
-      <span aria-hidden>{muted ? '🔇' : '🔊'}</span>
+      <PixelIcon name={muted ? 'soundOff' : 'soundOn'} />
       {children}
     </button>
   );
