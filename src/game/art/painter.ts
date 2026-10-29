@@ -67,10 +67,10 @@ export class Painter {
   }
 
   /** Pixel circle centred on pixel (cx, cy). */
-  circle(cx: number, cy: number, r: number, color: number): void {
+  circle(cx: number, cy: number, r: number, color: number, alpha = 1): void {
     for (let dy = -r; dy <= r; dy++) {
       const half = Math.floor(Math.sqrt(r * r - dy * dy) + 0.35);
-      this.rect(cx - half, cy + dy, half * 2 + 1, 1, color);
+      this.rect(cx - half, cy + dy, half * 2 + 1, 1, color, alpha);
     }
   }
 

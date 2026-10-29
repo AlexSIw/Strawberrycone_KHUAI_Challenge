@@ -145,6 +145,11 @@ function drawUps(p: Painter): void {
   p.rect(26, 39, 4, 1, C.outline);
 }
 
+/** Emergency lamp in a blacked-out power room: stepped rings instead of a smooth gradient. */
+function drawLampGlow(p: Painter): void {
+  for (const r of [22, 16, 10]) p.circle(23, 23, r, 0xff2a2a, 0.1);
+}
+
 export function cabinetSpecs(): TextureSpec[] {
   return [
     { key: 'switch', w: 32, h: 40, unit: U, draw: drawSwitch },
@@ -152,5 +157,6 @@ export function cabinetSpecs(): TextureSpec[] {
     { key: 'patch', w: 32, h: 40, unit: U, draw: drawPatch },
     { key: 'pdu', w: 32, h: 40, unit: U, draw: drawPdu },
     { key: 'ups', w: 32, h: 40, unit: U, draw: drawUps },
+    { key: 'lamp-glow', w: 46, h: 46, unit: U, draw: drawLampGlow },
   ];
 }

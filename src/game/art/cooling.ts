@@ -46,25 +46,28 @@ function drawCrac(p: Painter): void {
   p.rect(40, 55, 6, 1, C.outline);
 }
 
-function drawFan(p: Painter): void {
-  // 22 x 22 pixels, centre at (11, 11): four swept blades + hub
-  const blade = (dx: number, dy: number) => {
+/** Fan frames: four steps of a quarter turn (the blades repeat every 90 degrees). */
+export const FAN_FRAMES = 4;
+
+function drawFan(p: Painter, ox: number, angle: number): void {
+  // 22 x 22 pixels per frame, centre at (11, 11): four swept blades + hub, turned by `angle`
+  for (let k = 0; k < 4; k++) {
+    const a = angle + (k * Math.PI) / 2;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
     for (let i = 2; i <= 9; i++) {
       const w = i < 4 ? 2 : i < 8 ? 3 : 2;
       for (let j = 0; j < w; j++) {
         // perpendicular offset gives the swept look
-        const px = 11 + dx * i - dy * (j - 1 + Math.floor(i / 4));
-        const py = 11 + dy * i + dx * (j - 1 + Math.floor(i / 4));
-        p.dot(px, py, j === 0 ? 0xd7dce4 : 0xaab1bd);
+        const off = j - 1 + Math.floor(i / 4);
+        const px = Math.round(11 + dx * i - dy * off);
+        const py = Math.round(11 + dy * i + dx * off);
+        p.dot(ox + px, py, j === 0 ? 0xd7dce4 : 0xaab1bd);
       }
     }
-  };
-  blade(1, 0);
-  blade(-1, 0);
-  blade(0, 1);
-  blade(0, -1);
-  p.circle(11, 11, 2, 0x6a707c);
-  p.dot(11, 11, 0xd7dce4);
+  }
+  p.circle(ox + 11, 11, 2, 0x6a707c);
+  p.dot(ox + 11, 11, 0xd7dce4);
 }
 
 function drawFanGrille(p: Painter): void {
@@ -86,7 +89,16 @@ function drawFanGrille(p: Painter): void {
 export function coolingSpecs(): TextureSpec[] {
   return [
     { key: 'crac', w: 48, h: 56, unit: U, draw: drawCrac },
-    { key: 'crac-fan', w: 22, h: 22, unit: U, draw: drawFan },
+    {
+      key: 'crac-fan',
+      w: 22 * FAN_FRAMES,
+      h: 22,
+      unit: U,
+      frames: FAN_FRAMES,
+      draw: (p: Painter) => {
+        for (let i = 0; i < FAN_FRAMES; i++) drawFan(p, i * 22, (i * Math.PI) / 2 / FAN_FRAMES);
+      },
+    },
     { key: 'crac-grille', w: 27, h: 27, unit: U, draw: drawFanGrille },
   ];
 }

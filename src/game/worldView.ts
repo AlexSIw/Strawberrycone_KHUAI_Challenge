@@ -14,6 +14,15 @@ export const LED_COLOR: Record<LedState, number> = {
   crc: 0x4fd17a,
 };
 
+/** How an LED looks on blink tick `blink`: green flickers like traffic, red flashes, CRC alternates green/amber, amber/off stay steady. */
+export function ledLook(state: LedState, blink: number, phase: number): { color: number; alpha: number } {
+  const t = blink + phase;
+  if (state === 'green') return { color: LED_COLOR.green, alpha: t % 3 === 0 ? 0.4 : 1 };
+  if (state === 'red') return { color: LED_COLOR.red, alpha: t % 2 === 0 ? 1 : 0.4 };
+  if (state === 'crc') return { color: blink % 2 === 0 ? LED_COLOR.green : LED_COLOR.amber, alpha: 1 };
+  return { color: LED_COLOR[state], alpha: 1 };
+}
+
 export interface RackSlotView {
   id: string;
   label: string;

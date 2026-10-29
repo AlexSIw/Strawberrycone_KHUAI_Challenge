@@ -8,6 +8,7 @@ import { visibleObjectives, type StageRun } from '../../sim/engine';
 import type { World } from '../../sim/types';
 import { gameStore, type GameState } from '../../store/game';
 import { ARROW_SCREEN_SCALE } from '../art/markers';
+import { MENTOR_ANIM } from '../art/mentor';
 import { EventBus } from '../EventBus';
 import {
   DECOR,
@@ -53,6 +54,7 @@ import {
   blackout,
   cracOk,
   LED_COLOR,
+  ledLook,
   mapSwitchOf,
   patchLed,
   pduLeds,
@@ -219,14 +221,13 @@ export class DataCenter extends Phaser.Scene {
   private upsLed!: Led;
   private upsLcd!: Phaser.GameObjects.Rectangle;
   private upsLcdState: 'normal' | 'battery' | 'off' = 'normal';
-  private cracFan!: Phaser.GameObjects.Image;
+  private cracFan!: Phaser.GameObjects.Sprite;
   private cracLed!: Led;
   private cracDisplay!: Phaser.GameObjects.Rectangle;
   private cracText!: Phaser.GameObjects.Text;
   private cracWarn!: Phaser.GameObjects.Container;
-  private cracSpinning = true;
   private powerOverlay!: Phaser.GameObjects.Rectangle;
-  private powerLamp!: Phaser.GameObjects.Arc;
+  private powerLamp!: Phaser.GameObjects.Image;
   private monitorAlerts: Phaser.GameObjects.Rectangle[] = [];
   private alertLevel: 'none' | 'warning' | 'critical' = 'none';
   private boxes: Phaser.GameObjects.Image[] = [];
@@ -263,7 +264,6 @@ export class DataCenter extends Phaser.Scene {
     this.goalSpot = null;
     this.covers = [];
     this.coversAt = 0;
-    this.cracSpinning = true;
   }
 
   create(): void {
@@ -447,7 +447,11 @@ export class DataCenter extends Phaser.Scene {
     const crac = this.place('crac', SPOT_BY_ID.crac, CRAC_TEX.h);
     const fx = crac.left + CRAC_TEX.fanX;
     const fy = crac.top + CRAC_TEX.fanY;
-    this.cracFan = this.add.image(fx, fy, 'crac-fan').setOrigin(CRAC_TEX.fanOrigin).setDepth(crac.depth + 0.1);
+    if (!this.anims.exists('crac-fan-spin')) {
+      this.anims.create({ key: 'crac-fan-spin', frames: this.anims.generateFrameNumbers('crac-fan', {}), frameRate: 16, repeat: -1 });
+    }
+    this.cracFan = this.add.sprite(fx, fy, 'crac-fan', 0).setOrigin(CRAC_TEX.fanOrigin).setDepth(crac.depth + 0.1);
+    this.cracFan.play('crac-fan-spin');
     this.add.image(fx, fy, 'crac-grille').setDepth(crac.depth + 0.2);
     const d = CRAC_TEX.display;
     this.cracDisplay = this.add.rectangle(crac.left + d.x, crac.top + d.y, d.w, d.h, 0x1d4a34).setOrigin(0).setDepth(crac.depth + 0.1);
@@ -487,10 +491,7 @@ export class DataCenter extends Phaser.Scene {
       .setAlpha(0.66)
       .setDepth(DEPTH.overlay)
       .setVisible(false);
-    this.powerLamp = this.add
-      .circle(6.5 * TILE, 16.5 * TILE, Math.round((70 * TILE) / 48), 0xff2a2a, 0.22)
-      .setDepth(DEPTH.overlay + 1)
-      .setVisible(false);
+    this.powerLamp = this.add.image(6.5 * TILE, 16.5 * TILE, 'lamp-glow').setDepth(DEPTH.overlay + 1).setVisible(false);
     this.tweens.add({ targets: this.powerLamp, alpha: 0.05, duration: 500, yoyo: true, repeat: -1 });
   }
 
@@ -524,10 +525,7 @@ export class DataCenter extends Phaser.Scene {
     if (!this.anims.exists('mentor-idle')) {
       this.anims.create({
         key: 'mentor-idle',
-        frames: [
-          { key: 'mentor', frame: 0, duration: 900 },
-          { key: 'mentor', frame: 1, duration: 650 },
-        ],
+        frames: MENTOR_ANIM.map((f) => ({ key: 'mentor', ...f })),
         repeat: -1,
       });
     }
@@ -660,20 +658,13 @@ export class DataCenter extends Phaser.Scene {
 
   private setLed(led: Led | undefined, state: LedState): void {
     if (!led) return;
-    if (led.state !== state) {
-      led.state = state;
-      led.rect.setFillStyle(LED_COLOR[state]);
-    }
+    led.state = state;
     this.applyBlinkTo(led);
   }
 
-  /** Green flickers like network activity, red flashes, CRC alternates green/amber, amber/off stay steady. */
   private applyBlinkTo(led: Led): void {
-    const t = this.blink + led.phase;
-    if (led.state === 'green') led.rect.setAlpha(t % 3 === 0 ? 0.4 : 1);
-    else if (led.state === 'red') led.rect.setAlpha(t % 2 === 0 ? 1 : 0.4);
-    else if (led.state === 'crc') led.rect.setFillStyle(this.blink % 2 === 0 ? LED_COLOR.green : LED_COLOR.amber).setAlpha(1);
-    else led.rect.setAlpha(1);
+    const look = ledLook(led.state, this.blink, led.phase);
+    led.rect.setFillStyle(look.color).setAlpha(look.alpha);
   }
 
   private onBlink(): void {
@@ -712,7 +703,8 @@ export class DataCenter extends Phaser.Scene {
     this.applyUpsLcd();
 
     const ok = cracOk(w);
-    this.cracSpinning = ok;
+    if (ok) this.cracFan.play('crac-fan-spin', true);
+    else this.cracFan.anims.stop();
     this.setLed(this.cracLed, ok ? 'green' : 'red');
     this.cracDisplay.setFillStyle(ok ? 0x1d4a34 : 0x5a1416);
     this.cracText.setText(ok ? 'OK' : 'ERR').setColor(ok ? '#4fd17a' : '#ff5a5f');
@@ -754,11 +746,7 @@ export class DataCenter extends Phaser.Scene {
           r.leds.push(led);
         } else {
           // Dashed-looking outline where a not-yet-mounted server goes.
-          const ghost = this.add
-            .rectangle(ux + 1, uy + 1, RACK_TEX.unitW - 2, RACK_TEX.unitH - 2)
-            .setOrigin(0)
-            .setStrokeStyle(2, 0xffb547, 0.8)
-            .setDepth(r.depth + 0.1);
+          const ghost = this.add.image(ux, uy, 'server-ghost').setOrigin(0).setAlpha(0.8).setDepth(r.depth + 0.1);
           const label = this.add
             .text(ux + RACK_TEX.labelX, uy + RACK_TEX.labelY, `${s.label} 설치 전`, { fontFamily: FONT, fontSize: '14px', color: '#ffb547' })
             .setDepth(r.depth + 0.3);
@@ -893,7 +881,13 @@ export class DataCenter extends Phaser.Scene {
       }
       const wx = v.x + ax / z;
       const wy = v.y + ay / z;
-      m.arrow.setPosition(wx, wy).setRotation(Math.atan2(m.y - wy, m.x - wx)).setScale(ARROW_SCREEN_SCALE / z);
+      // Pixel art only turns in quarter turns: snap to eight directions, the odd ones drawn diagonally.
+      const k = ((Math.round(Math.atan2(m.y - wy, m.x - wx) / (Math.PI / 4)) % 8) + 8) % 8;
+      m.arrow
+        .setTexture(k % 2 ? 'arrow-blue-diag' : 'arrow-blue')
+        .setPosition(Math.round(wx), Math.round(wy))
+        .setRotation(((k - (k % 2)) * Math.PI) / 4)
+        .setScale(ARROW_SCREEN_SCALE / z);
     };
 
     // The [E] prompt takes over once the lion is at the device.
@@ -920,7 +914,7 @@ export class DataCenter extends Phaser.Scene {
     return 0;
   }
 
-  update(time: number, delta: number): void {
+  update(time: number): void {
     const s = gameStore.getState();
     const blocked = isBlocked(s);
     if (blocked) this.inputReadyAt = time + 200;
@@ -981,7 +975,6 @@ export class DataCenter extends Phaser.Scene {
     this.near = blocked ? null : this.findSpot();
     this.updatePrompt(time);
 
-    if (this.cracSpinning) this.cracFan.rotation += delta * 0.012;
     this.updateArrows(time);
   }
 
@@ -1032,42 +1025,55 @@ export class DataCenter extends Phaser.Scene {
     let lift = 0;
     if (spot.id === 'crac' && this.cracWarn.visible) lift = 58;
     else if (this.racks.some((r) => r.rack === spot.id && r.temp.visible)) lift = 30;
-    let y = Math.round(spot.y * TILE - overhangPx(spot.id) - lift - 4 + Math.sin(time / 260) * 2);
+    // the bob moves in whole art pixels
+    let y = Math.round(spot.y * TILE - overhangPx(spot.id) - lift - 2 * PX + Math.round(Math.sin(time / 260)) * PX);
     // The lion standing just above the device (e.g. between the switch and the patch panel) would be
     // covered by the prompt: lift it over his head instead.
-    y = Math.min(y, Math.round(this.player.y - LION_HEAD_CLEAR));
+    y = Math.min(y, Math.round((this.player.y - LION_HEAD_CLEAR) / PX) * PX);
     this.prompt.setPosition(x, y).setVisible(true);
   }
 
   private drawPrompt(label: string): void {
     this.promptText.setText(label);
-    const keyW = 18;
-    const gap = 7;
-    const padX = 8;
-    const h = Math.max(Math.ceil(this.promptText.height), 16) + 10;
-    const w = Math.ceil(padX + keyW + gap + this.promptText.width + padX);
-    const top = -h - 7;
+    const P = PX;
+    const snap = (v: number) => Math.ceil(v / P) * P;
+    const keyW = 10 * P;
+    const keyH = 10 * P;
+    const gap = 4 * P;
+    const padX = 4 * P;
+    const h = snap(Math.max(this.promptText.height, keyH) + 4 * P);
+    const w = snap(padX + keyW + gap + this.promptText.width + padX);
+    // the tail's tip sits on the container's origin
+    const top = -h - 4 * P;
+    const left = -Math.round(w / 2 / P) * P;
     const g = this.promptBg;
     g.clear();
-    g.fillStyle(0x2a1410, 1);
-    g.fillRoundedRect(-w / 2 - 2, top - 2, w + 4, h + 4, 7);
-    g.fillTriangle(-7, -8, 7, -8, 0, 0);
-    g.fillStyle(0x221c28, 0.97);
-    g.fillRoundedRect(-w / 2, top, w, h, 6);
-    g.fillTriangle(-4, -9, 4, -9, 0, -3);
+    /** Rect with its four corner pixels cut off: a pixel-art rounded corner. */
+    const panel = (x: number, y: number, bw: number, bh: number, color: number, alpha = 1) => {
+      g.fillStyle(color, alpha);
+      g.fillRect(x + P, y, bw - 2 * P, bh);
+      g.fillRect(x, y + P, P, bh - 2 * P);
+      g.fillRect(x + bw - P, y + P, P, bh - 2 * P);
+    };
+    panel(left - P, top - P, w + 2 * P, h + 2 * P, 0x2a1410);
+    for (let i = 0; i < 3; i++) g.fillRect(-(3 - i) * P, top + h + P + i * P, 2 * (3 - i) * P, P);
+    panel(left, top, w, h, 0x221c28, 0.97);
+    for (let i = 0; i < 2; i++) g.fillRect(-(2 - i) * P, top + h + i * P, 2 * (2 - i) * P, P);
     g.fillStyle(0xd7262b, 1);
-    g.fillRect(-w / 2 + 6, top, w - 12, 2);
+    g.fillRect(left + 2 * P, top, w - 4 * P, P);
     // key cap
-    const kx = Math.round(-w / 2 + padX);
-    const ky = Math.round(top + (h - 18) / 2);
+    const kx = left + padX;
+    const ky = top + Math.round((h - keyH) / 2 / P) * P;
     g.fillStyle(0xc48e57, 1);
-    g.fillRoundedRect(kx, ky, keyW, 18, 4);
+    g.fillRect(kx + P, ky + P, keyW - 2 * P, keyH - P);
+    g.fillRect(kx, ky + 2 * P, keyW, keyH - 3 * P);
     g.fillStyle(0xe9b77c, 1);
-    g.fillRoundedRect(kx, ky, keyW, 15, 4);
-    this.promptKey.setPosition(kx + keyW / 2, ky + 8);
-    this.promptText.setPosition(kx + keyW + gap, Math.round(top + h / 2));
+    g.fillRect(kx + P, ky, keyW - 2 * P, keyH - 2 * P);
+    g.fillRect(kx, ky + P, keyW, keyH - 4 * P);
+    this.promptKey.setPosition(kx + keyW / 2, ky + (keyH - 2 * P) / 2);
+    this.promptText.setPosition(kx + keyW + gap, top + h / 2);
     // clicking the prompt works too
-    const area = new Phaser.Geom.Rectangle(-w / 2, top, w, h);
+    const area = new Phaser.Geom.Rectangle(left, top, w, h);
     if (this.prompt.input) this.prompt.input.hitArea = area;
     else this.prompt.setInteractive({ hitArea: area, hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true });
   }

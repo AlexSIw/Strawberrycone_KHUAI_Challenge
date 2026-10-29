@@ -7,6 +7,11 @@ import type { TextureSpec } from './painter';
 const U = OLD_UNIT;
 
 export const MENTOR_FRAME = { w: 16, h: 20, count: MENTOR_FRAMES.length };
+/** Idle loop: frame index and how long it shows (ms) */
+export const MENTOR_ANIM = [
+  { frame: 0, duration: 900 },
+  { frame: 1, duration: 650 },
+];
 
 export function mentorSpecs(): TextureSpec[] {
   return [

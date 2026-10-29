@@ -202,3 +202,14 @@ export const ARROW: string[] = [
 ];
 
 export const ARROW_PALETTE: Record<string, number> = { o: COLORS.outline, r: COLORS.red };
+
+/** 7 x 7 arrow pointing down-right; with ARROW it covers all eight directions in quarter turns */
+export const ARROW_DIAG: string[] = [
+  '......o',
+  '.....oo',
+  '....oro',
+  '...orro',
+  '..orrro',
+  '.orrrro',
+  'ooooooo',
+];

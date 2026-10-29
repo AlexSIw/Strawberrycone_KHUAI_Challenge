@@ -77,9 +77,22 @@ function drawServerUnit(p: Painter): void {
   p.rect(19, 2, 2, 2, 0x202228);
 }
 
+function drawServerGhost(p: Painter): void {
+  // dashed amber outline where a not-yet-mounted server goes
+  for (let x = 0; x < 24; x += 3) {
+    p.rect(x, 0, 2, 1, C.amber);
+    p.rect(x, 5, 2, 1, C.amber);
+  }
+  for (let y = 0; y < 6; y += 3) {
+    p.rect(0, y, 1, 2, C.amber);
+    p.rect(23, y, 1, 2, C.amber);
+  }
+}
+
 export function rackSpecs(): TextureSpec[] {
   return [
     ...[1, 2, 3, 4].map((n) => ({ key: `rack-${n}`, w: 32, h: 56, unit: U, draw: (p: Painter) => drawRack(p, n) })),
     { key: 'server-unit', w: 24, h: 6, unit: U, draw: drawServerUnit },
+    { key: 'server-ghost', w: 24, h: 6, unit: U, draw: drawServerGhost },
   ];
 }
