@@ -19,7 +19,6 @@ type Field = 'cause' | 'fix' | 'prevent';
 /** What the report asks about one kind of D-Day incident (keyed by incident template id). */
 interface Report {
   template: string;
-  icon: string;
   cause: { options: string[]; answer: number };
   fix: { options: string[]; answer: number };
   /** Every idea is reasonable; the player just picks one. */
@@ -29,7 +28,6 @@ interface Report {
 const REPORTS: Report[] = [
   {
     template: 'dday-capacity',
-    icon: '📈',
     cause: {
       options: ['DNS 장부에서 수강신청 이름이 빠졌다', '오픈 순간 접속(1초에 1만 건 넘게)에 비해 신청 pod 수(4개)가 부족했다', '신청 서비스 새 버전에 버그가 있었다'],
       answer: 1,
@@ -42,7 +40,6 @@ const REPORTS: Report[] = [
   },
   {
     template: 'dday-db',
-    icon: '🗄️',
     cause: {
       options: ['pod 수 × pod당 DB 연결 수가 DB 연결 한도(200)를 넘었다', 'DB 서버 디스크가 꽉 찼다', '방화벽이 DB로 가는 길을 막았다'],
       answer: 0,
@@ -55,7 +52,6 @@ const REPORTS: Report[] = [
   },
   {
     template: 'dday-uplink',
-    icon: '🔗',
     cause: {
       options: ['3번 랙 스위치(TOR-02) 케이블이 끊어졌다', 'TOR-02 포트의 VLAN이 바뀌었다', 'TOR-02에서 코어로 가는 길이 10G 한 가닥뿐이라 신청 집중 때 꽉 찼다'],
       answer: 2,
@@ -68,7 +64,6 @@ const REPORTS: Report[] = [
   },
   {
     template: 'dday-macro',
-    icon: '🤖',
     cause: {
       options: ['학생 수가 갑자기 두 배로 늘었다', '매크로(자동 클릭 프로그램)가 L4의 세션 자리를 차지했다', 'L4 헬스체크 경로가 틀렸다'],
       answer: 1,
@@ -164,14 +159,12 @@ function Waiting({ run }: { run: StageRun }) {
         )}
         {list.map((rt) => (
           <li key={rt.id}>
-            <span>
-              {reportOf(rt.id)?.icon ?? '📣'} {scenarioTitle(run, rt.id)}
-            </span>
-            <span className={rt.state === 'resolved' ? 'ok' : 'bad'}>{rt.state === 'resolved' ? '✅ 해결' : '🚨 진행 중'}</span>
+            <span>{scenarioTitle(run, rt.id)}</span>
+            <span className={rt.state === 'resolved' ? 'ok' : 'bad'}>{rt.state === 'resolved' ? '✓ 해결' : '● 진행 중'}</span>
           </li>
         ))}
       </ul>
-      <p className="muted pmb-wait-note">👉 지금은 관제 화면(N)을 보며 장애부터 막아주세요. 보고서는 그다음!</p>
+      <p className="muted pmb-wait-note">지금은 관제 화면(N)을 보며 장애부터 막아주세요. 보고서는 그다음!</p>
     </ModalFrame>
   );
 }
@@ -215,7 +208,7 @@ function Write({ run }: { run: StageRun }) {
 
   const extras = others.map((rt) => (
     <span key={rt.id} className="tag">
-      📣 {scenarioTitle(run, rt.id)}: {timeline(run, rt)}
+      {scenarioTitle(run, rt.id)}: {timeline(run, rt)}
     </span>
   ));
 
@@ -242,12 +235,12 @@ function Write({ run }: { run: StageRun }) {
         <div className="pmb-mentor is-ok">
           <Portrait who="mentor" size={44} />
           <p>
-            <b>회고 완료!</b> 보고서는 누굴 혼내려는 게 아니라, 같은 장애를 두 번 겪지 않으려고 쓰는 거야. 제출하면 수강신청 운영 끝! 📖 개념 카드{' '}
+            <b>회고 완료!</b> 보고서는 누굴 혼내려는 게 아니라, 같은 장애를 두 번 겪지 않으려고 쓰는 거야. 제출하면 수강신청 운영 끝! 개념 카드{' '}
             <b>{CONCEPTS[CARD].name}</b>도 받아요.
           </p>
         </div>
         <div className="pmb-summary-head">
-          <span className="tag">📄 수강신청 당일 장애 보고서</span>
+          <span className="tag">수강신청 당일 장애 보고서</span>
           {avail !== null && (
             <span className="tag">
               {fromOpen ? '10:00 오픈부터 ' : ''}평균 가용성 {(avail * 100).toFixed(1)}%
@@ -262,9 +255,7 @@ function Write({ run }: { run: StageRun }) {
             const a = get(rt.id);
             return (
               <div key={rt.id} className="pmb-sum-card">
-                <div className="pmb-sum-title">
-                  {r.icon} {scenarioTitle(run, rt.id)}
-                </div>
+                <div className="pmb-sum-title">{scenarioTitle(run, rt.id)}</div>
                 <div className="pmb-sum-time">{timeline(run, rt)}</div>
                 <dl>
                   <dt>원인</dt>
@@ -278,7 +269,7 @@ function Write({ run }: { run: StageRun }) {
             );
           })}
         </div>
-        <p className="pmb-todo">👉 내용이 맞으면 "보고서 제출"을 눌러주세요.</p>
+        <p className="pmb-todo">내용이 맞으면 "보고서 제출"을 눌러주세요.</p>
       </ModalFrame>
     );
   }
@@ -290,7 +281,7 @@ function Write({ run }: { run: StageRun }) {
       footer={
         <>
           <span className={`pmb-foot-todo ${msg ? 'is-alert' : ''}`} role={msg ? 'alert' : undefined}>
-            {msg ? `⚠️ ${msg}` : '👉 장애마다 원인 · 조치 · 재발 방지를 골라주세요.'}
+            {msg ?? '장애마다 원인 · 조치 · 재발 방지를 골라주세요.'}
           </span>
           <button className="btn primary" onClick={check}>
             작성 완료
@@ -308,9 +299,7 @@ function Write({ run }: { run: StageRun }) {
         {main.map(({ rt, r }) => (
           <section key={rt.id} className="pmb-incident">
             <header>
-              <div className="pmb-inc-title">
-                {r.icon} {scenarioTitle(run, rt.id)}
-              </div>
+              <div className="pmb-inc-title">{scenarioTitle(run, rt.id)}</div>
               <div className="pmb-inc-time">{timeline(run, rt)}</div>
             </header>
             {FIELDS.map((f) => {
