@@ -1,11 +1,13 @@
 // D-5: 물리 구축 (v1 stage 0 + 1). Tour the rooms, mount three new servers in rack 1, feed them from
-// PDU A and B, cable them to TOR-01, then look at the port LEDs (NMS) and the facilities (FMS).
+// PDU A and B, cable them to TOR-01, then look at the port LEDs (NMS) and the facilities (FMS); the 퇴근 퀴즈
+// at the 설계 보드 closes the day.
 // Teaching incident: a half-damaged server cable (CRC errors, found in the NMS port view).
 import { cableAt, cablePeer, linkUp, powered } from '../../sim/network';
 import type { PlayContext, World } from '../../sim/types';
+import { QUIZZES } from '../quizzes';
 import type { DaySpec } from '../types';
 import { emptyHealth } from '../worlds';
-import { BASE_INTERACTIONS, ROOMS, WEEKDAY_CLOCK } from './common';
+import { BASE_INTERACTIONS, QUIZ_OBJECTIVE, ROOMS, WEEKDAY_CLOCK } from './common';
 
 /** The three servers this day installs (rack 1, cabled to TOR-01 Gi1/0/1–3 in the D-Day plan). */
 export const D5_SERVERS = ['web', 'web2', 'db'];
@@ -62,21 +64,12 @@ export const day0: DaySpec = {
     {
       id: 'tour',
       text: '방 5개 둘러보기 (서버실·네트워크실·전기실·냉각실·관제실)',
-      why: '데이터센터는 서버(24시간 일하는 컴퓨터)를 모아 두고 전기·냉방·네트워크를 대신 챙겨 주는 건물이에요. 서버실 말고도 전기를 대는 전기실, 열을 식히는 냉각실, 서버를 서로·바깥과 잇는 네트워크실, 모두를 지켜보는 관제실이 함께 돌아가야 서비스가 살아 있어요. 방마다 무엇이 있는지 둘러보세요.',
+      why: '데이터센터는 서버(24시간 일하는 컴퓨터)를 모아 두고 전기·냉방·네트워크를 대신 챙겨 주는 건물이에요. 서버실 말고도 전기를 대는 전기실, 열을 식히는 냉각실, 서버를 서로·바깥과 잇는 네트워크실, 모두를 지켜보는 관제실이 함께 돌아가야 서비스가 살아 있어요. 캠퍼스 건물 층마다 전기 통로(EPS실)와 통신선 통로(TPS실)가 있어서, 건물에서 누른 수강신청 요청도 TPS실의 선을 타고 여기 서버까지 와요.',
       done: (_w, c) => ROOMS.every((r) => c.visited.includes(r)),
       progress: (_w, c) => `${ROOMS.filter((r) => c.visited.includes(r)).length}/${ROOMS.length}`,
       concept: 'datacenter',
+      alsoConcepts: ['epstps'],
       lesson: '서버실은 서버가 일하는 곳, 전기실은 전기를, 냉각실은 시원한 바람을 대 주는 곳, 네트워크실은 서버를 서로·바깥과 잇는 곳, 관제실은 이 모두를 지켜보는 곳이에요. 다섯 방이 함께 돌아가야 서비스가 살아 있어요.',
-    },
-    {
-      id: 'quiz',
-      text: '관제실 설계 보드에서 퀴즈 풀기',
-      why: '학생이 누르는 수강신청 버튼 뒤에는 이 건물의 서버가 있어요. 캠퍼스 건물에는 층마다 전기 통로(EPS실)와 통신선 통로(TPS실)가 있어서, 그 선들이 여기까지 이어져요. 요청이 어디로 가서 누가 답하는지 관제실 설계 보드의 퀴즈로 확인해 봐요.',
-      spot: 'board',
-      done: (_w, c) => c.events.includes('quiz:correct'),
-      after: ['tour'],
-      concept: 'epstps',
-      lesson: '학생 노트북의 요청은 건물 층마다 있는 통신선 통로(TPS실)의 선을 타고 나와, 인터넷과 캠퍼스 네트워크를 지나 데이터센터의 서버로 와요. 서버가 처리해서 답을 돌려보내요.',
     },
     {
       id: 'mount',
@@ -85,7 +78,7 @@ export const day0: DaySpec = {
       spot: 'rack1',
       done: (w) => mounted(w).length === D5_SERVERS.length,
       progress: (w) => `${mounted(w).length}/${D5_SERVERS.length}`,
-      after: ['quiz'],
+      after: ['tour'],
       concept: 'rack',
       lesson: '서버는 랙(서버 책장)의 칸(U)에 끼워요. 랙 맨 위에는 그 랙 서버들을 묶어 주는 스위치(TOR-01)가 있어요.',
       steps: [
@@ -167,6 +160,7 @@ export const day0: DaySpec = {
       concept: 'ups',
       lesson: '정전되면 UPS(비상 배터리)가 버티는 사이 발전기가 돌고, ATS가 전기 길을 자동으로 바꿔요. 시설은 시설팀 담당이라 우리는 FMS로 지켜보고 이상하면 알려요.',
     },
+    QUIZ_OBJECTIVE,
   ],
   interactions: {
     ...BASE_INTERACTIONS,
@@ -182,7 +176,7 @@ export const day0: DaySpec = {
     },
     pdu: { kind: 'power' },
     desk: { kind: 'inspect', text: '관리 PC. 내일(D-4)부터 여기서 터미널(글자로 명령을 내리는 창)로 장비에 접속해요.' },
-    board: { kind: 'quiz' },
+    board: { kind: 'inspect', text: '설계 보드. 오늘 일을 다 끝내면 퇴근 전에 여기서 복습 퀴즈 3문제를 풀어요.' },
   },
   health: (w) => {
     const services = Object.fromEntries(D5_SERVERS.map((id) => [label(w, id), serverState(w, id)]));
@@ -200,18 +194,7 @@ export const day0: DaySpec = {
     return emptyHealth(w, { availability: ok, errorRate: 1 - ok, services, notes });
   },
   panels: ['power', 'links'],
-  quiz: {
-    pool: [
-      {
-        question: '학생이 수강신청 버튼을 누르면, 그 요청은 어디로 갈까요?',
-        choices: ['학생 노트북 안에서 처리된다', '인터넷을 거쳐 데이터센터의 서버로 간다', '근처 와이파이 공유기 안에서 처리된다'],
-        answer: 1,
-        explain: '학생 노트북(클라이언트)이 요청을 보내면 데이터센터의 서버가 처리해서 답을 돌려줘. 이게 클라이언트-서버 구조야.',
-        concept: 'datacenter',
-      },
-    ],
-    draw: 1,
-  },
+  quiz: QUIZZES[0],
   /** Three new servers come off the truck: not mounted, no power, no cable. */
   unbuild: (w) => {
     for (const id of D5_SERVERS) {

@@ -365,16 +365,23 @@ test('미션마다 코인, 미션과 새 카드가 같은 순간이면 한 번',
     await expect(page.locator('.ccard')).toHaveCount(0);
   };
 
-  // The tour: a mission and a new card in the same moment, one coin for both.
+  // The tour: a mission and two new cards in the same moment, one coin for all of them.
   await mission(1, 'room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc');
   await expect(page.locator('.ccard')).toBeVisible();
-  // Clicking the cards away (the tour's 브리핑 and card, the quiz's 브리핑) is no new coin.
+  // Clicking the cards away (the tour's 브리핑 and cards, the rack's 브리핑) is no new coin.
   await enterAway();
   await page.waitForTimeout(300);
   expect(await coin()).toBe(coins0 + 1);
 
-  // The quiz: the next mission (and its card), the next coin.
-  await mission(2, 'quiz:correct');
+  // The rack: the next mission (and its card), the next coin.
+  await page.evaluate(async () => {
+    const A = (await import(/* @vite-ignore */ '/src/sim/actions.ts' as string)) as typeof import('../src/sim/actions');
+    const s = (window as unknown as Win).__store.getState();
+    s.event('open:rack');
+    s.act((w) => ['web', 'web2', 'db'].forEach((id) => A.mount(w, id)), 'rack:mount');
+  });
+  await expect.poll(coin).toBe(coins0 + 2);
+  await page.waitForTimeout(300);
   await enterAway();
   await page.waitForTimeout(300);
   expect(await coin()).toBe(coins0 + 2);

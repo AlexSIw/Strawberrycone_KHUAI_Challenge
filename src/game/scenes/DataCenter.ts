@@ -6,7 +6,7 @@ import type { InteractionKind, SpotId, StageDef } from '../../content/types';
 import { openAlarms } from '../../sim/alarms';
 import { visibleObjectives, type StageRun } from '../../sim/engine';
 import type { World } from '../../sim/types';
-import { gameStore, type GameState } from '../../store/game';
+import { gameStore, interactionAt, type GameState } from '../../store/game';
 import { ARROW_SCREEN_SCALE } from '../art/markers';
 import { MENTOR_ANIM } from '../art/mentor';
 import { EventBus } from '../EventBus';
@@ -202,6 +202,8 @@ export class DataCenter extends Phaser.Scene {
   private inputReadyAt = 0;
   private cleanups: (() => void)[] = [];
   private spots: { spot: SpotDef; kind: InteractionKind; area: AreaId | null }[] = [];
+  /** What each spot opens right now (interactionAt: the board turns into the 퇴근 퀴즈), refreshed as the run changes */
+  private kinds = new Map<SpotId, InteractionKind>();
 
   private prompt!: Phaser.GameObjects.Container;
   private promptBg!: Phaser.GameObjects.Graphics;
@@ -250,6 +252,7 @@ export class DataCenter extends Phaser.Scene {
     this.inputReadyAt = 0;
     this.cleanups = [];
     this.spots = [];
+    this.kinds = new Map();
     this.promptLabel = null;
     this.leds = [];
     this.blink = 0;
@@ -284,7 +287,7 @@ export class DataCenter extends Phaser.Scene {
 
     this.spots = SPOTS.flatMap((spot) => {
       const kind = this.def.interactions[spot.id];
-      if (!kind || (kind.kind === 'quiz' && !this.def.quiz)) return [];
+      if (!kind) return [];
       // A rack with a top-of-rack switch says so in its prompt ("랙 1 · TOR-01").
       const rack = RACK_SPOTS.find((r) => r.spot === spot.id)?.rack;
       const tor = rack && run ? torOf(run.world, rack) : undefined;
@@ -299,6 +302,7 @@ export class DataCenter extends Phaser.Scene {
       this.refreshWorld(run.world);
       this.refreshAlarms(run);
       this.refreshGoal(run);
+      this.refreshKinds(run);
     }
     this.cleanups.push(gameStore.subscribe((s, prev) => this.onStore(s, prev)));
 
@@ -643,7 +647,10 @@ export class DataCenter extends Phaser.Scene {
     }
     if (s.run && s.run.world !== prev.run?.world) this.refreshWorld(s.run.world);
     if (s.run && s.run.alarms !== prev.run?.alarms) this.refreshAlarms(s.run);
-    if (s.run && s.run !== prev.run) this.refreshGoal(s.run);
+    if (s.run && s.run !== prev.run) {
+      this.refreshGoal(s.run);
+      this.refreshKinds(s.run);
+    }
     // A window opened/closed: drop held keys so the lion doesn't keep walking.
     if (isBlocked(s) !== isBlocked(prev)) this.input.keyboard?.resetKeys();
   }
@@ -995,10 +1002,19 @@ export class DataCenter extends Phaser.Scene {
       const d = Math.hypot(dx, dy);
       if (d <= bestD) {
         bestD = d;
-        best = { spot: c.spot, kind: c.kind };
+        best = { spot: c.spot, kind: this.kinds.get(c.spot.id) ?? c.kind };
       }
     }
     return best;
+  }
+
+  /** What each spot opens now (per run change, not per frame). */
+  private refreshKinds(run: StageRun): void {
+    for (const c of this.spots) {
+      const k = interactionAt(run, c.spot.id);
+      if (k) this.kinds.set(c.spot.id, k);
+      else this.kinds.delete(c.spot.id);
+    }
   }
 
   private updatePrompt(time: number): void {

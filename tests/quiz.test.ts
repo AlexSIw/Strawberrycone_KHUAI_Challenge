@@ -1,11 +1,14 @@
 // The 퇴근 퀴즈: the day's finale objective shows up only once every other mission is done and every
 // incident is settled; each attempt draws its questions and shuffles their choices, and only a clean run clears it.
 import { describe, expect, it } from 'vitest';
+import { missionCards } from '../src/content/cards';
+import { CONCEPTS } from '../src/content/concepts';
 import { attemptView, choiceOrder, drawQuestions, QUIZ_START, quizReduce, type QuizProgress } from '../src/content/quizRun';
-import { getStage } from '../src/content/stages';
+import { getStage, planIncidents, STAGES } from '../src/content/stages';
 import type { Objective, Quiz, StageDef } from '../src/content/types';
 import { incidentsSettled, startStage, visibleObjectives, type StageRun } from '../src/sim/engine';
 import type { ScenarioRuntime } from '../src/sim/scenario';
+import { interactionAt } from '../src/store/game';
 import { lockedText, objectiveStatus, waitingText } from '../src/ui/objectiveStatus';
 
 // ---------- the finale rule ----------
@@ -181,5 +184,91 @@ describe('the draw and the choice order', () => {
       SEEDS.map((s) => attemptView(POOL, s, 0, 0)).flatMap((v) => v.questions.map((q, i) => v.orders[i].indexOf(POOL.pool[q].answer))),
     );
     expect(slots.size).toBe(4);
+  });
+});
+
+// ---------- the days' quizzes ----------
+
+const QUIZ_DAYS = STAGES.filter((d) => d.quiz);
+const ABSOLUTE = /항상|절대|모든|반드시|무조건|전혀/;
+/** Sentences of a text (a period inside 10.10.20.11 or (.1) doesn't end one). */
+const sentences = (t: string) => t.split(/(?<=[.!?])\s+/).filter((s) => s.trim());
+
+describe.each(QUIZ_DAYS.map((d) => [d.label, d] as const))('%s 퇴근 퀴즈', (_label, def) => {
+  const quiz = def.quiz!;
+  const cards = new Set(def.objectives.filter((o) => !o.finale).flatMap(missionCards));
+
+  it('a pool of 5, 3 drawn; closed by a finale mission at the 설계 보드 that gives no card', () => {
+    expect(quiz.pool).toHaveLength(5);
+    expect(quiz.draw).toBe(3);
+    const last = def.objectives[def.objectives.length - 1];
+    expect(last).toMatchObject({ id: 'quiz', finale: true, spot: 'board' });
+    expect(missionCards(last)).toEqual([]);
+    expect(def.objectives.filter((o) => o.finale)).toHaveLength(1);
+    // The board's own use until the quiz is up (the quiz takes it over then).
+    expect(def.interactions.board).toBeDefined();
+    expect(def.interactions.board?.kind).not.toBe('quiz');
+  });
+
+  it.each(quiz.pool.map((q, i) => [i, q] as const))('question %i keeps the writing rules', (_i, q) => {
+    expect(q.choices.length).toBeGreaterThanOrEqual(3);
+    expect(q.choices.length).toBeLessThanOrEqual(4);
+    expect(new Set(q.choices).size).toBe(q.choices.length);
+    expect(q.answer).toBeGreaterThanOrEqual(0);
+    expect(q.answer).toBeLessThan(q.choices.length);
+    // Board text in 해요체; 쿠사수's explanation in 반말.
+    expect(q.question).toMatch(/요\?$/);
+    expect(q.explain.length).toBeLessThanOrEqual(120);
+    expect(sentences(q.explain).length).toBeLessThanOrEqual(2);
+    for (const s of sentences(q.explain)) expect(s, q.explain).not.toMatch(/요[.!?]$/);
+    for (const t of [q.question, ...q.choices, q.explain]) expect(t).not.toMatch(ABSOLUTE);
+    // No answer by length alone.
+    const len = q.choices.map((c) => c.length);
+    const right = len[q.answer];
+    const others = len.filter((_, i) => i !== q.answer);
+    expect(others.every((l) => l < right), `the only longest: ${q.choices[q.answer]}`).toBe(false);
+    expect(others.every((l) => l > right), `the only shortest: ${q.choices[q.answer]}`).toBe(false);
+    // It checks a card a mission of this day awards (never one from an incident).
+    expect(q.concept in CONCEPTS).toBe(true);
+    expect([...cards], q.question).toContain(q.concept);
+  });
+
+  it('no incident waits for the quiz (seeds 1–12)', () => {
+    const finale = def.objectives.filter((o) => o.finale).map((o) => o.id);
+    for (let seed = 1; seed <= 12; seed++) {
+      for (const p of planIncidents(def, seed)) {
+        if (p.trigger.type !== 'gate') continue;
+        for (const id of finale) expect(p.trigger.objectives ?? [], `seed ${seed} ${p.id}`).not.toContain(id);
+      }
+    }
+  });
+});
+
+describe('the 설계 보드 during the day and at its end', () => {
+  it('D-Day has no quiz; every day with a quiz ends with it', () => {
+    expect(getStage(5).quiz).toBeUndefined();
+    expect(getStage(5).objectives.some((o) => o.finale)).toBe(false);
+    for (const d of STAGES) expect(!!d.quiz, d.label).toBe(d.objectives.some((o) => o.finale));
+  });
+
+  it('D-5: the tour gives the EPS·TPS card, and the rack follows the tour', () => {
+    const def = getStage(0);
+    const o = (id: string) => def.objectives.find((x) => x.id === id)!;
+    expect(missionCards(o('tour'))).toEqual(['datacenter', 'epstps']);
+    expect(o('tour').why).toContain('TPS실');
+    expect(o('mount').after).toEqual(['tour']);
+  });
+
+  it.each(QUIZ_DAYS.map((d) => [d.label, d] as const))('%s: the board opens the quiz only while it is on the list', (_label, def) => {
+    let run = startStage(def.id, 1);
+    expect(interactionAt(run, 'board')).toEqual(def.interactions.board);
+    expect(interactionAt(run, 'desk')).toEqual(def.interactions.desk);
+    run = missionsDone(def, 'resolved');
+    expect(interactionAt(run, 'board')).toEqual({ kind: 'quiz' });
+    expect(interactionAt(run, 'desk')).toEqual(def.interactions.desk);
+    // An incident going on hides the quiz again (and gives the board back).
+    expect(interactionAt(missionsDone(def, (_r, i) => (i === 0 ? 'active' : 'resolved')), 'board')).toEqual(def.interactions.board);
+    run = { ...run, objectivesDone: { ...run.objectivesDone, quiz: 1 } };
+    expect(interactionAt(run, 'board')).toEqual(def.interactions.board);
   });
 });

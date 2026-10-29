@@ -53,7 +53,7 @@ const fire = (page: Page) =>
   });
 
 /**
- * D-5's missions up to the port LEDs (tour, quiz, rack, PDU A/B, cables), as tests/autoplay.ts does them:
+ * D-5's missions up to the port LEDs (tour, rack, PDU A/B, cables), as tests/autoplay.ts does them:
  * after that the day's damaged-cable incident is on its way.
  */
 const buildD5 = (page: Page) =>
@@ -63,7 +63,6 @@ const buildD5 = (page: Page) =>
     const s = () => (window as unknown as Win).__store.getState();
     const ids = ['web', 'web2', 'db'];
     s().event('room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc');
-    s().event('quiz:correct');
     s().act((w) => ids.forEach((id) => A.mount(w, id)), 'rack:mount');
     s().act((w) => ids.forEach((id) => A.setFeeds(w, id, ['A', 'B'])));
     s().act((w) => ids.forEach((id) => A.connectCable(w, `${id}:eth0`, `TOR-01:${T.SERVERS[id][5]}`)), 'cable:connect');
@@ -251,38 +250,15 @@ test('창 상태 기억: 설계 보드 (Dockerfile)', async ({ page }) => {
   expect(problems).toEqual([]);
 });
 
-test('창 상태 기억: 퀴즈, 랙, 설계 보드, 무전기 질문', async ({ page }) => {
+test('창 상태 기억: 랙, 퀴즈, 설계 보드, 무전기 질문', async ({ page }) => {
   const problems = watchProblems(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await page.evaluate(() => localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best: {}, cards: [] })));
   await exposeStore(page);
 
-  // ---- D-5 quiz: a wrong answer stays marked with its explanation; a fresh attempt keeps its choice order ----
-  await play(page, 0);
-  await interact(page, 'board');
-  const right = await page.evaluate(async () => {
-    const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
-    const q = Number(document.querySelector('.qz-q')!.getAttribute('data-q'));
-    return C.getStage(0).quiz!.pool[q].answer;
-  });
-  const shown = () => page.locator('.qz-choice').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-choice'))));
-  const wrongIdx = (await shown()).find((c) => c !== right)!;
-  await page.locator(`.qz-choice[data-choice="${wrongIdx}"]`).click();
-  await expect(page.locator('.qz-choice.wrong')).toHaveCount(1);
-  await closeWindow(page);
-  await interact(page, 'board');
-  await expect(page.locator(`.qz-choice[data-choice="${wrongIdx}"]`)).toHaveClass(/wrong/);
-  await expect(page.locator('.qz-mentor.is-warn')).toBeVisible();
-  await page.getByRole('button', { name: '처음부터 다시 ▶' }).click();
-  const order = await shown();
-  await closeWindow(page);
-  await interact(page, 'board');
-  expect(await shown()).toEqual(order);
-  await expect(page.locator('.qz-mentor')).toHaveCount(0);
-  await closeWindow(page);
-
   // ---- D-5 rack: a server stays in the U it was put in ----
+  await play(page, 0);
   const server = await page.evaluate(() => {
     const w = (window as unknown as Win).__store.getState().run!.world;
     const d = Object.values(w.devices).find((x) => x.kind === 'server' && x.rack && !x.installed)!;
@@ -297,6 +273,58 @@ test('창 상태 기억: 퀴즈, 랙, 설계 보드, 무전기 질문', async ({
   await closeWindow(page);
   await interact(page, 'rack1');
   await expect(page.locator(`[data-drop="slot:${server.rack}:0"]`)).toContainText(server.label);
+  await closeWindow(page);
+
+  // ---- D-5 퇴근 퀴즈: the question, its choice order and the explanation stay; a wrong answer stays marked ----
+  await play(page, 0);
+  await page.evaluate(async () => {
+    const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
+    const store = (window as unknown as Win).__store;
+    const run = store.getState().run!;
+    // Every mission but the quiz done and no incident left: the quiz is up.
+    const done = Object.fromEntries(C.getStage(0).objectives.filter((o) => !o.finale).map((o) => [o.id, 0]));
+    store.setState({ run: { ...run, scenarios: [], objectivesDone: done } });
+    store.getState().event('e2e:ready');
+  });
+  await dismissConcepts(page);
+  const right = () =>
+    page.evaluate(async () => {
+      const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
+      const q = Number(document.querySelector('.qz-q')!.getAttribute('data-q'));
+      return C.getStage(0).quiz!.pool[q].answer;
+    });
+  const shown = () => page.locator('.qz-choice').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-choice'))));
+  const progress = page.locator('.qz-progress');
+  await interact(page, 'board');
+  await expect(progress).toContainText('문제 1/3');
+  const first = await right();
+  await page.locator(`.qz-choice[data-choice="${first}"]`).click();
+  await expect(page.locator('.qz-mentor.is-ok')).toBeVisible();
+  await closeWindow(page);
+  // Reopened on the explanation of the question just answered: 다음 문제 goes on to 2/3.
+  await interact(page, 'board');
+  await expect(progress).toContainText('문제 1/3');
+  await expect(page.locator(`.qz-choice[data-choice="${first}"]`)).toHaveClass(/right/);
+  await expect(page.locator('.qz-mentor.is-ok')).toBeVisible();
+  await page.getByRole('button', { name: '다음 문제 ▶' }).click();
+  await expect(progress).toContainText('문제 2/3');
+  const order = await shown();
+  const q2 = await page.locator('.qz-q').getAttribute('data-q');
+  await closeWindow(page);
+  await interact(page, 'board');
+  await expect(progress).toContainText('문제 2/3');
+  expect(await page.locator('.qz-q').getAttribute('data-q')).toBe(q2);
+  expect(await shown()).toEqual(order);
+  // A wrong answer: ✕, the explanation and the restart button are still there after reopening.
+  const answer2 = await right();
+  const bad = order.find((c) => c !== answer2)!;
+  await page.locator(`.qz-choice[data-choice="${bad}"]`).click();
+  await expect(page.locator('.qz-choice.wrong')).toHaveCount(1);
+  await closeWindow(page);
+  await interact(page, 'board');
+  await expect(page.locator(`.qz-choice[data-choice="${bad}"]`)).toHaveClass(/wrong/);
+  await expect(page.locator('.qz-mentor.is-warn')).toBeVisible();
+  await expect(page.getByRole('button', { name: '처음부터 다시 ▶' })).toBeVisible();
   await closeWindow(page);
 
   // ---- D-3 decompose board: placed cards stay in their shop ----

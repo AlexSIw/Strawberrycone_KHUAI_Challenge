@@ -1,5 +1,19 @@
 import type { ClockDef } from '../../sim/clock';
-import type { InteractionKind, SpotId } from '../types';
+import type { InteractionKind, Objective, SpotId } from '../types';
+
+/**
+ * The last mission of D-5 … D-1: the 퇴근 퀴즈 at the 설계 보드 (the board opens it while this is on the list).
+ * It shows up once every other mission is done and every incident is settled; it awards no card of its own
+ * (the missions it reviews already did).
+ */
+export const QUIZ_OBJECTIVE: Objective = {
+  id: 'quiz',
+  text: '관제실 설계 보드에서 퇴근 전 복습 퀴즈 풀기 (3문제를 한 번에 다 맞히기)',
+  why: '오늘 직접 해 본 일을 세 문제로 확인해요. 틀리면 해설을 보고 새로 뽑은 문제로 처음부터 다시 풀고, 세 문제를 한 번에 다 맞히면 퇴근이에요. 헷갈리면 도감(C)에서 오늘 받은 카드를 다시 읽어 봐요.',
+  spot: 'board',
+  finale: true,
+  done: (_w, c) => c.events.includes('quiz:correct'),
+};
 
 /** Weekdays: 09:00 출근, 1 real second = 30 game seconds (a 15-minute day ends around 16:30). */
 export const WEEKDAY_CLOCK: ClockDef = { start: '09:00:00', rate: 30 };

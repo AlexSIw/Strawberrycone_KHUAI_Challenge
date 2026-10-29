@@ -1,6 +1,7 @@
 // Fixes from the play-through reviews that live below the UI: what the CLI says (TOR ping, appliance
 // ssh, L4 and k8s output, the D-Day DB logs), which concept cards exist, and how the days are planned.
 import { describe, expect, it } from 'vitest';
+import { missionCards } from '../src/content/cards';
 import { CONCEPTS } from '../src/content/concepts';
 import { getStage, planIncidents, STAGES } from '../src/content/stages';
 import { applyCommand, startStage, tickRun, type StageRun } from '../src/sim/engine';
@@ -113,7 +114,7 @@ describe('concept cards and plans', () => {
   it('every concept card can be earned somewhere, and every awarded card exists', () => {
     const used = new Set<string>();
     for (const d of STAGES) {
-      for (const o of d.objectives) if (o.concept) used.add(o.concept);
+      for (const o of d.objectives) for (const c of missionCards(o)) used.add(c);
       for (const s of d.scenarios) if (s.concept) used.add(s.concept);
     }
     expect(Object.keys(CONCEPTS).filter((k) => !used.has(k))).toEqual([]);

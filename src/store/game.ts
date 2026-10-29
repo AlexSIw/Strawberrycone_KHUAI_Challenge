@@ -371,6 +371,16 @@ function interactionToModal(k: InteractionKind): Modal {
   }
 }
 
+/**
+ * What pressing E at `spot` opens right now: the day's own interaction, except that the 설계 보드 opens the
+ * 퇴근 퀴즈 while the day's finale objective is on the list and not done yet.
+ */
+export function interactionAt(run: StageRun, spot: SpotId): InteractionKind | undefined {
+  const def = getStage(run.stage);
+  if (spot === 'board' && def.quiz && visibleObjectives(def, run).some((o) => o.finale && !(o.id in run.objectivesDone))) return { kind: 'quiz' };
+  return def.interactions[spot];
+}
+
 /** Event name recorded when a modal opens (objectives listen for these). */
 function openEvent(m: Modal): string {
   if (m.type === 'hint') return 'open:mentor';
@@ -743,9 +753,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     interact: (spot) => {
       const s = get();
       if (!s.run || s.modal || s.dialogue) return;
-      const k = getStage(s.run.stage).interactions[spot];
+      const k = interactionAt(s.run, spot);
       if (!k) return;
-      if (k.kind === 'quiz' && !getStage(s.run.stage).quiz) return;
       get().openModal(interactionToModal(k));
       get().event(`interact:${spot}`);
     },

@@ -395,13 +395,31 @@ const rightChoice = (page: Page) =>
 /** The choices on the board, by authored index, in the order they are shown. */
 const shownChoices = (page: Page) => page.locator('.qz-choice').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-choice'))));
 
+/** Every mission of the day but the 퇴근 퀴즈 done and no incident left: the quiz is up (its 미션 브리핑 clicked away). */
+const toFinale = (page: Page) =>
+  page.evaluate(async () => {
+    const url = '/src/content/stages/index.ts';
+    const days = (await import(/* @vite-ignore */ url)) as typeof import('../src/content/stages');
+    const store = (window as unknown as Win).__store;
+    const run = store.getState().run!;
+    const done = Object.fromEntries(days.getStage(run.stage).objectives.filter((o) => !o.finale).map((o) => [o.id, 0]));
+    store.setState({ run: { ...run, scenarios: [], objectivesDone: done } });
+    store.getState().event('e2e:ready');
+    for (let i = 0; i < 20 && store.getState().concepts.length; i++) store.getState().dismissConcept();
+  });
+
 test('퀴즈: 틀리면 해설 뒤 처음부터, 다 맞힌 뒤엔 위에 연 창(도감·무전기)을 닫아도 그대로', async ({ page }) => {
   const problems = watchProblems(page);
   await start(page);
-  // D-5: the quiz opens after the tour of the rooms.
+  // D-5: until the day's work is done the 설계 보드 only says the quiz comes at the end.
   await play(page, 0);
-  await page.evaluate(() => (window as unknown as Win).__store.getState().event('room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc'));
-  await dismissConcepts(page);
+  await interact(page, 'board');
+  await expect(title(page)).not.toHaveText(/퀴즈/);
+  await expect(page.locator('.modal-body')).toContainText('복습 퀴즈');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.modal-backdrop')).toHaveCount(0);
+  await toFinale(page);
+  await expect(page.locator('.obj-panel')).toContainText('퇴근 전 복습 퀴즈');
   await interact(page, 'board');
   await expect(title(page)).toHaveText(/퀴즈/);
   const total = Number(/\/(\d+)/.exec(await page.locator('.qz-progress').innerText())![1]);
@@ -450,18 +468,11 @@ test('퀴즈: 틀리면 해설 뒤 처음부터, 다 맞힌 뒤엔 위에 연 �
   await expect(title(page)).toHaveText(/퀴즈/);
   await cleared();
 
-  // 알겠어요! closes it and completes the mission: its card comes up, 계속하기 takes it, the next mission (the rack)
-  // is up with its 미션 브리핑.
+  // 알겠어요! closes it and records the quiz: the day's work is done and the 퇴근 briefing (the outro) starts.
   await page.getByRole('button', { name: '알겠어요!' }).click();
   await expect(page.locator('.modal-backdrop')).toHaveCount(0);
-  await expect(page.locator('.ccard-banner')).toHaveText(/배운 것 정리/);
-  await page.getByRole('button', { name: /계속하기/ }).click();
-  await expect(page.locator('.ccard-banner')).toHaveText(/미션 브리핑/);
-  await expect(page.locator('.ccard-brief-mission')).toContainText('1번 랙에 서버 3대 장착하기');
-  await page.getByRole('button', { name: /알겠어요, 시작/ }).click();
-  await expect(page.locator('.ccard-backdrop')).toHaveCount(0);
-  expect(await page.evaluate(() => 'quiz' in ((window as unknown as Win).__store.getState().run?.objectivesDone ?? {}))).toBe(true);
-  await expect(page.locator('.obj-panel')).toContainText('1번 랙에 서버 3대 장착하기');
+  await expect.poll(() => page.evaluate(() => 'quiz' in ((window as unknown as Win).__store.getState().run?.objectivesDone ?? {}))).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().dialogue?.then)).toBe('results');
 
   expect(problems).toEqual([]);
 });
