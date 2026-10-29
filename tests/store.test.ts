@@ -652,6 +652,32 @@ describe('toasts: the call from users, then the NMS alarm', () => {
   });
 });
 
+describe('the 퇴근 퀴즈 comes up', () => {
+  const FINALE: Objective = { id: 'quiz', text: '퇴근 퀴즈', finale: true, done: (_w, c) => c.events.includes('quiz:correct') };
+  const notes = () => S().toasts.filter((t) => t.kind === 'info').map((t) => t.text);
+
+  it('with gear not saved: one reminder to write memory before the quiz, once a run', () => {
+    Object.assign(DAY, { objectives: [...MISSIONS, FINALE] });
+    try {
+      play(0);
+      S().act((w) => void (w.devices['TOR-01'].nd!.dirty = true));
+      S().event('t:a');
+      expect(notes()).toEqual([]);
+      S().event('t:b');
+      expect(S().run!.objectivesDone).not.toHaveProperty('quiz');
+      expect(notes()).toEqual(['퇴근 퀴즈가 열렸어요! 저장 안 한 장비(TOR-01)는 퀴즈 전에 write memory로 저장해 둬요.']);
+      S().event('t:c');
+      expect(notes()).toHaveLength(1);
+      // Nothing left unsaved: no reminder.
+      play(0);
+      S().event('t:a', 't:b');
+      expect(notes()).toEqual([]);
+    } finally {
+      Object.assign(DAY, { objectives: MISSIONS });
+    }
+  });
+});
+
 describe('save', () => {
   afterEach(() => vi.resetModules());
 

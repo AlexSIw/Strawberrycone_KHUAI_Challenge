@@ -565,6 +565,20 @@ export const gameStore = createStore<GameState>()((set, get) => {
     previewMissions(run);
   };
 
+  /** The run (its stageEpoch) whose 퇴근 퀴즈 has come up and had its reminder. */
+  let finaleSeen = -1;
+  /**
+   * The 퇴근 퀴즈 just came up. The day now ends from its window, so the reminder to save changed gear comes
+   * here, while there is still time for `write memory` (the one at the clear below can't show any more).
+   */
+  const finaleReminder = (run: StageRun) => {
+    const epoch = get().stageEpoch;
+    if (finaleSeen === epoch || !visibleObjectives(getStage(run.stage), run).some((o) => o.finale && !(o.id in run.objectivesDone))) return;
+    finaleSeen = epoch;
+    const unsaved = unsavedGear(run.world);
+    if (unsaved.length) toast('info', `퇴근 퀴즈가 열렸어요! 저장 안 한 장비(${unsaved.join(', ')})는 퀴즈 전에 write memory로 저장해 둬요.`);
+  };
+
   /**
    * Today's work is done once every mission and incident is: the clock stops there. The outro waits
    * until no window is open, so whatever the player was doing (a terminal mid-`write memory`, the FMS
@@ -574,6 +588,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
     const s = get();
     if (s.screen !== 'playing' || s.dialogue) return;
     if (!s.dayDone) {
+      finaleReminder(run);
       if (!isCleared(run)) return;
       // The clock stops here, so the polls that would clear the alarms of fixed incidents never come: clear them now.
       const fixed = new Set(run.scenarios.filter((r) => r.state === 'resolved').map((r) => r.id));
