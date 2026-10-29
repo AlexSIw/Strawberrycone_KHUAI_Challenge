@@ -115,7 +115,7 @@ VLAN 10(WEB)·40(K8S) 게이트웨이는 아직 CORE-01 혼자 맡고 있어(sho
 - 점검표: 코어 둘 중 하나에서 show standby brief, TOR-01에서 show etherchannel summary, 관제 화면 FMS 탭 열기.
 
 ## 힌트 줄 때 참고
-- 노드 이름을 붙인 완성 명령(drain n1 같은, "n1, n2를 drain"도), 포트 이름, VLAN 번호("40번 VLAN"처럼 앞에 써도, K8S VLAN 같은 이름으로도), IP, 완성 IOS 명령(switchport trunk allowed vlan add …, standby …)은 말하지 마. "그 랙의 노드 상태를 봐", "살아남은 코어로 가는 길을 따라가 봐", "trunk가 실어 나르는 목록을 비교해봐" 정도로.
+- 노드 이름(n1, n2), 포트 이름, VLAN 번호("40번 VLAN"처럼 앞에 써도, K8S VLAN 같은 이름으로도), IP는 말하지 마. 명령은 값만 빈칸으로 둔 모양(kubectl drain <노드>, switchport trunk allowed vlan add <번호>)으로 알려줘도 돼. "그 랙의 노드 상태를 봐", "trunk가 실어 나르는 목록을 비교해봐"처럼 빈칸을 찾을 곳을 같이 짚어줘.
 - 원하는 상태 vs 실제 상태, "둘 있다" vs "하나가 죽어도 된다"를 비교하게 하는 질문이 좋은 힌트야.
 - 시설(냉각·전원)은 시설팀 몫이라는 걸 잊지 않게 해줘. 우리는 일을 옮기고, 알리고, 지켜봐.
 - 플레이어는 서버를 처음 접하는 일반인이야. 노드, pod, drain, HSRP, trunk, failover 같은 말은 처음 쓸 때 쉬운 말로 한 번 풀어줘.

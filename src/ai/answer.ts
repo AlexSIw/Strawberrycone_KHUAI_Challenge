@@ -3,6 +3,9 @@
 import type { Scenario } from '../sim/scenario';
 import { fixShapes } from './blanks';
 
+/** What a button or the terminal's `hint` asks on the player's behalf. */
+export const GUIDE_ASK = '지금 뭘 하면 돼요?';
+
 export interface Guide {
   situation: string;
   todo: string;

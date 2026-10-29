@@ -226,6 +226,14 @@ export function bannedFor(sc: Pick<Scenario, 'bannedPhrases' | 'solutionSteps' |
   return [...uniq.values()];
 }
 
+/**
+ * `text` with everything `banned` matches blanked out, in any letter case: the snapshot the model reads, so it
+ * can't repeat a value it was shown (a down port, the server it hits).
+ */
+export function maskValues(text: string, banned: readonly RegExp[]): string {
+  return banned.reduce((t, re) => t.replace(new RegExp(re.source, [...new Set([...re.flags.replace(/[gy]/g, ''), 'g', 'i'])].join('')), '<값>'), text);
+}
+
 /** Does the reply contain anything banned? */
 export function leaks(reply: string, banned: RegExp[]): boolean {
   const r = ` ${normalize(reply)} `;

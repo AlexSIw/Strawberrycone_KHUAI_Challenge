@@ -2,17 +2,22 @@
 // the day manuals (*.md text modules, which only wrangler understands) and hands them in.
 //
 // Two kinds of request:
-//  - incident {scenarioId, level, question, history, snapshot}: a hint on the ladder for one incident.
-//    Never the answer (bannedFor + one retry, then fallback).
-//  - mission {objectiveId, stage, objectiveDone, stepsDone, activeScenarioIds, question, history, snapshot}
-//    (no scenarioId): a question about the mission being built or a term on screen. The 사수 explains the
-//    concept and the NEXT step, commands included (the mission shows them anyway), but not the whole mission
-//    at once, and never an incident going on (missionBanned + one retry, then fallback).
-// Either answers {reply, concept}, or {fallback: true} (no key / upstream error / leak) and the game shows
+//  - incident {scenarioId, want, question, history, snapshot}: help with one incident. The fix's commands
+//    may be shown as shapes with the values blank ('interface <포트>'), never with the values
+//    (bannedFor + one retry, then fallback).
+//  - mission {objectiveId, stage, objectiveDone, stepsDone, activeScenarioIds, want, question, history, snapshot}
+//    (no scenarioId): the mission being built or a term on screen. The 사수 gives the NEXT step, commands
+//    included (the mission shows them anyway), never an incident going on (missionBanned + one retry, then fallback).
+// The model answers one of two kinds, short: a guide (상황 / 할 일 / 명령, three lines) when the player doesn't
+// know what to do, or an explanation (1–2 sentences) for "what is X / how do I". `want: 'guide'` (the terminal's
+// `hint`, the radio's buttons) asks for a guide; 'auto' lets the question decide.
+// Either answers {reply, kind, concept}, or {fallback: true} (no key / upstream error / leak) and the game shows
 // its own answer.
 
+import { fixShapes } from '../../src/ai/blanks';
+import { formatGuide, GUIDE_ASK, parseGuide } from '../../src/ai/answer';
 import { stripEmoji } from '../../src/ai/emoji';
-import { bannedFor, leaks, missionBanned, missionShown } from '../../src/ai/leak';
+import { bannedFor, leaks, maskValues, missionBanned, missionShown } from '../../src/ai/leak';
 import { CONCEPTS } from '../../src/content/concepts';
 import { ALL_SCENARIOS, getStage } from '../../src/content/stages';
 import type { Objective } from '../../src/content/types';
@@ -28,20 +33,22 @@ export interface Env {
 
 const UPSTREAM = 'https://factchat-cloud.mindlogic.ai/v1/gateway/claude/v1/messages/';
 export const DEFAULT_MODEL = 'claude-haiku-5-5';
-const MAX_TOKENS = 400;
+const MAX_TOKENS = 300;
 const TIMEOUT_MS = 12_000;
 const MAX_BODY_BYTES = 32_000;
 const MAX_QUESTION = 300;
 const MAX_HISTORY = 8;
 const MAX_HISTORY_TEXT = 400;
 const MAX_SNAPSHOT = 3_000;
-const MAX_REPLY = 600;
+const MAX_REPLY = 320;
+/** Each field of a guide or an explanation, so one long field can't crowd out the others. */
+const MAX_FIELD = { situation: 80, todo: 60, command: 160, answer: 200, example: 100 } as const;
 const MAX_ACTIVE = 8;
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 
 const SCENARIOS = new Map<string, Scenario>(ALL_SCENARIOS.map((s) => [s.id, s]));
-const LEAK_RETRY = '방금 답은 정답을 너무 직접 말했어. 정답 없이 힌트만. 같은 JSON 형식으로 다시.';
+const LEAK_RETRY = '방금 답에 정답 값(포트 이름, VLAN 번호, IP, 개수, 이름 같은 것)이 들어갔어. 값은 <포트>·<번호>·<IP>·<이름> 같은 빈칸으로 바꿔서 같은 JSON으로 다시.';
 const MISSION_LEAK_RETRY = '방금 답에 지금 난 장애의 답이 들어갔어. 장애 이야기는 빼고 미션만 이야기해. 같은 JSON 형식으로 다시.';
 
 // ---------- HTTP helpers ----------
@@ -95,10 +102,14 @@ interface HistoryItem {
   text: string;
 }
 
+/** 'guide': answer with the three lines; 'auto': the question decides (guide or a short explanation). */
+export type Want = 'guide' | 'auto';
+
 /** What both kinds of request carry. */
 interface CommonInput {
   /** 'D-4': the day being played */
   dayLabel: string;
+  want: Want;
   question: string;
   history: HistoryItem[];
   snapshot: Record<string, unknown>;
@@ -108,7 +119,6 @@ interface CommonInput {
 export interface IncidentInput extends CommonInput {
   mode: 'incident';
   scenario: Scenario;
-  level: 1 | 2 | 3;
 }
 
 export interface MissionInput extends CommonInput {
@@ -150,7 +160,9 @@ function commonInput(raw: Record<string, unknown>, fallbackDay: DayId): CommonIn
     : [];
   const day = typeof snapshot.day === 'string' ? snapshot.day : '';
   const dayLabel = (DAY_LABEL as readonly string[]).includes(day) ? day : DAY_LABEL[fallbackDay];
-  return { dayLabel, question, history, snapshot, recentCommands };
+  // No question is a button or the terminal's `hint`: what to do next.
+  const want: Want = raw.want === 'guide' || raw.want === 'auto' ? raw.want : question ? 'auto' : 'guide';
+  return { dayLabel, want, question, history, snapshot, recentCommands };
 }
 
 /** A request, checked: a scenarioId makes it an incident hint; otherwise an objectiveId makes it a mission question. */
@@ -160,9 +172,8 @@ export function parseInput(raw: unknown): HintInput | string {
   if (raw.scenarioId !== undefined) {
     const scenario = typeof raw.scenarioId === 'string' ? SCENARIOS.get(raw.scenarioId) : undefined;
     if (!scenario) return 'unknown scenario';
-    const n = Number(raw.level);
-    const level = (Number.isFinite(n) ? Math.min(3, Math.max(1, Math.round(n))) : 1) as 1 | 2 | 3;
-    return { mode: 'incident', scenario, level, ...commonInput(raw, scenario.stage) };
+    // An older client's `level` is ignored: there is no hint ladder any more.
+    return { mode: 'incident', scenario, ...commonInput(raw, scenario.stage) };
   }
 
   if (typeof raw.objectiveId !== 'string') return 'unknown scenario';
@@ -192,12 +203,6 @@ export function parseInput(raw: unknown): HintInput | string {
 
 // ---------- prompt ----------
 
-const LEVEL_GUIDE: Record<1 | 2 | 3, string> = {
-  1: '1단계 = 관찰 질문. 무엇을 보면 좋을지 되물어서 스스로 증상을 관찰하게 해.',
-  2: '2단계 = 방향. 어느 계층·어느 쪽이 의심스러운지 방향만 짚어줘.',
-  3: '3단계 = 도구/명령 종류. 어떤 종류의 명령어나 화면을 쓰면 되는지 알려줘. 인자·값·대상 이름은 빼고.',
-};
-
 const PERSONA = [
   '너는 경희대학교 데이터센터의 선배 엔지니어 "쿠사수"야. 신입 엔지니어(경희대 사자)가 수강신청 날(D-Day)을 앞두고 데이터센터와 캠퍼스 네트워크 장애를 스스로 해결하도록 돕는 멘토야.',
   '플레이어는 서버와 네트워크를 거의 모르는 초보야.',
@@ -208,52 +213,68 @@ const COMMON_RULES = [
   '- 이모지는 쓰지 마.',
   '- 게임은 날짜(D-5, D-4 … D-Day)로 진행돼. 진행 단계를 말할 땐 "스테이지"가 아니라 날짜(D-n)로 말해.',
   '- 플레이어는 수업 듣는 학생이 아니라 서버 일에 관심 있는 누구나야. 수업·강의·교수님·시험·과제·공부·복습·대회 이야기는 절대 꺼내지 마. "배운 것" 대신 "해본 것"·"겪은 것"이라고 말해. 플레이어가 먼저 그런 걸 물으면 한 문장으로 받고 게임 이야기로 돌아와.',
-  '- 영어 약어나 전문용어(rps, pod, VLAN, NMS, 500 에러 같은 것)는 처음 쓸 때 바로 옆에 쉬운 말로 한 번 풀어줘. 예: "rps(1초에 들어오는 요청 수)". 진짜 용어는 지우지 말고 같이 써.',
+  '- 영어 약어나 전문용어(rps, pod, VLAN, NMS 같은 것)는 처음 쓸 때 바로 옆에 괄호로 쉬운 말을 짧게 붙여줘. 예: "rps(1초 요청 수)". 진짜 용어는 지우지 마.',
+  '- 짧게, 바로 본론만. 인사·칭찬·맞장구·되묻기 없이.',
 ];
 
-const JSON_RULE = '- 출력은 JSON 객체 하나만: {"reply": "쿠사수가 할 말", "concept": "관련 개념 이름(짧게)"}. 코드 블록이나 다른 글은 붙이지 마.';
+/** The two kinds of answer, and when to give which. `subject` says what the guide is about. */
+const KIND_RULES = (subject: string) => [
+  '- 답은 두 가지 중 하나야.',
+  `  guide: 플레이어가 뭘 해야 할지 모를 때(힌트 요청, "뭐 해야 돼?", "막혔어", "모르겠어" 같은 말). ${subject} 세 칸을 각각 한 문장(40자 안쪽)으로 채워.`,
+  '  explain: 뜻·약자·개념·"이건 어떻게 해?"를 물을 때. answer 에 1~2문장으로 바로 답하고, 도움이 되면 example 에 명령 예시 하나(없으면 빈 문자열).',
+  '- 요청에 "guide로"라고 적혀 있으면 반드시 guide로 답해.',
+];
+
+const JSON_RULE =
+  '- 출력은 JSON 객체 하나만. guide면 {"kind": "guide", "situation": "…", "todo": "…", "command": "…", "concept": "관련 개념 이름(짧게)"}, explain이면 {"kind": "explain", "answer": "…", "example": "…", "concept": "…"}. 코드 블록이나 다른 글은 붙이지 마.';
+
+/** A guide's three fields for an incident, in the voice and length wanted. */
+const INCIDENT_EXAMPLE =
+  '{"kind": "guide", "situation": "서버 한 대가 갑자기 안 보여. TOR-01 포트 VLAN이 바뀐 것 같아.", "todo": "바뀐 포트를 찾아 원래 VLAN으로 돌려놓기", "command": "ssh TOR-01 → show vlan brief 로 찾고 → enable → conf t → interface <포트> → switchport access vlan <번호> → end → wr", "concept": "VLAN"}';
 
 export function buildSystem(inp: IncidentInput, manuals: readonly string[]): string {
   const sc = inp.scenario;
   const concept = CONCEPTS[sc.concept];
   const manual = manuals[sc.stage] ?? '';
+  const shapes = fixShapes(sc).map((f) => `${f.hosts.join('·')}: ${f.lines.join(' → ')}`);
   return [
     ...PERSONA,
     '',
     '[규칙]',
-    '- 한국어 반말로, 친근하고 짧게. 최대 3문장.',
+    '- 한국어 반말로.',
     ...COMMON_RULES,
-    '- 정답을 절대 말하지 마: 정확한 명령어 전체(sh, conf t, int 같은 줄임말로 쓴 것도 포함), 설정 값, IP 주소, 포트 번호, VLAN 번호, 인터페이스 이름(Gi1/0/5 같은 것), 고쳐야 할 장비의 이름·위치는 말하지 않아.',
-    '- enable, configure terminal, end, write memory처럼 모드를 오가거나 저장하는 명령, 값 없이 상태를 보는 show 명령은 말해도 돼.',
-    '- NMS 경보는 증상이야. 원인을 경보 문구에서 단정하지 말고, 플레이어가 직접 확인하게 해.',
-    `- 이번 힌트 단계는 ${inp.level}단계야. 이 단계에 맞는 힌트만 줘. ${LEVEL_GUIDE[inp.level]}`,
-    '  (참고: 1단계 = 관찰 질문, 2단계 = 방향, 3단계 = 도구/명령 종류)',
-    '- 플레이어가 이미 해본 명령(현재 상황의 recentCommands)이 있으면 먼저 짧게 칭찬하고, 그다음 힌트를 줘.',
-    '- 아파트, 전화번호부, 호실 번호, 푸드코트, 밀키트처럼 생활 속 비유를 써서 쉽게 말해.',
-    '- 아래 [운영 매뉴얼]에 있는 내용만 근거로 답해. 매뉴얼에 없는 명령어는 지어내지 마.',
-    '- 게임과 상관없는 질문이면 한 문장으로 받아주고 장애 이야기로 돌아와.',
+    ...KIND_RULES('situation = 지금 무슨 일이 났는지(증상과 의심되는 곳), todo = 해야 할 일, command = 그걸 하는 명령(필요하면 → 로 이어서).'),
+    '- 명령은 이렇게: 상태를 보는 명령(show …, lb pool, dns list 같은 것)과 모드 이동·저장(enable, conf t, end, wr)은 그대로 써. 고치는 명령은 모양 그대로 쓰되, 값은 빈칸(<포트>, <번호>, <IP>, <대역>, <개수>, <값>, <이름>)으로 남겨. 플레이어는 빈칸을 직접 찾아 채워.',
+    '- 값은 어디에도 쓰지 마(situation 칸도): 포트·인터페이스 이름(Gi1/0/5 같은 것), VLAN 번호, IP·대역, 포트 번호, 개수·설정 값, 앱·서비스·풀·레코드 이름, 문제가 난 서버 이름. 값을 다 채운 고치는 명령은 "정답 보기"에만 있어.',
+    '- 장비 이름(TOR-01, CORE-01, L4-01, ns1 같은 것)은 말해도 돼.',
+    '- 플레이어가 이미 친 명령(recentCommands)으로 본 것은 다시 시키지 말고 그다음을 알려줘.',
+    '- NMS 경보는 증상이야. 원인을 경보 문구에서 단정하지 마.',
+    '- 아래 [운영 매뉴얼]과 [이번 장애]에 있는 명령만 써. 없는 명령어는 지어내지 마.',
+    '- 게임과 상관없는 질문이면 explain으로 한 문장 받고 끝.',
     JSON_RULE,
+    `- guide 예시 (말투와 길이만 참고): ${INCIDENT_EXAMPLE}`,
     '',
     `[운영 매뉴얼 — 날짜(D-n): ${DAY_LABEL[sc.stage]}]`,
     manual.trim(),
     '',
-    '[이번 장애 — 비공개 정보, 절대 그대로 말하지 말 것]',
+    '[이번 장애 — 비공개 정보, 값은 절대 그대로 말하지 말 것]',
     `오늘 날짜: ${inp.dayLabel}`,
     `제목: ${sc.title}`,
     `증상(사용자·팀장이 알린 것): ${sc.alert}`,
     `NMS 경보: [${SEV_LABEL[sc.severity] ?? sc.severity}] ${sc.alarm.device} — ${sc.alarm.text}`,
     `정답(비공개): ${sc.solution}`,
-    `절대 쓰면 안 되는 표현: ${sc.bannedPhrases.join(' / ')}`,
+    `할 일(참고): ${sc.todo}`,
+    `확인 명령(그대로 써도 됨): ${sc.checks.length ? sc.checks.join(' / ') : '(없음)'}`,
+    shapes.length ? `고치는 명령 모양(그대로 써도 됨): ${shapes.join(' / ')}` : `고치는 방법(명령 없음): ${sc.fixHow ?? ''}`,
+    `빈칸으로 남길 값(절대 쓰지 말 것): ${sc.bannedPhrases.join(' / ')}`,
     concept ? `관련 개념: ${concept.name} — 비유: ${concept.analogy} — ${concept.definition}` : '',
-    '힌트 예시 (말투와 수준만 참고. 그대로 복사하지 말고 지금 상황과 질문에 맞게 바꿔 말해):',
-    ...sc.hints.map((h, i) => `${i + 1}단계${i + 1 === inp.level ? ' (지금 단계)' : ''}: ${h}`),
   ].join('\n');
 }
 
 /**
  * Mission mode: the 사수 gets the day manual, the mission (text, why, steps with what is done, concept cards).
- * Commands may be named (the mission shows them); one step at a time. Incidents going on are only named by
- * title, never with their cause or fix (the model never sees those, and the reply goes through missionBanned).
+ * Commands may be named in full (the mission shows them); one step at a time. Incidents going on are only named
+ * by title, never with their cause or fix (the model never sees those, and the reply goes through missionBanned).
  */
 export function buildMissionSystem(inp: MissionInput, manuals: readonly string[]): string {
   const o = inp.objective;
@@ -265,15 +286,14 @@ export function buildMissionSystem(inp: MissionInput, manuals: readonly string[]
     ...PERSONA,
     '',
     '[규칙]',
-    '- 한국어 반말로, 친근하고 짧게. 최대 4문장.',
+    '- 한국어 반말로.',
     ...COMMON_RULES,
-    '- 지금은 장애가 아니라 미션(데이터센터를 만드는 일) 시간이야. 플레이어가 묻는 개념이나 화면에 보이는 말을 쉽게 풀어주고, 미션은 "다음 한 단계"만 알려줘.',
-    '- 명령어는 말해도 돼(미션 설명과 단계에 이미 나와 있어). 단, 미션 전체를 한 번에 풀어주지 마: 한 번에 다음 단계 하나(명령 한두 줄)까지만. 그 명령이 무슨 일을 하는지도 한마디 붙여줘.',
-    '- 플레이어가 이미 해본 명령(recentCommands)이나 끝낸 단계가 있으면 먼저 짧게 칭찬해.',
-    '- 지금 장애가 나 있어도, 그 장애의 원인이나 고치는 방법은 절대 말하지 마. 장애 이야기를 물으면 "무전기 위쪽의 장애 탭에서 힌트를 받아봐"라고만 해.',
-    '- 아파트, 전화번호부, 호실 번호, 푸드코트, 밀키트처럼 생활 속 비유를 써서 쉽게 말해.',
+    '- 지금은 장애가 아니라 미션(데이터센터를 만드는 일) 시간이야.',
+    ...KIND_RULES('situation = 미션이 어디까지 왔는지, todo = 다음 한 단계, command = 그 단계의 명령(한두 줄).'),
+    '- 미션의 명령은 값까지 그대로 말해도 돼(미션 설명과 단계에 이미 나와 있어). 단, 미션 전체를 한 번에 풀어주지 마: 다음 한 단계까지만.',
+    '- 지금 장애가 나 있어도, 그 장애의 원인이나 고치는 방법은 절대 말하지 마. 장애 이야기를 물으면 "터미널에서 hint를 쳐 봐"라고만 해.',
     '- 아래 [운영 매뉴얼]과 [지금 미션]에 있는 내용만 근거로 답해. 거기에 없는 명령어는 지어내지 마.',
-    '- 게임과 상관없는 질문이면 한 문장으로 받아주고 미션 이야기로 돌아와.',
+    '- 게임과 상관없는 질문이면 explain으로 한 문장 받고 끝.',
     ...when(
       o.finale,
       '- 지금 미션은 퇴근 퀴즈야. 퀴즈의 정답도, 몇 번(A·B·C·D) 보기가 맞는지도 절대 말하지 마. 설계 보드에서 풀면 되고, 헷갈리면 도감(C)에서 오늘 받은 카드를 다시 읽어 보라고만 해.',
@@ -293,25 +313,26 @@ export function buildMissionSystem(inp: MissionInput, manuals: readonly string[]
         `${i + 1}. ${s.text}${s.cmd ? ` — 명령: ${s.cmd}` : ''}${s.why ? ` (${s.why})` : ''}${inp.stepsDone[i] ? ' [했음]' : i === next ? ' ← 지금 할 단계' : ''}`,
     ),
     ...cards.map((c) => `관련 개념 카드: ${c.name} — 비유: ${c.analogy} — ${c.definition}`),
-    ...when(inp.active.length, `지금 난 장애(제목만, 이 이야기는 장애 탭에서): ${inp.active.map((s) => s.title).join(' / ')}`),
+    ...when(inp.active.length, `지금 난 장애(제목만, 이 이야기는 터미널의 hint로): ${inp.active.map((s) => s.title).join(' / ')}`),
   ].join('\n');
 }
 
 const SPEAKER: Record<HistoryItem['from'], string> = { mentor: '쿠사수', player: '플레이어' };
 
-export function buildUser(inp: HintInput): string {
-  let snap = JSON.stringify(inp.snapshot);
+/** `mask`: what the snapshot must not show the model (the incident's values), so it can't repeat them. */
+export function buildUser(inp: HintInput, mask: readonly RegExp[] = []): string {
+  let snap = maskValues(JSON.stringify(inp.snapshot), mask);
   if (snap.length > MAX_SNAPSHOT) snap = `${snap.slice(0, MAX_SNAPSHOT)}…`;
-  // The client already appends the current question to the history (and a mission's "what's next?" button
+  // The client already appends the current question to the history (and a button or the terminal's `hint`
   // puts its own line there with no question); don't say it twice.
   const history = [...inp.history];
   const last = history[history.length - 1];
-  if (last?.from === 'player' && (inp.question ? last.text.slice(0, MAX_QUESTION) === inp.question : inp.mode === 'mission')) history.pop();
+  if (last?.from === 'player' && (inp.question ? last.text.slice(0, MAX_QUESTION) === inp.question : true)) history.pop();
   return [
     '[현재 상황]',
     snap,
     '',
-    // Listed separately so a truncated snapshot never hides what to praise.
+    // Listed separately so a truncated snapshot never hides what was already tried.
     '[플레이어가 최근에 친 명령]',
     inp.recentCommands.length ? inp.recentCommands.join(' / ') : '(없음)',
     '',
@@ -319,9 +340,9 @@ export function buildUser(inp: HintInput): string {
     history.length ? history.map((m) => `${SPEAKER[m.from]}: ${m.text}`).join('\n') : '(없음)',
     '',
     '[플레이어 질문]',
-    inp.question || (inp.mode === 'mission' ? '다음엔 뭘 하면 돼요?' : '다음 힌트 주세요'),
+    inp.question || GUIDE_ASK,
     '',
-    inp.mode === 'mission' ? '(다음 한 단계까지만, JSON 하나만 답해)' : `(힌트 ${inp.level}단계로, JSON 하나만 답해)`,
+    inp.want === 'guide' ? '(guide로, 상황·할 일·명령 세 칸. JSON 하나만 답해)' : '(질문에 맞게 guide나 explain으로, 짧게. JSON 하나만 답해)',
   ].join('\n');
 }
 
@@ -399,29 +420,74 @@ async function callModel(env: Env, model: string, system: string, messages: Chat
   return { text, inputTokens: Number(usage.input_tokens) || 0, outputTokens: Number(usage.output_tokens) || 0 };
 }
 
-/** Pull {reply, concept} out of the model text: plain JSON, fenced JSON, truncated JSON, or plain text. */
-export function parseReply(text: string): { reply: string; concept: string } {
+export type AnswerKind = 'guide' | 'explain';
+
+export interface Answer {
+  /** What the player reads: a guide's three lines, or an explanation (and its example) */
+  reply: string;
+  kind: AnswerKind;
+  concept: string;
+}
+
+/** One field of the model's JSON: one line, capped (a cut field ends in '…'). */
+function field(v: unknown, max: number): string {
+  const t = typeof v === 'string' ? v.replace(/\s*\n\s*/g, ' ').trim() : '';
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
+}
+
+/** A string field of JSON the model cut short (max_tokens): only when its closing quote made it. */
+function closedField(t: string, name: string): string | undefined {
+  const m = t.match(new RegExp(String.raw`"${name}"\s*:\s*"((?:[^"\\]|\\.)*)"`));
+  if (!m) return undefined;
+  try {
+    return JSON.parse(`"${m[1]}"`) as string;
+  } catch {
+    return m[1];
+  }
+}
+
+function fromFields(o: Record<string, unknown>): Answer | null {
+  const concept = field(o.concept, 40);
+  if (o.kind === 'guide' || o.situation !== undefined) {
+    const g = { situation: field(o.situation, MAX_FIELD.situation), todo: field(o.todo, MAX_FIELD.todo), command: field(o.command, MAX_FIELD.command) };
+    // A guide is all three lines or nothing.
+    if (!g.situation || !g.todo || !g.command) return null;
+    return { reply: formatGuide(g), kind: 'guide', concept };
+  }
+  if (o.kind === 'explain' || o.answer !== undefined) {
+    const answer = field(o.answer, MAX_FIELD.answer);
+    if (!answer) return null;
+    const example = field(o.example, MAX_FIELD.example);
+    return { reply: example ? `${answer}\n예: ${example}` : answer, kind: 'explain', concept };
+  }
+  if (typeof o.reply === 'string' && o.reply.trim()) return fromText(o.reply.trim(), concept);
+  return null;
+}
+
+/** Text that isn't the JSON asked for (an older {reply}, plain words): a guide if it reads like one. */
+const fromText = (reply: string, concept: string): Answer => ({ reply, kind: parseGuide(reply) ? 'guide' : 'explain', concept });
+
+/**
+ * The answer in the model text: the JSON asked for (plain, fenced or cut short), the older {reply}, or plain
+ * text. null when it is no usable answer (a guide missing a line, JSON cut before anything closed).
+ */
+export function parseAnswer(text: string): Answer | null {
   const t = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
   const obj = t.match(/\{[\s\S]*\}/);
   if (obj) {
     try {
       const o: unknown = JSON.parse(obj[0]);
-      if (isRecord(o) && typeof o.reply === 'string' && o.reply.trim()) {
-        return { reply: o.reply.trim(), concept: typeof o.concept === 'string' ? o.concept.trim() : '' };
-      }
+      if (isRecord(o)) return fromFields(o);
     } catch {
       /* fall through */
     }
   }
-  const field = t.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
-  if (field) {
-    try {
-      return { reply: JSON.parse(`"${field[1]}"`) as string, concept: '' };
-    } catch {
-      return { reply: field[1], concept: '' };
-    }
+  if (t.startsWith('{')) {
+    const names = ['kind', 'situation', 'todo', 'command', 'answer', 'example', 'reply', 'concept'];
+    const o = Object.fromEntries(names.flatMap((n) => (closedField(t, n) === undefined ? [] : [[n, closedField(t, n)]])));
+    return fromFields(o);
   }
-  return { reply: t, concept: '' };
+  return t ? fromText(t, '') : null;
 }
 
 /** What the reply must not contain: the incident's answer, or (mission) any incident going on, bar what the mission shows. */
@@ -437,7 +503,9 @@ interface LogLine {
   mode: HintInput['mode'];
   /** Incident id, or 'D-4:vlan' for a mission */
   scenarioId: string;
-  level: number;
+  want: Want;
+  /** The kind of answer given ('' when none) */
+  kind: AnswerKind | '';
   model: string;
   latencyMs: number;
   leaked: boolean;
@@ -476,7 +544,8 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
     ts: new Date(started).toISOString(),
     mode: inp.mode,
     scenarioId: inp.mode === 'incident' ? inp.scenario.id : `${DAY_LABEL[inp.stage]}:${inp.objective.id}`,
-    level: inp.mode === 'incident' ? inp.level : 0,
+    want: inp.want,
+    kind: '',
     model,
     latencyMs: 0,
     leaked: false,
@@ -490,12 +559,13 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
 
   try {
     const system = inp.mode === 'incident' ? buildSystem(inp, manuals) : buildMissionSystem(inp, manuals);
-    const messages: ChatMessage[] = [{ role: 'user', content: buildUser(inp) }];
     const banned = bannedForInput(inp);
+    const messages: ChatMessage[] = [{ role: 'user', content: buildUser(inp, banned) }];
     const deadline = started + TIMEOUT_MS;
     // Emoji go before the guard reads the reply, so one wedged inside an answer can't hide it.
     const read = (text: string) => {
-      const o = parseReply(text);
+      const o = parseAnswer(text);
+      if (!o) throw new UpstreamError('upstream: incomplete answer');
       return { ...o, reply: stripEmoji(o.reply) };
     };
 
@@ -520,8 +590,9 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
     const ownConcept = inp.mode === 'incident' ? inp.scenario.concept : inp.objective.concept;
     const concept = out.concept || (ownConcept ? CONCEPTS[ownConcept]?.name : '') || '';
     log.outcome = 'ok';
+    log.kind = out.kind;
     log.replyLength = reply.length;
-    return json({ reply, concept }, 200, cors);
+    return json({ reply, kind: out.kind, concept }, 200, cors);
   } catch (e) {
     log.outcome = 'error';
     log.error = e instanceof Error ? e.message.slice(0, 120) : 'unknown';

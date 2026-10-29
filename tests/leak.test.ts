@@ -1,7 +1,8 @@
 // The AI 사수's answer-leak guard (src/ai/leak.ts, used by the hint Worker): answers in any spelling are
 // caught, hints that only point the way pass.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildMissionSystem, buildUser, handleHint, parseInput } from '../worker/src/hint';
+import { buildMissionSystem, buildSystem, buildUser, handleHint, parseAnswer, parseInput } from '../worker/src/hint';
+import { GUIDE_ASK } from '../src/ai/answer';
 import { buildSnapshot } from '../src/ai/client';
 import { stripEmoji } from '../src/ai/emoji';
 import { bannedFor, ifValueRe, iosScript, leaks, missionBanned, missionShown, phraseRe } from '../src/ai/leak';
@@ -246,19 +247,26 @@ describe('mission answers: never an incident going on, but what the mission show
   });
 });
 
-/** A model reply as the gateway returns it. */
+/** A model reply as the gateway returns it: JSON the model wrote is passed as is, words are wrapped in the older {reply}. */
 const upstream = (reply: string) =>
-  new Response(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ reply, concept: 'DNS' }) }], usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 });
+  new Response(
+    JSON.stringify({ content: [{ type: 'text', text: reply.startsWith('{') ? reply : JSON.stringify({ reply, concept: 'DNS' }) }], usage: { input_tokens: 1, output_tokens: 1 } }),
+    { status: 200 },
+  );
 
 const post = (body: unknown) => new Request('http://localhost/api/hint', { method: 'POST', body: JSON.stringify(body) });
 
 const MANUALS = ['매뉴얼0', '매뉴얼1 D-4 내용', '매뉴얼2', '매뉴얼3', '매뉴얼4', '매뉴얼5'];
 
 describe('the Worker reads two kinds of request', () => {
-  it('a scenarioId: an incident hint, as before', () => {
+  it('a scenarioId: help with an incident; a question lets the model pick the kind, none asks for a guide', () => {
     const inp = parseInput({ scenarioId: 'd4-vlan:0', level: 7, question: ' 뭐예요 ', history: [], snapshot: { day: 'D-4' } });
-    expect(inp).toMatchObject({ mode: 'incident', level: 3, question: '뭐예요', dayLabel: 'D-4' });
+    expect(inp).toMatchObject({ mode: 'incident', want: 'auto', question: '뭐예요', dayLabel: 'D-4' });
+    // An older client's ladder level is ignored.
+    expect(inp).not.toHaveProperty('level');
     expect(typeof inp !== 'string' && inp.mode === 'incident' && inp.scenario.id).toBe('d4-vlan:0');
+    expect(parseInput({ scenarioId: 'd4-vlan:0', question: '' })).toMatchObject({ want: 'guide' });
+    expect(parseInput({ scenarioId: 'd4-vlan:0', question: '막혔어', want: 'guide' })).toMatchObject({ want: 'guide' });
     expect(parseInput({ scenarioId: 'nope' })).toBe('unknown scenario');
     // Both ids: the incident wins (the ladder and its guard).
     expect(parseInput({ scenarioId: 'd4-vlan:0', objectiveId: 'dns', stage: 1 })).toMatchObject({ mode: 'incident' });
@@ -308,9 +316,10 @@ describe('the Worker reads two kinds of request', () => {
     expect(sys).toContain(D4_VLAN.title);
     expect(sys).not.toContain(D4_VLAN.solution);
     expect(sys).not.toContain('switchport access');
-    const user = buildUser({ ...withGuide, question: '', history: [{ from: 'player', text: '다음엔 뭘 하면 돼요?' }] });
+    const user = buildUser({ ...withGuide, question: '', want: 'guide', history: [{ from: 'player', text: GUIDE_ASK }] });
     expect(user).toContain('[지금까지 대화]\n(없음)');
-    expect(user).toContain('다음엔 뭘 하면 돼요?');
+    expect(user).toContain(GUIDE_ASK);
+    expect(user).toContain('guide로');
   });
 
   it('the 퇴근 퀴즈: the 사수 is told not to give its answers away (only there)', () => {
@@ -324,6 +333,43 @@ describe('the Worker reads two kinds of request', () => {
     const dns = parseInput({ objectiveId: 'dns', stage: 1 });
     if (typeof dns === 'string' || dns.mode !== 'mission') throw new Error(String(dns));
     expect(buildMissionSystem(dns, MANUALS)).not.toContain(rule);
+  });
+});
+
+describe('the incident prompt and the answer the model gives', () => {
+  const inp = parseInput({ scenarioId: 'd4-vlan:0', question: '', snapshot: { day: 'D-4', portsDown: ['TOR-01 Gi1/0/3'] } });
+  if (typeof inp === 'string' || inp.mode !== 'incident') throw new Error(String(inp));
+
+  it('gives the model the fix as blank shapes, the checks and the 할 일, and keeps the answer private', () => {
+    const sys = buildSystem(inp, MANUALS);
+    expect(sys).toContain('고치는 명령 모양(그대로 써도 됨): TOR-01: interface <포트> → switchport access vlan <번호>');
+    expect(sys).toContain('확인 명령(그대로 써도 됨): show vlan brief / show logging');
+    expect(sys).toContain(`할 일(참고): ${inp.scenario.todo}`);
+    expect(sys).toContain('정답(비공개)');
+    expect(sys).toContain('"kind": "guide"');
+    expect(sys).not.toMatch(/단계 = /);
+  });
+
+  it('the snapshot the model reads has the incident values blanked out', () => {
+    const user = buildUser(inp, bannedFor(inp.scenario));
+    expect(user).not.toContain('Gi1/0/3');
+    expect(user).toContain('TOR-01 <값>');
+  });
+
+  it('reads a guide, an explanation, the older {reply} and plain text; a guide missing a line is no answer', () => {
+    const guide = parseAnswer(JSON.stringify({ kind: 'guide', situation: '서버 하나가 안 보여.', todo: 'VLAN 되돌리기', command: 'show vlan brief', concept: 'VLAN' }));
+    expect(guide).toEqual({ kind: 'guide', reply: '상황: 서버 하나가 안 보여.\n할 일: VLAN 되돌리기\n명령: show vlan brief', concept: 'VLAN' });
+    const explain = parseAnswer('```json\n{"kind":"explain","answer":"VLAN은 스위치 안의 방이야.","example":"show vlan brief"}\n```');
+    expect(explain).toMatchObject({ kind: 'explain', reply: 'VLAN은 스위치 안의 방이야.\n예: show vlan brief' });
+    expect(parseAnswer(JSON.stringify({ reply: '상황: a\n할 일: b\n명령: c' }))).toMatchObject({ kind: 'guide' });
+    expect(parseAnswer('그냥 말로 한 답')).toMatchObject({ kind: 'explain', reply: '그냥 말로 한 답' });
+    expect(parseAnswer(JSON.stringify({ kind: 'guide', situation: '안 보여', todo: '', command: 'show vlan brief' }))).toBeNull();
+    // Cut short by max_tokens: what closed is kept, a guide cut before its 명령 is dropped.
+    expect(parseAnswer('{"kind":"explain","answer":"짧은 답","concept":"VL')).toMatchObject({ kind: 'explain', reply: '짧은 답' });
+    expect(parseAnswer('{"kind":"guide","situation":"a","todo":"b","command":"ssh TOR-')).toBeNull();
+    // Each field is one line and capped.
+    const long = parseAnswer(JSON.stringify({ kind: 'guide', situation: '가'.repeat(300), todo: 'b', command: 'c' }));
+    expect(long?.reply.split('\n')[0].length).toBeLessThanOrEqual('상황: '.length + 80);
   });
 });
 
@@ -362,6 +408,32 @@ describe('the Worker answers both, and the guard still holds', () => {
     // A clean retry goes through.
     replies = ['switchport access vlan 20', 'DNS는 전화번호부야. ns1에 이름을 등록해보자!'];
     expect(await ask(mission)).toMatchObject({ reply: expect.stringContaining('전화번호부') });
+  });
+
+  it('an incident guide may show the shape of the fix, never its values (one retry, then the game answers)', async () => {
+    const valued = JSON.stringify({ kind: 'guide', situation: 'TOR-01 포트 VLAN이 바뀌었어.', todo: 'VLAN 되돌리기', command: 'interface Gi1/0/3 → switchport access vlan 20' });
+    const blank = JSON.stringify({ kind: 'guide', situation: 'TOR-01 포트 VLAN이 바뀌었어.', todo: 'VLAN 되돌리기', command: 'show vlan brief 로 찾고 → interface <포트> → switchport access vlan <번호>' });
+    const body = { scenarioId: 'd4-vlan:0', want: 'guide', question: '', history: [], snapshot: { day: 'D-4' } };
+    replies = [valued, valued];
+    expect(await ask(body)).toEqual({ fallback: true });
+    expect(sent[1].messages.at(-1)?.content).toContain('빈칸');
+    expect(sent[0].messages[0].content).toContain('guide로');
+    replies = [valued, blank];
+    expect(await ask(body)).toMatchObject({ kind: 'guide', reply: expect.stringContaining('명령: show vlan brief 로 찾고 → interface <포트>') });
+    // A guide missing a line: the game answers instead.
+    replies = [JSON.stringify({ kind: 'guide', situation: 'a', todo: 'b' })];
+    expect(await ask(body)).toEqual({ fallback: true });
+  });
+
+  it('an explanation comes back as kind explain, and the log line holds neither the key nor the question', async () => {
+    const logged: string[] = [];
+    vi.mocked(console.log).mockImplementation((line: string) => void logged.push(line));
+    replies = [JSON.stringify({ kind: 'explain', answer: 'VLAN은 스위치 하나를 여러 방으로 나누는 거야.', example: 'show vlan brief' })];
+    expect(await ask({ scenarioId: 'd4-vlan:0', question: 'VLAN 약자가 뭐야? 비밀질문', history: [], snapshot: { day: 'D-4' } })).toMatchObject({ kind: 'explain' });
+    const line = JSON.parse(logged.at(-1) ?? '{}') as Record<string, unknown>;
+    expect(line).toMatchObject({ event: 'hint', mode: 'incident', want: 'auto', kind: 'explain', outcome: 'ok' });
+    expect(JSON.stringify(line)).not.toContain('비밀질문');
+    expect(JSON.stringify(line)).not.toContain('test-key');
   });
 
   it('an incident hint is still guarded exactly as before', async () => {
