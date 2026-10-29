@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { missionCards } from '../src/content/cards';
 import { CONCEPTS } from '../src/content/concepts';
-import { attemptView, choiceOrder, drawQuestions, QUIZ_START, quizReduce, type QuizProgress } from '../src/content/quizRun';
+import { attemptView, choiceOrder, drawQuestions, QUIZ_START, quizReduce, runSeed, type QuizProgress } from '../src/content/quizRun';
 import { template } from '../src/content/incidents';
 import { getStage, planIncidents, STAGES } from '../src/content/stages';
 import type { Objective, Quiz, StageDef } from '../src/content/types';
@@ -333,5 +333,13 @@ describe.each(QUIZ_DAYS.map((d) => [d.label, d] as const))('%s: a slow quiz', (_
     run = recordEvents(run, ['open:quiz', 'quiz:correct']).run;
     expect(run.objectivesDone).toHaveProperty('quiz');
     expect(isCleared(run)).toBe(true);
+  });
+});
+
+describe('runSeed', () => {
+  it('stays the same within a run and changes when the day is played again', () => {
+    expect(runSeed(7, 3)).toBe(runSeed(7, 3));
+    const firstDraws = [1, 2, 3, 4, 5, 6].map((epoch) => drawQuestions(getStage(1).quiz!, runSeed(7, epoch), 1, 0).join());
+    expect(new Set(firstDraws).size).toBeGreaterThan(1);
   });
 });

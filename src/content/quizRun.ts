@@ -1,6 +1,7 @@
 // The 퇴근 퀴즈's rules, without any UI: which questions an attempt draws from the day's pool, the order its
-// choices are shown in, and the steps from question to question. Everything is decided by the save's seed,
-// the day and the attempt number, so a reopened window shows the same draw and the same order.
+// choices are shown in, and the steps from question to question. Everything is decided by the run's seed
+// (runSeed: the save's seed mixed with the run number), the day and the attempt number, so a reopened window
+// shows the same draw and the same order, while playing the day again draws afresh.
 import { daySeed, mulberry32 } from '../sim/scheduler';
 import type { Quiz, QuizQuestion } from './types';
 
@@ -47,6 +48,11 @@ export function quizReduce(p: QuizProgress, step: QuizStep, questions: readonly 
     case 'restart':
       return p.phase === 'wrong' ? { attempt: p.attempt + 1, index: 0, phase: 'ask', picked: null } : p;
   }
+}
+
+/** The quiz seed for one run of a day: the save's seed mixed with the store's run counter (stageEpoch). */
+export function runSeed(seed: number, epoch: number): number {
+  return (seed ^ Math.imul(epoch + 1, 0x27d4eb2f)) >>> 0;
 }
 
 /** A random stream of its own for (seed, day, attempt, salt). */

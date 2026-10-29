@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { attemptView, QUIZ_START, quizReduce, type QuizProgress, type QuizStep } from '../../content/quizRun';
+import { attemptView, QUIZ_START, quizReduce, runSeed, type QuizProgress, type QuizStep } from '../../content/quizRun';
 import { getStage } from '../../content/stages';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
@@ -22,7 +22,8 @@ const TODO: Record<QuizProgress['phase'], string> = {
 
 export function Quiz() {
   const stage = useGame((s) => s.run?.stage);
-  const seed = useGame((s) => s.run?.seed ?? 1);
+  // A fresh draw for every run of the day (a retry or a replay), the same one while this run lasts.
+  const seed = useGame((s) => runSeed(s.run?.seed ?? 1, s.stageEpoch));
   // One record for the whole quiz, kept for the stage: closing it (or a window opened on top, the 도감 with C,
   // the radio with H) comes back to the same question, choice order and explanation.
   const [progress, setProgress] = useStageState<QuizProgress>('quiz', QUIZ_START);
