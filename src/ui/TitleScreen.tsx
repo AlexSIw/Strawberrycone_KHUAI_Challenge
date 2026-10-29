@@ -3,6 +3,7 @@ import { STAGES } from '../content/stages';
 import { LAST_DAY } from '../sim/types';
 import { clearedDays, gameStore, hasSave, useGame } from '../store/game';
 import { Credits } from './Credits';
+import { KeySettings, useOwnKey } from './KeySettings';
 import { SoundToggle } from './SoundToggle';
 import { TitleBackdrop } from './TitleBackdrop';
 import './TitleScreen.css';
@@ -14,11 +15,14 @@ export function TitleScreen() {
   const stars = Object.values(save.best).reduce((a, b) => a + b.stars, 0);
   const [credits, setCredits] = useState(false);
   const closeCredits = useCallback(() => setCredits(false), []);
+  const [keyOpen, setKeyOpen] = useState(false);
+  const closeKey = useCallback(() => setKeyOpen(false), []);
+  const ownKeyInUse = useOwnKey();
 
   // Enter presses the button that shows it: 이어서 하기 with a save, else 새로 시작 (D-5).
-  // (Guarded so a held key from the previous screen doesn't fire it; off while the credits are open.)
+  // (Guarded so a held key from the previous screen doesn't fire it; off while the credits or the key window are open.)
   useEffect(() => {
-    if (credits) return;
+    if (credits || keyOpen) return;
     const shownAt = performance.now();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.repeat || performance.now() - shownAt < 400) return;
@@ -30,7 +34,7 @@ export function TitleScreen() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [credits]);
+  }, [credits, keyOpen]);
 
   const { newGame, continueGame, goSelect } = gameStore.getState();
 
@@ -39,6 +43,17 @@ export function TitleScreen() {
       <main className="title-screen">
         <nav className="title-corner" aria-label="설정">
           <SoundToggle className="title-corner-btn" />
+          <button
+            type="button"
+            className="btn title-corner-btn"
+            title="내 ChatKHU API 키로 AI 사수를 켜요 (선택)"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              setKeyOpen(true);
+            }}
+          >
+            ChatKHU 키{ownKeyInUse ? ' ✓' : ''}
+          </button>
           <button
             type="button"
             className="btn title-corner-btn"
@@ -91,6 +106,7 @@ export function TitleScreen() {
         </section>
       </main>
       {credits && <Credits onClose={closeCredits} />}
+      {keyOpen && <KeySettings onClose={closeKey} />}
     </>
   );
 }

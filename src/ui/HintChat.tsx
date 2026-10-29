@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { parseGuide } from '../ai/answer';
 import { getStage } from '../content/stages';
 import { SEV_LABEL } from '../sim/alarms';
@@ -7,6 +7,7 @@ import type { AlarmSev, Scenario } from '../sim/scenario';
 import { dayLabel, type RoomId } from '../sim/types';
 import { gameStore, MISSION_THREAD, useGame, type HintMessage } from '../store/game';
 import { ModalFrame } from './ModalFrame';
+import { KeySettings, useOwnKey } from './KeySettings';
 import { guideOf, objectiveStatus, waitingText } from './objectiveStatus';
 import { PixelIcon } from './PixelIcon';
 import { Portrait } from './Portrait';
@@ -403,50 +404,63 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
     if (selectedId !== MISSION_THREAD) saveTab(selectedId);
   }, [selectedId, saveTab]);
 
+  // The player's own ChatKHU key: a window above the radio.
+  const [keyOpen, setKeyOpen] = useState(false);
+  const closeKey = useCallback(() => setKeyOpen(false), []);
+  const ownKeyInUse = useOwnKey();
+
   return (
-    <ModalFrame title="쿠사수 무전기" size="narrow">
-      <p className="hc-next muted">
-        {selected ? '막히면 힌트를 받아봐요. 궁금한 걸 직접 물어봐도 돼요.' : '미션을 하다 막히거나 모르는 말이 나오면 물어봐요.'}
-      </p>
-      {tabs.length > 0 && (
-        <div className="hc-tabs" role="tablist">
-          {tabs.map((t) => (
-            <button
-              key={t.sc.id}
-              id={`hc-tab-${t.sc.id}`}
-              type="button"
-              role="tab"
-              aria-controls="hc-panel"
-              aria-selected={selected?.sc.id === t.sc.id}
-              className={`hc-tab ${selected?.sc.id === t.sc.id ? 'on' : ''} ${t.resolved ? 'resolved' : tone(t.sc.severity)}`}
-              onClick={() => setPicked(t.sc.id)}
-            >
-              <PixelIcon name={t.resolved ? 'check' : tone(t.sc.severity) === 'critical' ? 'siren' : 'warn'} label={t.resolved ? '해결됨' : SEV_LABEL[t.sc.severity]} />
-              {t.sc.title}
-            </button>
-          ))}
-          {run && (
-            <button
-              id="hc-tab-mission"
-              type="button"
-              role="tab"
-              aria-controls="hc-panel"
-              aria-selected={!selected}
-              className={`hc-tab mission ${selected ? '' : 'on'}`}
-              onClick={() => setPicked(MISSION_THREAD)}
-            >
-              미션
-            </button>
-          )}
+    <>
+      <ModalFrame title="쿠사수 무전기" size="narrow">
+        <div className="hc-next-row">
+          <p className="hc-next muted">
+            {selected ? '막히면 힌트를 받아봐요. 궁금한 걸 직접 물어봐도 돼요.' : '미션을 하다 막히거나 모르는 말이 나오면 물어봐요.'}
+          </p>
+          <button type="button" className="btn ghost hc-key-btn" onClick={() => setKeyOpen(true)}>
+            ChatKHU 키{ownKeyInUse ? ' · 내 키 사용 중' : ''}
+          </button>
         </div>
-      )}
-      {!run ? (
-        <NoRunView />
-      ) : selected ? (
-        <IncidentView key={selected.sc.id} run={run} sc={selected.sc} resolved={selected.resolved} />
-      ) : (
-        <MissionView run={run} tabbed={tabs.length > 0} />
-      )}
-    </ModalFrame>
+        {tabs.length > 0 && (
+          <div className="hc-tabs" role="tablist">
+            {tabs.map((t) => (
+              <button
+                key={t.sc.id}
+                id={`hc-tab-${t.sc.id}`}
+                type="button"
+                role="tab"
+                aria-controls="hc-panel"
+                aria-selected={selected?.sc.id === t.sc.id}
+                className={`hc-tab ${selected?.sc.id === t.sc.id ? 'on' : ''} ${t.resolved ? 'resolved' : tone(t.sc.severity)}`}
+                onClick={() => setPicked(t.sc.id)}
+              >
+                <PixelIcon name={t.resolved ? 'check' : tone(t.sc.severity) === 'critical' ? 'siren' : 'warn'} label={t.resolved ? '해결됨' : SEV_LABEL[t.sc.severity]} />
+                {t.sc.title}
+              </button>
+            ))}
+            {run && (
+              <button
+                id="hc-tab-mission"
+                type="button"
+                role="tab"
+                aria-controls="hc-panel"
+                aria-selected={!selected}
+                className={`hc-tab mission ${selected ? '' : 'on'}`}
+                onClick={() => setPicked(MISSION_THREAD)}
+              >
+                미션
+              </button>
+            )}
+          </div>
+        )}
+        {!run ? (
+          <NoRunView />
+        ) : selected ? (
+          <IncidentView key={selected.sc.id} run={run} sc={selected.sc} resolved={selected.resolved} />
+        ) : (
+          <MissionView run={run} tabbed={tabs.length > 0} />
+        )}
+      </ModalFrame>
+      {keyOpen && <KeySettings over onClose={closeKey} />}
+    </>
   );
 }

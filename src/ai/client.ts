@@ -16,7 +16,9 @@ import type { Scenario } from '../sim/scenario';
 import { dayLabel, type World } from '../sim/types';
 import { guideOf, missionInFocus } from '../ui/objectiveStatus';
 import { FALLBACK_REASONS, formatGuide, incidentGuide, type FallbackReason } from './answer';
+import { ownKey } from '../ui/keyStorage';
 import { stripEmoji } from './emoji';
+import { KEY_HEADER } from './key';
 import { leaks, missionBanned, missionShown } from './leak';
 
 /** 'guide': answer with the three lines (a button, the terminal's `hint`); 'auto': the question decides. */
@@ -131,6 +133,33 @@ export interface MentorReply {
 
 const isReason = (r: unknown): r is FallbackReason => FALLBACK_REASONS.includes(r as FallbackReason);
 
+/** The player's own ChatKHU key, when they set one (ui/keyStorage.ts): the Worker uses it instead of its own. */
+function ownKeyHeader(): Record<string, string> {
+  const key = ownKey();
+  return key ? { [KEY_HEADER]: key } : {};
+}
+
+/** A response's JSON when it is an object (the Worker's), else null (a proxy's error page, the game's index.html). */
+const jsonObject = (res: Response) =>
+  res.json().then(
+    (d: unknown) => (d && typeof d === 'object' ? (d as Record<string, unknown>) : null),
+    () => null,
+  );
+
+/** Does this key work? One tiny ChatKHU call through the Worker (POST /api/key-check). */
+export async function checkKey(key: string): Promise<{ ok: true } | { ok: false; reason: FallbackReason }> {
+  let res: Response;
+  try {
+    res = await fetch('/api/key-check', { method: 'POST', headers: { [KEY_HEADER]: key }, signal: AbortSignal.timeout(15000) });
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error && e.name === 'TimeoutError' ? 'timeout' : 'offline' };
+  }
+  const data = await jsonObject(res);
+  if (!data) return { ok: false, reason: 'offline' };
+  if (data.ok === true) return { ok: true };
+  return { ok: false, reason: isReason(data.reason) ? data.reason : res.status === 429 ? 'rate' : 'upstream' };
+}
+
 /**
  * POST /api/hint: the AI's reply, or why there is none. No answer at all (the fetch failed, or what came back
  * isn't the Worker's JSON: a dev proxy with no Worker behind it, a 404) means no ChatKHU connection.
@@ -140,22 +169,19 @@ async function askWorker(body: Record<string, unknown>): Promise<{ reply: string
   try {
     res = await fetch('/api/hint', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...ownKeyHeader() },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15000),
     });
   } catch (e) {
     return { reason: e instanceof Error && e.name === 'TimeoutError' ? 'timeout' : 'offline' };
   }
-  // Not the Worker's JSON (a proxy's error page, the game's own index.html): no Worker behind /api.
-  const data = await res.json().then(
-    (d: unknown) => (d && typeof d === 'object' ? (d as { reply?: string; fallback?: boolean; reason?: unknown }) : null),
-    () => null,
-  );
+  // Not the Worker's JSON: no Worker behind /api.
+  const data = await jsonObject(res);
   if (!data) return { reason: 'offline' };
   if (data.fallback) return { reason: isReason(data.reason) ? data.reason : res.status === 429 ? 'rate' : 'upstream' };
   if (!res.ok) return { reason: res.status === 404 || res.status >= 500 ? 'offline' : 'upstream' };
-  const reply = stripEmoji(data.reply ?? '');
+  const reply = stripEmoji(typeof data.reply === 'string' ? data.reply : '');
   return reply ? { reply } : { reason: 'upstream' };
 }
 

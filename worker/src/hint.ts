@@ -17,6 +17,7 @@
 import { fixShapes } from '../../src/ai/blanks';
 import { formatGuide, GUIDE_ASK, parseGuide, type FallbackReason } from '../../src/ai/answer';
 import { stripEmoji } from '../../src/ai/emoji';
+import { isKeyShape, KEY_HEADER } from '../../src/ai/key';
 import { bannedFor, leaks, maskValues, missionBanned, missionShown } from '../../src/ai/leak';
 import { CONCEPTS } from '../../src/content/concepts';
 import { ALL_SCENARIOS, getStage } from '../../src/content/stages';
@@ -64,7 +65,7 @@ export function corsHeaders(request: Request): Headers0 {
   return {
     'access-control-allow-origin': origin,
     'access-control-allow-methods': 'POST, OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': `content-type, ${KEY_HEADER}`,
     'access-control-max-age': '600',
     vary: 'Origin',
   };
@@ -369,7 +370,32 @@ function thinkingOff(model: string): Record<string, unknown> {
   return { thinking: { type: 'disabled' } };
 }
 
-class UpstreamError extends Error {}
+class UpstreamError extends Error {
+  /** The gateway's HTTP status, when it answered with one (401/403: the key was refused) */
+  status: number;
+  constructor(message: string, status = 0) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Why a call to the gateway failed, as the game's notice says it. A refused key is the player's only when it was theirs. */
+function failReason(e: unknown, ownKey: boolean): FallbackReason {
+  if (e instanceof UpstreamError && (e.status === 401 || e.status === 403)) return ownKey ? 'badkey' : 'upstream';
+  // Out of time: our own deadline between calls, or the fetch's timeout signal.
+  const late = (e instanceof UpstreamError && e.message.includes('out of time')) || (e instanceof Error && e.name === 'TimeoutError');
+  return late ? 'timeout' : 'upstream';
+}
+
+/**
+ * The player's own key from the request header: '' when they sent none, null when what they sent isn't a key.
+ * It is used for this one call and never stored or logged.
+ */
+export function playerKey(request: Request): string | null {
+  const raw = request.headers.get(KEY_HEADER);
+  if (raw === null || raw.trim() === '') return '';
+  return isKeyShape(raw.trim()) ? raw.trim() : null;
+}
 
 /** Leave this much time for at least one more upstream call; otherwise give up and fall back. */
 const MIN_CALL_MS = 1_500;
@@ -381,8 +407,15 @@ const discard = (res: Response) => res.body?.cancel().catch(() => {});
  * `deadline` is shared by every upstream call of one /api/hint request (thinking retry + leak retry),
  * so the whole request stays within TIMEOUT_MS and answers before the game client gives up (15 s).
  */
-async function callModel(env: Env, model: string, system: string, messages: ChatMessage[], deadline: number): Promise<UpstreamResult> {
-  const base = { model, max_tokens: MAX_TOKENS, system, messages };
+async function callModel(
+  key: string,
+  model: string,
+  system: string,
+  messages: ChatMessage[],
+  deadline: number,
+  maxTokens = MAX_TOKENS,
+): Promise<UpstreamResult> {
+  const base = { model, max_tokens: maxTokens, system, messages };
   const send = async (body: Record<string, unknown>) => {
     const left = deadline - Date.now();
     if (left < MIN_CALL_MS) throw new UpstreamError('upstream: out of time');
@@ -390,7 +423,7 @@ async function callModel(env: Env, model: string, system: string, messages: Chat
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': env.CHATKHU_API_KEY ?? '',
+        'x-api-key': key,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
@@ -406,7 +439,7 @@ async function callModel(env: Env, model: string, system: string, messages: Chat
   }
   if (!res.ok) {
     await discard(res);
-    throw new UpstreamError(`upstream ${res.status}`);
+    throw new UpstreamError(`upstream ${res.status}`, res.status);
   }
 
   const data: unknown = await res.json();
@@ -517,6 +550,8 @@ interface LogLine {
   inputTokens: number;
   outputTokens: number;
   questionLength: number;
+  /** The player's own key was used (never the key itself) */
+  ownKey: boolean;
   error?: string;
 }
 
@@ -535,7 +570,11 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
   const inp = parseInput(raw);
   if (typeof inp === 'string') return json({ error: inp }, 400, cors);
 
-  if (!env.CHATKHU_API_KEY) return json({ fallback: true, reason: 'nokey' }, 200, cors);
+  // The player's own key first, else the server's.
+  const own = playerKey(request);
+  if (own === null) return json({ fallback: true, reason: 'badkey' }, 200, cors);
+  const key = own || env.CHATKHU_API_KEY;
+  if (!key) return json({ fallback: true, reason: 'nokey' }, 200, cors);
 
   const started = Date.now();
   const ip = request.headers.get('cf-connecting-ip') ?? 'local';
@@ -557,6 +596,7 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
     inputTokens: 0,
     outputTokens: 0,
     questionLength: inp.question.length,
+    ownKey: !!own,
   };
 
   try {
@@ -571,7 +611,7 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
       return { ...o, reply: stripEmoji(o.reply) };
     };
 
-    let res = await callModel(env, model, system, messages, deadline);
+    let res = await callModel(key, model, system, messages, deadline);
     log.inputTokens += res.inputTokens;
     log.outputTokens += res.outputTokens;
     let out = read(res.text);
@@ -580,7 +620,7 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
       log.leaked = true;
       log.retried = true;
       messages.push({ role: 'assistant', content: res.text }, { role: 'user', content: inp.mode === 'incident' ? LEAK_RETRY : MISSION_LEAK_RETRY });
-      res = await callModel(env, model, system, messages, deadline);
+      res = await callModel(key, model, system, messages, deadline);
       log.inputTokens += res.inputTokens;
       log.outputTokens += res.outputTokens;
       out = read(res.text);
@@ -601,13 +641,31 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
   } catch (e) {
     log.outcome = 'error';
     log.error = e instanceof Error ? e.message.slice(0, 120) : 'unknown';
-    // Out of time: our own deadline between calls, or the fetch's timeout signal.
-    const late = (e instanceof UpstreamError && e.message.includes('out of time')) || (e instanceof Error && e.name === 'TimeoutError');
-    log.reason = late ? 'timeout' : 'upstream';
+    log.reason = failReason(e, !!own);
     return json({ fallback: true, reason: log.reason }, 200, cors);
   } finally {
     log.latencyMs = Date.now() - started;
     // One line per AI call for `wrangler tail` (AI usage log). Never logs the key or the question text.
     console.log(JSON.stringify({ event: 'hint', ...log }));
   }
+}
+
+/**
+ * POST /api/key-check: does the player's own key (in the header) work? One tiny call to the gateway.
+ * Answers {ok: true}, or {ok: false, reason} (badkey / rate / timeout / upstream). Logs the outcome, never the key.
+ */
+export async function handleKeyCheck(request: Request, env: Env, cors: Headers0): Promise<Response> {
+  const own = playerKey(request);
+  if (!own) return json({ ok: false, reason: 'badkey' }, 200, cors);
+  const started = Date.now();
+  if (rateLimited(request.headers.get('cf-connecting-ip') ?? 'local', started)) return json({ ok: false, reason: 'rate' }, 429, cors);
+  const model = env.HINT_MODEL || DEFAULT_MODEL;
+  let reason: FallbackReason | null = null;
+  try {
+    await callModel(own, model, '한 단어로만 답해.', [{ role: 'user', content: '안녕' }], started + TIMEOUT_MS, 8);
+  } catch (e) {
+    reason = failReason(e, true);
+  }
+  console.log(JSON.stringify({ event: 'key-check', ts: new Date(started).toISOString(), model, latencyMs: Date.now() - started, outcome: reason ?? 'ok' }));
+  return json(reason ? { ok: false, reason } : { ok: true }, 200, cors);
 }

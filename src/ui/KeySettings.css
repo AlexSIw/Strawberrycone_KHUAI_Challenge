@@ -1,0 +1,57 @@
+/* The ChatKHU key window (KeySettings.tsx): same input look as the radio's question box. */
+.ks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.ks p { margin: 0; }
+.ks-now { font-size: 13px; }
+
+.ks-field {
+  display: flex;
+  gap: 8px;
+}
+.ks-field input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+  background: #1b1620;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.ks-field input:focus { outline: none; border-color: var(--tan); }
+.ks-field input::placeholder { color: #7d7078; font-family: inherit; }
+.ks-show { font-size: 13px; padding: 4px 12px; }
+
+.ks-remember {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ks-remember input { accent-color: var(--tan); }
+
+.ks-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ks-status { font-size: 13px; }
+.ks-status.ok { color: var(--green); }
+.ks-status.bad { color: var(--red-2); }
+.ks-status.muted { color: var(--muted); }
+
+.ks-info {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+}

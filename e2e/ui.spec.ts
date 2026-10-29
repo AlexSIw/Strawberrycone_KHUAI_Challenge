@@ -578,3 +578,59 @@ test('HUD: 좁은 화면에서도 버튼이 잘리지 않음 (시계가 초 단�
     await page.setViewportSize({ width: 1440, height: 900 });
   }
 });
+
+test('ChatKHU 키: 타이틀에서 넣고 확인 · 저장, hint 요청에 실리고, 무전기 위에서 열고 닫기', async ({ page }) => {
+  const problems = watchProblems(page);
+  const KEY = 'sk-e2e-OWN-KEY-0123456789';
+  const sent: (string | undefined)[] = [];
+  await page.route('**/api/key-check', (route) => {
+    sent.push(route.request().headers()['x-chatkhu-key']);
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.route('**/api/hint', (route) => {
+    sent.push(route.request().headers()['x-chatkhu-key']);
+    return route.fulfill({ json: { reply: '상황: 내 키로 받은 답이야.\n할 일: 계속하기\n명령: help', kind: 'guide', concept: '' } });
+  });
+  await start(page);
+
+  // Title: the key window, a key that isn't one, then a real one checked and remembered.
+  await page.getByRole('button', { name: /ChatKHU 키/ }).click();
+  const keyWindow = page.locator('.modal-head h2', { hasText: 'ChatKHU 키' });
+  await expect(keyWindow).toBeVisible();
+  const field = page.getByLabel('ChatKHU API 키');
+  await field.fill('not a key');
+  await expect(page.locator('.ks-status.bad')).toContainText('키 모양이 아니에요');
+  await expect(page.getByRole('button', { name: '저장' })).toBeDisabled();
+  await field.fill(KEY);
+  await page.getByRole('button', { name: '연결 확인' }).click();
+  await expect(page.locator('.ks-status.ok')).toContainText('연결됐어요');
+  await page.getByLabel(/이 브라우저에 기억하기/).check();
+  await page.getByRole('button', { name: '저장' }).click();
+  expect(await page.evaluate(() => localStorage.getItem('khu-dc-chatkhu-key'))).toBe(KEY);
+  await page.keyboard.press('Escape');
+  await expect(keyWindow).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /ChatKHU 키 ✓/ })).toBeVisible();
+
+  // In the game: `hint` carries the key, and the answer is the AI's (no notice).
+  await play(page, 2);
+  await interact(page, 'desk');
+  await run(page, 'hint');
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('쿠사수> 상황: 내 키로 받은 답이야.');
+  expect((await rows(page)).join('\n')).not.toContain('ChatKHU API랑');
+  expect(sent).toEqual([KEY, KEY]);
+
+  // The radio shows the key is in use; its key window closes on Esc without closing the radio, and 지우기 forgets it.
+  await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'hint' }));
+  await page.getByRole('button', { name: 'ChatKHU 키 · 내 키 사용 중' }).click();
+  await expect(keyWindow).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(keyWindow).toHaveCount(0);
+  await expect(page.locator('.modal-head h2', { hasText: '쿠사수 무전기' })).toBeVisible();
+  await page.getByRole('button', { name: 'ChatKHU 키 · 내 키 사용 중' }).click();
+  await page.getByRole('button', { name: '지우기' }).click();
+  expect(await page.evaluate(() => localStorage.getItem('khu-dc-chatkhu-key'))).toBeNull();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'ChatKHU 키', exact: true })).toBeVisible();
+
+  expect(problems).toEqual([]);
+});

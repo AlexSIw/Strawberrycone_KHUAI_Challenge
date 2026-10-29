@@ -1,7 +1,19 @@
-/* 쿠사수 무전기: incident tabs, chat thread with the mentor, hint ladder controls. */
-.hc-next {
+/* 쿠사수 무전기: incident tabs, chat thread with the mentor, hint and answer controls. */
+.hc-next-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 10px;
+}
+.hc-next {
+  margin: 0;
   font-size: 13px;
+}
+.hc-key-btn {
+  flex: none;
+  font-size: 12px;
+  padding: 3px 10px;
 }
 
 /* ----- tabs ----- */
