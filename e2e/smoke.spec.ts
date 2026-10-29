@@ -1,5 +1,6 @@
 // Smoke test: start a new game, get through the briefing, walk a little, open the NOC (all three tabs)
-// and the concept book, and make sure nothing logs an error. Then "D-Day 바로 체험" from the title.
+// and the concept book, and make sure nothing logs an error. Then the title menu: 이어서 하기 on a save,
+// 나가기 back to the title, and 완료한 날 다시 하기.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { getStage } from '../src/content/stages';
 
@@ -34,17 +35,8 @@ async function enterAwayCards(page: Page): Promise<void> {
   await expect(card).toHaveCount(0);
 }
 
-/**
- * Press Enter (sometimes click the box) until the briefing is gone, then read the first missions' 미션 브리핑
- * away. A day started cold opens with its "지금까지" recap first: Enter goes on to the briefing.
- */
-async function skipBriefing(page: Page, day: 0 | 5, recap = false): Promise<void> {
-  if (recap) {
-    await expect(page.locator('.rcp')).toBeVisible();
-    await page.waitForTimeout(350);
-    await page.keyboard.press('Enter');
-    await expect(page.locator('.rcp')).toHaveCount(0);
-  }
+/** Press Enter (sometimes click the box) until the briefing is gone, then read the first missions' 미션 브리핑 away. */
+async function skipBriefing(page: Page, day: 0 | 5): Promise<void> {
   const box = introDialog(page, day);
   await expect(box).toBeVisible();
   const lines = getStage(day).intro.length;
@@ -151,27 +143,44 @@ test('새로 시작 → 브리핑 → 이동 → 관제 화면(NMS/SMS/FMS) → 
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
-test('타이틀 → D-Day 바로 체험 → HUD에 D-Day', async ({ page }, testInfo) => {
+test('타이틀 → 이어서 하기 → D-Day → 나가기 → 완료한 날 다시 하기', async ({ page }, testInfo) => {
   const errors = collectErrors(page);
 
+  // A first visit: nothing to go on with or to play again yet, and no shortcut past the days.
   await page.goto('/');
-  await page.getByRole('button', { name: /D-Day 바로 체험/ }).click();
+  await expect(page.getByRole('button', { name: /새로 시작/ })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /이어서 하기/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /완료한 날 다시 하기/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /D-Day 바로 체험/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /달력/ })).toHaveCount(0);
+
+  // D-5 to D-1 cleared: 이어서 하기 goes on to D-Day, with no "지금까지" before the briefing.
+  await page.evaluate(() => {
+    const best = Object.fromEntries([0, 1, 2, 3, 4].map((d) => [d, { stars: 2, points: 70 }]));
+    localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best, cards: [] }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: /이어서 하기/ }).click();
   await expect(page.locator('.hud')).toContainText('D-Day');
-  // Nothing before D-Day is cleared: the "지금까지" recap comes before the briefing.
-  await expect(page.locator('.rcp h2')).toHaveText(/지금까지/);
-  await skipBriefing(page, 5, true);
-  await expect(page.locator('.hud')).toContainText(/D-Day/);
+  await expect(page.locator('.rcp')).toHaveCount(0);
+  await skipBriefing(page, 5);
   await expect(page.locator('.hud-time')).toHaveText(/^\d{2}:\d{2}:\d{2}/);
   await page.screenshot({ path: testInfo.outputPath('08-dday.png') });
 
-  // 나가기 goes back to the title; the day select shows all six days (none cleared yet, so all locked).
+  // 나가기 goes back to the title.
   await page.getByRole('button', { name: /나가기/ }).click();
   await page.getByRole('dialog').getByRole('button', { name: '나가기' }).click();
-  await page.getByRole('button', { name: /달력/ }).click();
+  await expect(page.getByRole('button', { name: /이어서 하기/ })).toBeVisible();
+
+  // 완료한 날 다시 하기: all six days, D-Day (not cleared yet) locked; a cleared day starts without "지금까지".
+  await page.getByRole('button', { name: /완료한 날 다시 하기/ }).click();
   await expect(page.getByRole('heading', { name: /완료한 날 다시 하기/ })).toBeVisible();
   await expect(page.locator('.sel-card')).toHaveCount(6);
-  await expect(page.locator('.sel-card:disabled')).toHaveCount(6);
-  await page.screenshot({ path: testInfo.outputPath('09-calendar.png') });
+  await expect(page.locator('.sel-card:disabled')).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath('09-replay.png') });
+  await page.getByRole('button', { name: /^D-3 / }).click();
+  await expect(page.locator('.hud')).toContainText('D-3');
+  await expect(page.locator('.rcp')).toHaveCount(0);
 
   expect(errors, errors.join('\n')).toEqual([]);
 });

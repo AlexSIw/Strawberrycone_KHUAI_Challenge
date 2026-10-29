@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import { LAST_DAY, type StageId } from '../sim/types';
-import { gameStore, useGame, type GameState } from '../store/game';
+import { STAGES } from '../content/stages';
+import { LAST_DAY } from '../sim/types';
+import { clearedDays, gameStore, hasSave, useGame } from '../store/game';
 import { Credits } from './Credits';
 import { SoundToggle } from './SoundToggle';
 import './TitleScreen.css';
@@ -23,23 +24,15 @@ function Rack({ units, seed }: { units: number; seed: number }) {
   );
 }
 
-/** 이어하기: the store's continueGame() when it has one, else the furthest day reached. */
-function continueGame(): void {
-  const s = gameStore.getState() as GameState & { continueGame?: () => void };
-  if (typeof s.continueGame === 'function') s.continueGame();
-  else s.play(Math.min(s.save.unlocked, LAST_DAY) as StageId);
-}
-
-const hasSave = (s: GameState) => s.save.unlocked > 0 || Object.keys(s.save.best).length > 0;
-
 export function TitleScreen() {
   const save = useGame((s) => s.save);
-  const hasProgress = save.unlocked > 0 || Object.keys(save.best).length > 0;
+  const saved = hasSave(save);
+  const canReplay = clearedDays(save).length > 0;
   const stars = Object.values(save.best).reduce((a, b) => a + b.stars, 0);
   const [credits, setCredits] = useState(false);
   const closeCredits = useCallback(() => setCredits(false), []);
 
-  // Enter does what the hint line says: first visit → a new game from D-5, returning player → 이어하기.
+  // Enter presses the button that shows it: 이어서 하기 with a save, else 새로 시작 (D-5).
   // (Guarded so a held key from the previous screen doesn't fire it; off while the credits are open.)
   useEffect(() => {
     if (credits) return;
@@ -49,14 +42,14 @@ export function TitleScreen() {
       if ((e.target as HTMLElement | null)?.closest('button')) return;
       e.preventDefault();
       const s = gameStore.getState();
-      if (hasSave(s)) continueGame();
+      if (hasSave(s.save)) s.continueGame();
       else s.newGame();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [credits]);
 
-  const { play, goSelect, newGame } = gameStore.getState();
+  const { newGame, continueGame, goSelect } = gameStore.getState();
 
   return (
     <>
@@ -85,7 +78,6 @@ export function TitleScreen() {
             <Rack units={9} seed={4} />
           </div>
           <div className="title-floor" />
-          <div className="title-walker" />
         </div>
 
         <section className="title-center">
@@ -95,46 +87,28 @@ export function TitleScreen() {
           </h1>
           <p className="title-sub">수강신청을 지켜라!</p>
 
-          <div className="title-hero" aria-hidden>
-            <div className="title-lion" />
-            <div className="title-shadow" />
-          </div>
+          <p className="title-pitch">서버를 몰라도 괜찮아요. D-5 첫 출근부터 수강신청 날까지, 학교 서버를 직접 지켜 내세요.</p>
 
-          <p className="title-pitch">
-            서버를 하나도 몰라도 괜찮아요.
-            <br />
-            D-5 첫 출근부터 수강신청 당일까지, 케이블 한 줄부터 관제까지 직접 지켜내세요!
-          </p>
-
+          {/* A button that can't do anything yet stays in place, disabled, without its note. */}
           <div className="title-buttons">
-            {hasProgress && (
-              <button className="btn primary title-btn" onClick={continueGame}>
-                ▶ 이어하기
-              </button>
-            )}
-            <button className={`btn title-btn${hasProgress ? '' : ' primary'}`} onClick={() => newGame()}>
-              ✨ 새로 시작
+            <button className={`btn title-btn${saved ? '' : ' primary'}`} onClick={() => newGame()} title="D-5부터 시작해요. 모은 별과 카드는 그대로예요.">
+              새로 시작
+              {!saved && <kbd>Enter</kbd>}
             </button>
-            <button className="btn title-btn title-dday" onClick={() => play(LAST_DAY)}>
-              🔥 D-Day 바로 체험
+            <button className={`btn title-btn${saved ? ' primary' : ''}`} disabled={!saved} onClick={() => continueGame()}>
+              이어서 하기
+              {saved && (
+                <>
+                  <small className="title-btn-note">{STAGES[Math.min(save.unlocked, LAST_DAY)].label}</small>
+                  <kbd>Enter</kbd>
+                </>
+              )}
             </button>
-            <button className="btn title-btn" onClick={() => goSelect()}>
-              📅 달력
+            <button className="btn title-btn" disabled={!canReplay} onClick={() => goSelect()}>
+              완료한 날 다시 하기
+              {canReplay && <small className="title-btn-note">★ {stars}</small>}
             </button>
           </div>
-
-          <p className="title-next">
-            {hasProgress ? (
-              <>
-                저장된 기록 ★ {stars}개 · <kbd>Enter</kbd> 또는 <strong>이어하기</strong>로 계속해요.
-              </>
-            ) : (
-              <>
-                <kbd>Enter</kbd> 또는 <strong>새로 시작</strong>을 눌러 첫 출근을 해요. 수강신청 날만 보고 싶다면 <strong>D-Day 바로 체험</strong>! (앞 날들에 배우는 내용을
-                먼저 짧게 정리해 줘요)
-              </>
-            )}
-          </p>
         </section>
       </main>
       {credits && <Credits onClose={closeCredits} />}
