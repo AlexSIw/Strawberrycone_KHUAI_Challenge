@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { gameStore, useGame, type Toast } from '../store/game';
+import { PixelIcon } from './PixelIcon';
+import { toastHead } from './toastHead';
 import './Toasts.css';
 
 // The objective panel keeps every active incident and objective listed, so toasts only need to catch the eye.
 const LIFETIME: Record<Toast['kind'], number> = { alert: 7000, resolved: 5000, objective: 4000, info: 6000 };
 const LEAVE_MS = 260;
 
-const LABEL: Record<Toast['kind'], string> = { alert: '장애 발생', resolved: '해결 완료', objective: '목표 달성', info: '알림' };
-
 function ToastItem({ toast, under }: { toast: Toast; under: boolean }) {
   const [leaving, setLeaving] = useState(false);
+  const head = toastHead(toast);
 
   useEffect(() => {
     const life = LIFETIME[toast.kind];
@@ -31,14 +32,17 @@ function ToastItem({ toast, under }: { toast: Toast; under: boolean }) {
     <li className={`toast-li${under ? ' toast-under' : ''}`} role={toast.kind === 'alert' ? 'alert' : 'status'}>
       <button
         type="button"
-        className={`toast-item toast-${toast.kind} ${leaving ? 'leaving' : ''}`}
+        className={`toast-item toast-${toast.kind}${toast.source ? ` toast-src-${toast.source}` : ''} ${leaving ? 'leaving' : ''}`}
         onClick={(e) => {
           e.currentTarget.blur();
           setLeaving(true);
         }}
         title="클릭하면 닫혀요"
       >
-        <span className="toast-kind">{LABEL[toast.kind]}</span>
+        <span className="toast-kind">
+          {head.icon && <PixelIcon name={head.icon} />}
+          {head.label}
+        </span>
         <span className="toast-text">{toast.text}</span>
         <span className="toast-timer" style={{ animationDuration: `${LIFETIME[toast.kind]}ms` }} aria-hidden />
       </button>

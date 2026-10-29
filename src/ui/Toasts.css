@@ -37,7 +37,8 @@
 .toast-item.leaving { animation: toast-out 0.26s ease-in forwards; }
 .toast-item:focus-visible { outline: 3px solid var(--tan); outline-offset: 2px; }
 
-.toast-kind { font-family: var(--pixel); font-size: 11px; letter-spacing: 0.04em; }
+/* Kind label; an alert also shows a phone or siren icon, so a call and an NMS alarm tell apart at a glance */
+.toast-kind { display: flex; align-items: center; gap: 6px; font-family: var(--pixel); font-size: 11px; letter-spacing: 0.04em; }
 .toast-text { font-size: 14px; line-height: 1.45; }
 
 .toast-timer {
