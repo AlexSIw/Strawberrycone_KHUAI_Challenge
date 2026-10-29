@@ -625,7 +625,9 @@ export class DataCenter extends Phaser.Scene {
     // Zoom, bounds and offset first: startFollow snaps to the lion using the offset it is given
     // (it resets followOffset), so passing the real one avoids a slide-in pan at stage start.
     this.layoutCamera();
-    cam.startFollow(this.player, true, 0.12, 0.12, cam.followOffset.x, cam.followOffset.y);
+    // No easing (lerp 1): an easing camera sits at fractional scroll values and is rounded apart from the
+    // lion, so the pixel-art lion would jitter back and forth by a pixel on screen while walking.
+    cam.startFollow(this.player, true, 1, 1, cam.followOffset.x, cam.followOffset.y);
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutCamera, this);
     this.cleanups.push(() => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutCamera, this));
   }
