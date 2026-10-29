@@ -33,6 +33,11 @@ export interface Env {
 }
 
 const UPSTREAM = 'https://factchat-cloud.mindlogic.ai/v1/gateway/claude/v1/messages/';
+/**
+ * The gateway sits behind Cloudflare, which turns away requests with no User-Agent (403, "error code: 1010"), and a
+ * Worker's fetch sends none of its own.
+ */
+const USER_AGENT = 'khu-dc-game-hint/1.0 (+https://github.com/AlexSIw/Strawberrycone_KHUAI_Challenge)';
 export const DEFAULT_MODEL = 'claude-haiku-5-5';
 const MAX_TOKENS = 300;
 const TIMEOUT_MS = 12_000;
@@ -425,6 +430,7 @@ async function callModel(
         'content-type': 'application/json',
         'x-api-key': key,
         'anthropic-version': '2023-06-01',
+        'user-agent': USER_AGENT,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(left),
@@ -438,8 +444,9 @@ async function callModel(
     res = await send(base);
   }
   if (!res.ok) {
-    await discard(res);
-    throw new UpstreamError(`upstream ${res.status}`, res.status);
+    // The gateway's own words, one short line, for the log ("Invalid API key", "Model 'X' is not available …").
+    const said = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 160);
+    throw new UpstreamError(`upstream ${res.status}${said ? `: ${said}` : ''}`, res.status);
   }
 
   const data: unknown = await res.json();
@@ -640,7 +647,7 @@ export async function handleHint(request: Request, env: Env, cors: Headers0, man
     return json({ reply, kind: out.kind, concept }, 200, cors);
   } catch (e) {
     log.outcome = 'error';
-    log.error = e instanceof Error ? e.message.slice(0, 120) : 'unknown';
+    log.error = e instanceof Error ? e.message.slice(0, 200) : 'unknown';
     log.reason = failReason(e, !!own);
     return json({ fallback: true, reason: log.reason }, 200, cors);
   } finally {

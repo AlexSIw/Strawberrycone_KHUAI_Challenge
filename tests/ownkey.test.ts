@@ -151,6 +151,21 @@ describe('the Worker uses it instead of its own, and never logs it', () => {
     expect(apiKeys).toEqual([]);
   });
 
+  it('every call to the gateway says who it is (its Cloudflare blocks an empty User-Agent); a refusal is logged in its own words', async () => {
+    const agents: string[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init: { headers: Record<string, string> }) => {
+      agents.push(init.headers['user-agent']);
+      return new Response('error code: 1010', { status: 403 });
+    });
+    expect(await (await handleHint(req('/api/hint', mission), { CHATKHU_API_KEY: 'server-key-123456' }, {}, MANUALS)).json()).toEqual({
+      fallback: true,
+      reason: 'upstream',
+    });
+    expect(agents[0]).toMatch(/^khu-dc-game-hint\//);
+    expect(JSON.parse(logged.at(-1)!)).toMatchObject({ outcome: 'error', error: 'upstream 403: error code: 1010' });
+    expect(logged.join('\n')).not.toContain('server-key-123456');
+  });
+
   it('/api/key-check: one tiny call with the player’s key; ok, or why not', async () => {
     expect(await (await handleKeyCheck(req('/api/key-check', {}, KEY), {}, {})).json()).toEqual({ ok: true });
     expect(apiKeys).toEqual([KEY]);
