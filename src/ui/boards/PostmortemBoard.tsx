@@ -233,7 +233,7 @@ function Write({ run }: { run: StageRun }) {
         }
       >
         <div className="pmb-mentor is-ok">
-          <Portrait who="mentor" size={44} />
+          <Portrait who="mentor" size={32} />
           <p>
             <b>회고 완료!</b> 보고서는 누굴 혼내려는 게 아니라, 같은 장애를 두 번 겪지 않으려고 쓰는 거야. 제출하면 수강신청 운영 끝! 개념 카드{' '}
             <b>{CONCEPTS[CARD].name}</b>도 받을 수 있어.

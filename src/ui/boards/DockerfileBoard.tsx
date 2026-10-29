@@ -190,7 +190,7 @@ function Recipe({ onSolved }: { onSolved: () => void }) {
 
       {problem && (
         <div className="dfb-mentor is-bad">
-          <Portrait who="mentor" size={44} />
+          <Portrait who="mentor" size={32} />
           <p>{problem.msg}</p>
         </div>
       )}
@@ -202,7 +202,7 @@ function Finished({ celebrate }: { celebrate: boolean }) {
   return (
     <ModalFrame title="설계 보드 · 레시피 카드 (Dockerfile)" size="wide">
       <div className="dfb-mentor">
-        <Portrait who="mentor" size={44} />
+        <Portrait who="mentor" size={32} />
         <p>
           {celebrate
             ? '완벽해! 레시피 카드 완성. 이걸로 어느 서버에서나 똑같은 밀키트(이미지)를 만들 수 있어.'

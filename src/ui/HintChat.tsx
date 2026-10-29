@@ -76,7 +76,7 @@ function markLadderSeen(): void {
 function MentorBubble({ msg, plain = false }: { msg: HintMessage; plain?: boolean }) {
   return (
     <div className="hc-row mentor">
-      <Portrait who="mentor" size={36} />
+      <Portrait who="mentor" size={32} />
       <div className="hc-bubble">
         <div className="hc-meta">
           <span className="hc-who">쿠사수</span>
@@ -116,7 +116,7 @@ function Message({ msg }: { msg: HintMessage }) {
 function Typing() {
   return (
     <div className="hc-row mentor">
-      <Portrait who="mentor" size={36} />
+      <Portrait who="mentor" size={32} />
       <div className="hc-bubble hc-typing">
         <span className="hc-dots" aria-hidden>
           <i />
@@ -133,7 +133,7 @@ function Typing() {
 function NoRunView() {
   return (
     <div className="hc-calm">
-      <Portrait who="mentor" size={72} />
+      <Portrait who="mentor" size={64} />
       <p className="hc-calm-say">게임을 시작하면 무전이 연결돼!</p>
     </div>
   );

@@ -286,7 +286,7 @@ function Puzzle() {
 function MentorSays({ text, tone }: { text: string; tone?: 'bad' | 'warn' }) {
   return (
     <div className={`dcb-mentor ${tone ? `is-${tone}` : ''}`}>
-      <Portrait who="mentor" size={44} />
+      <Portrait who="mentor" size={32} />
       <p>{text}</p>
     </div>
   );

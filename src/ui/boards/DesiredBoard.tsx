@@ -170,12 +170,12 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
         <div className="dsb-side">
           {msg ? (
             <div className={`dsb-mentor is-${msg.tone}`}>
-              <Portrait who={msg.tone === 'ok' ? 'mentor' : 'system'} size={44} />
+              <Portrait who={msg.tone === 'ok' ? 'mentor' : 'system'} size={32} />
               <p>{msg.text}</p>
             </div>
           ) : (
             <div className="dsb-mentor">
-              <Portrait who="mentor" size={44} />
+              <Portrait who="mentor" size={32} />
               <p>
                 {applied
                   ? '네가 적은 숫자가 "약속"이야. 아래 표에서 실제 pod 수가 그 숫자와 맞는지 가끔 확인해봐.'
