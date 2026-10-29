@@ -224,6 +224,26 @@ test('창 위에 연 창은 닫으면 원래 창으로: 터미널 세션 그대�
   expect(problems).toEqual([]);
 });
 
+test('Esc는 맨 위 창만 닫음: 창 위에 뜬 나가기 확인창을 닫아도 아래 창은 그대로', async ({ page }) => {
+  const problems = watchProblems(page);
+  await start(page);
+  await play(page, 2);
+  await page.evaluate(() => (window as unknown as Win).__store.getState().openModal({ type: 'noc', tab: 'nms' }));
+  await expect(title(page)).toHaveText(/관제 화면/);
+
+  // The HUD's exit confirm over the NOC, then Esc: only the confirm goes away.
+  await page.getByRole('button', { name: '나가기' }).click();
+  await expect(title(page).filter({ hasText: '나갈까요' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(title(page).filter({ hasText: '나갈까요' })).toHaveCount(0);
+  await expect(title(page)).toHaveText(/관제 화면/);
+
+  // A second Esc closes the NOC itself.
+  await page.keyboard.press('Escape');
+  await expect(title(page)).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
 test('IOS 터미널: ssh로 장비 프롬프트, ?는 바로 도움말, Ctrl+Z, exit로 관리 PC', async ({ page }) => {
   const problems = watchProblems(page);
   await start(page);
