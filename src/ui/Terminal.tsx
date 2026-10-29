@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { getStage } from '../content/stages';
 import { available, osOf, promptFor } from '../sim/commands';
 import type { HostOs } from '../sim/commands/types';
+import { SEV_LABEL } from '../sim/alarms';
 import { activeScenarios, type StageRun } from '../sim/engine';
 import { iosCheatSheet, iosComplete, iosHelp, MODE_LEGEND } from '../sim/ios';
 import type { IosMode, StageId } from '../sim/types';
@@ -769,7 +770,7 @@ export function Terminal({ host }: { host: string }) {
                   <li key={rt.id}>
                     <span className="term-inc-title">
                       <span>
-                        <PixelIcon name={def.severity === 'critical' ? 'siren' : 'warn'} className={`term-inc-sev ${def.severity}`} /> {def.title}
+                        <PixelIcon name={def.severity === 'critical' ? 'siren' : 'warn'} label={SEV_LABEL[def.severity]} className={`term-inc-sev ${def.severity}`} /> {def.title}
                       </span>
                       {/* What the caller said (the toast with it may be hidden by this window). */}
                       {def.alert && (

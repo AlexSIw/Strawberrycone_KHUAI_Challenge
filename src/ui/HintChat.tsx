@@ -476,7 +476,7 @@ export function HintChat({ initialScenario }: { initialScenario?: string }) {
               className={`hc-tab ${selected?.sc.id === t.sc.id ? 'on' : ''} ${t.resolved ? 'resolved' : tone(t.sc.severity)}`}
               onClick={() => setPicked(t.sc.id)}
             >
-              <PixelIcon name={t.resolved ? 'check' : tone(t.sc.severity) === 'critical' ? 'siren' : 'warn'} />
+              <PixelIcon name={t.resolved ? 'check' : tone(t.sc.severity) === 'critical' ? 'siren' : 'warn'} label={t.resolved ? '해결됨' : SEV_LABEL[t.sc.severity]} />
               {t.sc.title}
             </button>
           ))}

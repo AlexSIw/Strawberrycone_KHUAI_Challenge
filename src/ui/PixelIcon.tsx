@@ -17,9 +17,9 @@ export function PixelIcon({ name, scale = 2, label, className = '' }: { name: Ic
       shapeRendering="crispEdges"
       fill="currentColor"
       role={label ? 'img' : undefined}
+      aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      {label && <title>{label}</title>}
       {half && <path d={half} fillOpacity={0.5} />}
       <path d={full} />
     </svg>
