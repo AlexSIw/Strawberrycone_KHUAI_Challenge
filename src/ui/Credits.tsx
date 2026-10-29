@@ -30,7 +30,7 @@ export function Credits({ onClose }: { onClose: () => void }) {
             <li>
               “Snowland Town” — Music by Matthew Pablo — <Ext href="https://www.matthewpablo.com">www.matthewpablo.com</Ext> (
               <Ext href="https://opengameart.org/content/snowland-town">OpenGameArt.org</Ext>,{' '}
-              <Ext href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</Ext>) · 타이틀·달력·엔딩
+              <Ext href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</Ext>) · 타이틀·다시 하기·엔딩
             </li>
             <li>
               “Bouncing Around in Pixel Town” by Eric Matyas (<Ext href="https://soundimage.org">www.soundimage.org</Ext>)

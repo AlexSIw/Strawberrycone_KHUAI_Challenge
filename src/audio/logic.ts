@@ -4,7 +4,7 @@ import type { Speaker } from '../content/types';
 
 // ---------- music ----------
 
-/** lobby: title, stage select, ending · normal: in a stage · incident: while an incident is going on */
+/** lobby: title, 완료한 날 다시 하기, ending · normal: in a stage · incident: while an incident is going on */
 export type MusicTrack = 'lobby' | 'normal' | 'incident';
 
 /** The bits of game state the audio rules look at (GameState fits it). */
@@ -32,7 +32,7 @@ export function activeIncidents(s: Pick<AudioView, 'screen' | 'run'>): string[] 
 }
 
 /**
- * The lobby tune outside the stages (title, stage select, ending), the normal loop inside one (playing,
+ * The lobby tune outside the stages (title, 완료한 날 다시 하기, ending), the normal loop inside one (playing,
  * results), and the incident loop while any incident is on.
  */
 export function musicFor(s: Pick<AudioView, 'screen' | 'run'>): MusicTrack {

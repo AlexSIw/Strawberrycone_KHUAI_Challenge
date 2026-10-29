@@ -123,7 +123,7 @@ export function Results() {
           {def.label} · {koDate(def.date)} · {def.title}
         </p>
         <h1 className="res-title">{isFinal ? '수강신청 사수 성공!' : '오늘 일 끝! 퇴근'}</h1>
-        <p className="res-sub">📋 {def.label} 일일 리포트</p>
+        <p className="res-sub">{def.label} 일일 리포트</p>
 
         <div className="res-stars" aria-label={`별 ${score.stars}개`}>
           {[1, 2, 3].map((n) => (
@@ -136,7 +136,7 @@ export function Results() {
         <div className="res-points">
           <span className="res-points-value">{points}</span>
           <span className="res-points-unit">/ 100점</span>
-          {newRecord ? <span className="res-best new">🏆 신기록!</span> : <span className="res-best">최고 기록 {prevBest}점</span>}
+          {newRecord ? <span className="res-best new">신기록!</span> : <span className="res-best">최고 기록 {prevBest}점</span>}
         </div>
 
         <p className="res-breakdown">
@@ -169,11 +169,11 @@ export function Results() {
           />
         </dl>
 
-        <p className="res-advice">💬 {advice(score.stars, parts, isFinal)}</p>
+        <p className="res-advice">{advice(score.stars, parts, isFinal)}</p>
 
         {tomorrow && (
           <p className="res-tomorrow">
-            📅 내일 미리보기 · <b>{tomorrow.label}</b> {koDate(tomorrow.date)} 「{tomorrow.title}」 <span className="muted">{tomorrow.subtitle}</span>
+            내일 미리보기 · <b>{tomorrow.label}</b> {koDate(tomorrow.date)} 「{tomorrow.title}」 <span className="muted">{tomorrow.subtitle}</span>
           </p>
         )}
 
@@ -198,14 +198,14 @@ export function Results() {
           <p className="res-next-hint">{isFinal ? 'Enter를 누르면 엔딩을 볼 수 있어요.' : 'Enter를 누르면 다음 날로 가요.'}</p>
 
           <div className="res-actions">
-            <button className="btn" onClick={() => finish('select')}>
-              📅 달력
+            <button className="btn" onClick={() => finish('title')}>
+              처음 화면
             </button>
             <button className="btn" onClick={() => finish('retry')}>
               다시 하기
             </button>
             <button className="btn primary res-primary" onClick={() => finish('next')}>
-              {isFinal ? '엔딩 보기 🏆' : '다음 날 출근 ▶'}
+              {isFinal ? '엔딩 보기 ▶' : '다음 날 출근 ▶'}
             </button>
           </div>
         </div>

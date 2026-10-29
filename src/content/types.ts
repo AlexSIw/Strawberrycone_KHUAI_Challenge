@@ -139,7 +139,7 @@ export interface StageDef {
   rooms?: RoomId[];
   /**
    * "지금까지" recap, shown when this day is started without the day before cleared on this save
-   * (calendar jump, D-Day 바로 체험): what earlier days built (plain Korean bullets) and the concept cards
+   * (이어서 하기 on an old save with gaps): what earlier days built (plain Korean bullets) and the concept cards
    * they would have taught (readable from the recap).
    */
   recap?: { built: string[]; concepts: string[] };

@@ -164,9 +164,10 @@ test('타이틀 → D-Day 바로 체험 → HUD에 D-Day', async ({ page }, test
   await expect(page.locator('.hud-time')).toHaveText(/^\d{2}:\d{2}:\d{2}/);
   await page.screenshot({ path: testInfo.outputPath('08-dday.png') });
 
-  // The day select shows all six days (none cleared yet, so all locked).
+  // 나가기 goes back to the title; the day select shows all six days (none cleared yet, so all locked).
   await page.getByRole('button', { name: /나가기/ }).click();
   await page.getByRole('dialog').getByRole('button', { name: '나가기' }).click();
+  await page.getByRole('button', { name: /달력/ }).click();
   await expect(page.getByRole('heading', { name: /완료한 날 다시 하기/ })).toBeVisible();
   await expect(page.locator('.sel-card')).toHaveCount(6);
   await expect(page.locator('.sel-card:disabled')).toHaveCount(6);

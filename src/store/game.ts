@@ -102,7 +102,7 @@ export interface ConceptPopup {
 }
 
 export interface SaveData {
-  /** Highest day reached (every day is playable from the calendar; this only drives 이어하기) */
+  /** Highest day reached: the day 이어서 하기 plays (완료한 날 다시 하기 goes by `best` instead) */
   unlocked: number;
   /** Seed of this save's incident plans: the same save replays the same surprises */
   seed: number;
@@ -110,6 +110,7 @@ export interface SaveData {
   cards: string[];
 }
 
+/** 'select' is 완료한 날 다시 하기 (Calendar.tsx): the days cleared on this save, to play again. */
 export type Screen = 'title' | 'select' | 'playing' | 'results' | 'ending';
 
 /** Lion walking speed multiplier (the HUD's 🏃 button). */
@@ -163,8 +164,8 @@ export interface GameState {
   cycleMoveSpeed(): void;
   dialogue: { lines: DialogueLine[]; index: number; then: 'play' | 'results' } | null;
   /**
-   * The "지금까지" screen of a day started cold (some earlier day not cleared on this save: a calendar jump,
-   * D-Day 바로 체험): the day it is for, or null. It is part of the briefing: while it is open, `dialogue` is an
+   * The "지금까지" screen of a day started cold (some earlier day not cleared on this save: 이어서 하기 on an
+   * old save with gaps): the day it is for, or null. It is part of the briefing: while it is open, `dialogue` is an
    * empty briefing (so the game is paused and the map, hotkeys and windows wait), and dismissRecap (Enter,
    * Space, 계속, or nextDialogue) closes it and starts the day's briefing.
    */
@@ -211,16 +212,17 @@ export interface GameState {
 
   // navigation
   goTitle(): void;
+  /** 완료한 날 다시 하기 */
   goSelect(): void;
   /** Starts a day. `recap` forces the "지금까지" screen on or off (default: on for a cold start, see GameState.recap). */
   play(stage: StageId, opts?: { recap?: boolean }): void;
   /** Start over: a fresh save seed (new surprises), progress kept */
   newGame(): void;
-  /** 이어하기: the furthest day reached (save.unlocked, at most D-Day) */
+  /** 이어서 하기: the furthest day reached (save.unlocked, at most D-Day) */
   continueGame(): void;
   /** 완료한 날 다시 하기: plays a day cleared on this save, never with "지금까지"; any other day does nothing. */
   replay(stage: StageId): void;
-  finishResults(next: 'next' | 'retry' | 'select'): void;
+  finishResults(next: 'next' | 'retry' | 'title'): void;
 
   // loop
   tick(): void;
@@ -587,7 +589,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
     const save = { ...get().save, best: { ...get().save.best }, cards: [...get().save.cards] };
     const prev = save.best[run.stage];
     if (!prev || score.points > prev.points) save.best[run.stage] = { stars: score.stars, points: score.points };
-    // Tomorrow opens for 이어하기 (every day is playable from the calendar anyway).
+    // Tomorrow opens for 이어서 하기.
     save.unlocked = Math.max(save.unlocked, Math.min(LAST_DAY, run.stage + 1));
     writeSave(save);
     set({
@@ -652,7 +654,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
     play: (stage, opts = {}) => {
       const def = getStage(stage);
       const s = get();
-      // Started with some earlier day not cleared on this save (calendar jump, D-Day 바로 체험): "지금까지" first.
+      // Started with some earlier day not cleared on this save (an old save with gaps): "지금까지" first.
       // A retry of the same day doesn't show it again.
       const skipped = Array.from({ length: stage }, (_, d) => d).some((d) => !s.save.best[d]);
       const cold = opts.recap ?? (stage > 0 && skipped && s.run?.stage !== stage);
@@ -690,13 +692,13 @@ export const gameStore = createStore<GameState>()((set, get) => {
 
     finishResults: (next) => {
       const run = get().run;
-      if (!run) return get().goSelect();
+      if (!run) return get().goTitle();
       if (next === 'retry') return get().play(run.stage);
       if (next === 'next') {
         if (run.stage === LAST_DAY) return set({ screen: 'ending', ...NO_WINDOWS });
         return get().play((run.stage + 1) as StageId);
       }
-      get().goSelect();
+      get().goTitle();
     },
 
     isPaused: () => {

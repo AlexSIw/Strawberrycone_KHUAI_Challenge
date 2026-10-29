@@ -205,7 +205,7 @@ export function Hud() {
               <span className="hud-btn-label">퇴근하기 ▶</span>
             </button>
           ) : (
-            <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="달력 화면으로 나가기">
+            <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="처음 화면으로 나가기">
               <span aria-hidden>🚪</span>
               <span className="hud-btn-label">나가기</span>
             </button>
@@ -234,7 +234,7 @@ export function Hud() {
                 className="btn primary"
                 onClick={() => {
                   setConfirmExit(false);
-                  store.goSelect();
+                  store.goTitle();
                 }}
               >
                 나가기

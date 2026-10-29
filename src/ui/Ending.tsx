@@ -69,7 +69,7 @@ export function Ending() {
             <p className="end-body">
               위 사람은 수강신청 날 서버를 끝까지 지켜냈기에 이 증서를 드립니다.
               <br />
-              <span className="muted">앞 날들(D-5~D-1)도 달력에서 해 보면, 그날 무엇을 지켰는지 더 잘 보여요.</span>
+              <span className="muted">못 해 본 날(D-5~D-1)은 '새로 시작'을 누르면 D-5부터 차례로 해 볼 수 있어요.</span>
             </p>
           )}
 
@@ -84,7 +84,7 @@ export function Ending() {
             <div>
               <span className="end-stat-label">개념 카드</span>
               <span className="end-stat-value">
-                🃏 {owned.length}
+                {owned.length}
                 <small>/{cardTotal}</small>
               </span>
               {missing.length > 0 && missing.length <= 3 && (
@@ -132,7 +132,7 @@ export function Ending() {
       {/* Sticky so the next step is visible without scrolling past the certificate */}
       <div className="end-actions">
         <p className="end-next">
-          {perfect ? '모든 날 별 3개! 완벽한 수료예요 🏆' : '축하해요! 별 3개를 못 받은 날은 달력에서 다시 도전할 수 있어요.'}
+          {perfect ? '모든 날 별 3개! 완벽한 수료예요.' : "축하해요! 별 3개를 못 받은 날은 처음 화면의 '완료한 날 다시 하기'에서 다시 도전할 수 있어요."}
         </p>
         <button className="btn primary end-btn" onClick={() => gameStore.getState().goTitle()}>
           처음 화면으로

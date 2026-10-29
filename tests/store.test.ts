@@ -742,6 +742,18 @@ describe('save', () => {
     expect(S().dialogue?.lines).toBe(getStage(3).intro);
   });
 
+  it("the report's 처음 화면 goes to the title, and so does a report with no run behind it", () => {
+    gameStore.setState({ save: { unlocked: 1, seed: 7, best: {}, cards: [] } });
+    S().play(0);
+    gameStore.setState({ screen: 'results', dialogue: null });
+    S().finishResults('title');
+    expect(S().screen).toBe('title');
+    expect(S().run).toBeNull();
+    gameStore.setState({ screen: 'results', run: null });
+    S().finishResults('next');
+    expect(S().screen).toBe('title');
+  });
+
   it('hasSave (이어서 하기) and clearedDays (완료한 날 다시 하기) read the save', () => {
     const done = { stars: 2, points: 70 };
     const save = (over: Partial<SaveData>): SaveData => ({ unlocked: 0, seed: 7, best: {}, cards: [], ...over });
