@@ -72,7 +72,7 @@ export const templates: IncidentTemplate[] = [
         '노드에 "점검 중" 팻말을 걸어서 새 pod를 막고, 있던 pod를 다른 노드로 내보내는 kubectl 명령이 있어. 뜨거운 랙의 노드마다 해 줘.',
       ],
       // Naming the hot nodes next to the verb gives the whole command away too ('n1, n2를 drain 해').
-      bannedPhrases: ['kubectl drain', 'drain n1', 'drain n2', 'cordon n1', 'cordon n2', 'n1, n2', 'n1·n2', 'n1과 n2', 'k8s-01·02', 'k8s-01, k8s-02', '를 drain'],
+      bannedPhrases: ['drain n1', 'drain n2', 'cordon n1', 'cordon n2', 'n1, n2', 'n1·n2', 'n1과 n2', 'k8s-01·02', 'k8s-01, k8s-02'],
       solution:
         '항온항습기(CRAC)가 멈춰 랙 1·2 온도가 오르고 있다. 랙 2의 K8S-01·02(n1·n2)는 45°C를 넘으면 NotReady가 되고, 쿠버네티스가 그 위 pod를 다른 노드에 새로 띄운다(nodes 의 TEMP·STATUS, pods 의 NODE·AGE, FMS 랙 온도로 확인. 보통 경보를 볼 즈음엔 이미 옮겨져 있다). 우리 몫: kubectl drain n1 → kubectl drain n2 로 "점검 중" 팻말을 걸어 냉각이 불안한 동안 새 pod가 그 노드로 다시 가지 않게 막고(남은 pod가 있으면 다른 노드로 내보냄), FMS에서 "시설팀 통보". 시설팀이 냉각을 고치면 온도가 내려가고, 다 식으면 uncordon 으로 다시 연다.',
       solutionSteps: [
@@ -121,7 +121,6 @@ export const templates: IncidentTemplate[] = [
         ],
         bannedPhrases: [
           ...ifPhrases(port),
-          'allowed vlan add',
           `vlan add ${vlan}`,
           `VLAN ${vlan}`,
           `vlan ${vlan}`,
@@ -164,7 +163,7 @@ export const templates: IncidentTemplate[] = [
         '배포(새 버전을 올리는 일) 상태와 pod 버전을 봐. 새 버전이 문제라면, 고치는 동안 학생들은 기다려야 할까? 예전 버전으로 돌아갈 수는 없을까?',
         '배포 진행(rollout) 관련 명령어 중에 이전 버전으로 되돌리는 게 있어.',
       ],
-      bannedPhrases: ['rollout undo', 'set image enroll'],
+      bannedPhrases: ['set image enroll'],
       solution: 'enroll:v2 에 버그가 있다 (deploys, pods 의 VERSION, logs 의 500 에러). rollout undo enroll 로 v1으로 되돌린다. (set image enroll enroll:v1 로 다시 배포해도 된다)',
       solutionSteps: [{ cmd: 'rollout undo enroll', host: 'ops' }],
       concept: 'rollback',

@@ -162,13 +162,17 @@ describe('the 사수 can not give the fix away in plain words', () => {
   it.each([
     ['d3-l4health:0', '헬스체크 경로를 /health 로 바꿔봐'],
     ['d3-l4health:1', '헬스체크 포트를 80으로 맞춰'],
-    ['d3-notify:0', 'notify 서비스만 재시작해'],
-    ['d3-notify:0', '알림 서비스를 다시 시작해봐'],
-    ['d4-errdisable:0', '그 포트를 한 번 껐다가 다시 켜면 돼'],
-    ['d4-svi:0', '그 인터페이스를 다시 켜면 돼'],
+    ['d3-notify:0', 'svc restart notify 하면 돼'],
+    ['d4-errdisable:0', 'Gi1/0/2 를 껐다가 다시 켜면 돼'],
+    ['d4-svi:0', 'interface vlan 10 을 다시 켜면 돼'],
   ])('%s: "%s" is caught', (id, reply) => expect(said(id, reply)).toBe(true));
+  // The shape of the fix, with the value left for the player to find, is a hint, not the answer.
   it.each([
     ['d3-l4health:0', '헬스체크 설정을 서버가 실제로 가진 경로와 비교해봐'],
     ['d3-l4health:1', '대표 주소 10.10.30.100 으로 들어오는 요청을 봐'],
+    ['d3-l4health:0', 'lb health set path <경로> 로 맞춰'],
+    ['d3-notify:0', '멈춘 서비스를 찾아서 svc restart <서비스>'],
+    ['d4-errdisable:0', 'interface <포트> → shutdown → no shutdown 으로 포트를 껐다가 다시 켜면 돼'],
+    ['d4-svi:0', 'interface vlan <번호> 에 들어가서 no shutdown'],
   ])('%s: "%s" passes', (id, reply) => expect(said(id, reply)).toBe(false));
 });

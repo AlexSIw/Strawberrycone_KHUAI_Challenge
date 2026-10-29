@@ -42,7 +42,7 @@ export const templates: IncidentTemplate[] = [
       ],
       // The right value too, in plain words ("경로를 /health 로" / "포트를 80으로"): ' /health ' is word-edged
       // so '/healthz' still passes, and '80' never matches inside '8080'.
-      bannedPhrases: ['/healthz', '8080', 'health set', 'set path', 'set port', v.kind === 'path' ? ' /health ' : '80'],
+      bannedPhrases: ['/healthz', '8080', v.kind === 'path' ? ' /health ' : '80'],
       solution:
         v.kind === 'path'
           ? 'L4 헬스체크가 웹 서버에 없는 경로(/healthz)를 묻고 있어서, 멀쩡한 서버를 DOWN으로 보고 손님을 안 보냈다. ssh L4-01 → lb pool / lb health 로 확인 → lb health set path /health'
@@ -88,7 +88,7 @@ export const templates: IncidentTemplate[] = [
           '랙 스위치에서 코어로 가는 길은 여러 갈래야. 끊긴 게 평소에 데이터가 다니던 길이야, 막아 두었던 예비 길이야? 어느 쪽이든 길이 하나 줄었으니 다음 고장엔 버틸 여유가 줄어. 끊긴 길의 물리 상태부터 봐.',
           '네트워크실 TOR 배선판 앞에서 케이블을 하나씩 검사하고 손볼 수 있어.',
         ],
-        bannedPhrases: [...ifPhrases(port), '케이블을 교체', '케이블 교체', '케이블을 바꿔', '새 케이블', '새것으로'],
+        bannedPhrases: ifPhrases(port),
         solution: `TOR-01 ${port} ↔ 코어 스위치 사이 케이블이 끊어졌다. 남은 길로 서비스는 살아 있지만 이중화가 줄어든 상태(major). 네트워크실 TOR 배선판(케이블 점검)에서 그 케이블을 테스트하고 새것으로 교체한다.`,
         solutionSteps: [{ label: `TOR-01 ${port} 업링크 케이블 교체`, action: (w) => replaceCable(w, id) }],
         concept: 'spof',
@@ -120,7 +120,7 @@ export const templates: IncidentTemplate[] = [
         '서비스 하나만 다루는 svc 명령들이 있어. 알림팀이 고친 새 버전(핫픽스)을 올려 뒀대. 그 버전이 돌게 하려면 그 서비스에 뭘 해야 할까?',
       ],
       // The fix in plain words too ("재시작해", "다시 시작해", "restart").
-      bannedPhrases: ['svc restart notify', 'restart', '재시작', '다시 시작', '다시 켜', '껐다 켜'],
+      bannedPhrases: ['svc restart notify', 'restart notify'],
       solution: '알림 서비스만 재시작한다: svc restart notify (급히 고친 새 버전, 핫픽스가 반영됨)',
       solutionSteps: [{ cmd: 'svc restart notify', host: 'ops' }],
       concept: 'isolation',
@@ -165,7 +165,7 @@ export const templates: IncidentTemplate[] = [
           '우리가 관리하는 길(네트워크)이 문제라면 다른 서비스도 같이 느려야 해. 이 서비스를 누가 운영하는지 서비스 관제 화면(SMS)에서 확인해봐.',
           '내 담당이 아닌 시스템은 직접 손대지 않아. 경보 목록에 이런 경우를 위한 버튼이 있어.',
         ],
-        bannedPhrases: ['이관', '담당팀에 넘', '담당팀으로 넘', String(v.team)],
+        bannedPhrases: [String(v.team)],
         solution: `우리 네트워크와 다른 서비스는 정상이고 ${v.label}만 느리다 → ${v.team}이 운영하는 서버 쪽 문제. NOC 경보 목록에서 "담당팀 이관"을 눌러 ${v.team}에 넘기고, 해결될 때까지 지켜본다.`,
         solutionSteps: [{ label: `담당팀 이관 → ${v.team} 조치`, action: back }],
         concept: 'escalation',

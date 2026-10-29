@@ -92,7 +92,7 @@ export const templates: IncidentTemplate[] = [
         '그 스위치에서 코어로 가는 케이블은 몇 개 꽂혀 있고, 지금 일하는 건 몇 개야? 고리(루프)를 막으려고 STP가 하나를 막아 두고 있을 거야. 막힌 걸 억지로 열지 말고, 두 줄을 한 줄처럼 쓰는 방법은 없을까?',
         '여러 케이블을 한 묶음으로 만드는 설정(LACP)이 있어. 묶음은 양쪽 장비에 똑같이 해 줘야 해. 다 하고 나면 묶음 상태를 한 줄씩 보여주는 show 명령으로 확인!',
       ],
-      bannedPhrases: ['channel-group', 'channel group', '채널 그룹', 'mode active', 'interface range', ...['Te1/1/1', 'Te1/1/2', 'Te1/0/3', 'Te1/0/4'].flatMap(ifPhrases)],
+      bannedPhrases: [...['Te1/1/1', 'Te1/1/2', 'Te1/0/3', 'Te1/0/4'].flatMap(ifPhrases)],
       solution:
         'TOR-01 → CORE-01 케이블이 두 개(Te1/1/1·Te1/1/2 ↔ Te1/0/3·Te1/0/4) 있는데 묶여 있지 않아서, STP가 고리를 막으려고 TOR-01 Te1/1/2를 막고(BLK) 있었다. 그래서 10G 한 줄로 부하 테스트 트래픽(약 12.8Gbps)을 받다가 넘쳤다. 양쪽을 LACP로 묶는다. TOR-01: enable → configure terminal → interface range te1/1/1 - 2 → channel-group 1 mode active → end → write memory / CORE-01: enable → configure terminal → interface range te1/0/3 - 4 → channel-group 1 mode active → end → write memory. show etherchannel summary 에서 Po1(SU)와 멤버 (P) 확인.',
       solutionSteps: [
@@ -150,7 +150,6 @@ export const templates: IncidentTemplate[] = [
           'STP 상태를 보는 show 명령에서 그 VLAN이 "없다"고 나오면 누가 꺼 둔 거야(일기장에 흔적이 있어). 설정 모드에서 VLAN별로 STP를 다시 켜는 명령을 떠올려봐. 한쪽만 켜도 고리는 끊겨.',
         ],
         bannedPhrases: [
-          'spanning-tree vlan',
           'no spanning-tree',
           `VLAN ${VLAN}`,
           `vlan ${VLAN}`,
@@ -241,7 +240,7 @@ export const templates: IncidentTemplate[] = [
           '묶음 멤버 옆 글자가 P면 묶여서 일하는 중, D는 꺼짐, s는 묶음에서 빠져 멈춘 것(suspended: 상대가 같이 안 묶어 줌)이야. 빠진 멤버의 양쪽 끝 장비를 다 확인해. 장비 일기장(로그)에 누가 설정을 바꿨는지도 남아 있어.',
           '꺼진 포트라면 그 포트 설정 모드에서 다시 켜고, 한쪽만 묶여 있다면 빠진 쪽 포트도 그 장비의 묶음에 다시 넣어 줘. 그다음 저장!',
         ],
-        bannedPhrases: [...ifPhrases(port), 'channel-group', 'channel group', '채널 그룹', 'mode active', 'no shutdown', 'no shut'],
+        bannedPhrases: ifPhrases(port),
         solution: shut
           ? `누군가 TOR-01 ${port}(묶음 Po1의 멤버)를 shutdown 해서 묶음이 10G 한 줄로 줄었다 (show etherchannel summary → ${port}(D), show logging). TOR-01: enable → configure terminal → interface ${port} → no shutdown → end → write memory`
           : `누군가 CORE-01 ${port}를 묶음에서 빼서(no channel-group) 한쪽만 묶인 상태가 됐다. 반대편 TOR-01 Te1/1/2가 묶음에서 빠져 멈춤(s, suspended) 상태가 되어 묶음이 10G 한 줄로 줄었다 (show etherchannel summary, show logging). CORE-01: enable → configure terminal → interface ${port} → channel-group 1 mode active → end → write memory`,
@@ -290,7 +289,7 @@ export const templates: IncidentTemplate[] = [
         '버전 이름표(태그)를 아침에 쓰던 것으로 바꿔서 컨테이너를 새로 띄워봐. 이미 뜬 컨테이너는 이미지를 바꿀 수 없어서 지우고 다시 실행해야 해.',
       ],
       // '1.0' alone: the rollback tag ('1.0 태그로 다시 띄워').
-      bannedPhrases: ['enroll:1.0', '1.0', 'docker rm -f enroll', 'docker run -p'],
+      bannedPhrases: ['enroll:1.0', '1.0', 'docker rm -f enroll'],
       solution:
         '동료가 버그 있는 새 이미지(enroll:1.1)로 APP-01 컨테이너를 다시 만들었다 (docker ps 의 IMAGE, docker logs 의 500 에러로 확인). 아침에 만든 이전 태그로 되돌린다: (srv-new에서) docker rm -f enroll → docker run -p 80:8000 enroll:1.0 (컨테이너 이름은 docker ps, 태그는 docker images 로 확인)',
       solutionSteps: [

@@ -63,7 +63,7 @@ export const templates: IncidentTemplate[] = [
           '그 스위치의 서버 포트들이 각각 어느 동네(VLAN)에 들어 있는지 표로 보고, 오늘 만든 배정표와 비교해봐. 장비 일기장(로그)에 누가 설정을 건드린 흔적도 남아 있을 거야.',
           'VLAN과 포트 배정을 한눈에 보여주는 show 명령이 있어. 고칠 때는 그 포트의 설정 모드로 들어가서 VLAN을 정해주는 명령을 떠올려봐. 고친 다음엔 저장도! 잘 고쳐졌는지는 관리 PC(ops)에서 ping 해 봐 (스위치에는 관리망 주소만 있어서 거기서는 서버로 ping이 안 가).',
         ],
-        bannedPhrases: [...ifPhrases(port), `vlan ${vlan}`, `VLAN ${vlan}`, `vlan${vlan}`, `VLAN${vlan}`, 'access vlan', ipOf(host)],
+        bannedPhrases: [...ifPhrases(port), `vlan ${vlan}`, `VLAN ${vlan}`, `vlan${vlan}`, `VLAN${vlan}`, ipOf(host)],
         solution: `${v.label} 서버가 꽂힌 TOR-01 ${port} 포트가 누군가에 의해 VLAN ${v.wrong}으로 바뀌었다 (show vlan brief, show logging으로 확인). TOR-01: enable → configure terminal → interface ${port} → switchport access vlan ${vlan} → end → write memory`,
         solutionSteps: [
           { ios: ['enable', 'configure terminal', `interface ${port}`, `switchport access vlan ${vlan}`, 'end', 'write memory'], host: 'TOR-01' },
@@ -103,7 +103,7 @@ export const templates: IncidentTemplate[] = [
         '주소를 나눠주는 서버에서 그 건물 몫(풀)이 지금 어떤지 봐. 빈 칸이 남아 있어? 칸을 차지한 게 지금 있는 기기들이야, 이미 떠난 기기가 남긴 흔적이야?',
         'dhcp 명령 중에 풀의 범위를 넓히는 것과, 떠난 기기가 남긴 임대를 정리하는 것이 있어. 어느 쪽이 맞는지는 위에서 본 숫자가 알려줘.',
       ],
-      bannedPhrases: ['dhcp leases clear', 'leases clear', 'dhcp pool set', 'pool set lib-wifi', '10.20.31.230', 'range 10.20.31'],
+      bannedPhrases: ['clear lib-wifi', 'pool set lib-wifi', '10.20.31.230', 'range 10.20.31'],
       solution:
         v.kind === 'stale'
           ? '도서관 무선 풀이 떠난 기기들의 묵은 임대(stale)로 꽉 찼다. ssh dhcp01 → dhcp pool list 로 확인 → dhcp leases clear lib-wifi (또는 범위를 넓혀도 된다: dhcp pool set lib-wifi range 10.20.31.100 10.20.31.230)'
@@ -184,7 +184,7 @@ export const templates: IncidentTemplate[] = [
           '스위치가 스스로 막은 포트는 저절로 안 풀려. 포트 상태를 바꾸는 명령은 그 포트의 설정 모드에 있어. 원인이 사라졌는지 확인하고 써봐. 고친 뒤엔 저장!',
         ],
         // The fix in plain words too ("껐다가 다시 켜").
-        bannedPhrases: [...ifPhrases(port), 'shutdown', 'no shut', String(v.label), '껐다', '다시 켜'],
+        bannedPhrases: [...ifPhrases(port), String(v.label)],
         solution: `누군가 ${v.label} 자리의 포트(${port})에 작은 스위치를 꽂아서 스위치 신호(BPDU)가 들어왔고, bpduguard가 그 포트를 err-disabled로 막았다. 그 장비는 이미 빠졌으니 TOR-01: enable → configure terminal → interface ${port} → shutdown → no shutdown → end → write memory`,
         solutionSteps: [
           { ios: ['enable', 'configure terminal', `interface ${port}`, 'shutdown', 'no shutdown', 'end', 'write memory'], host: 'TOR-01' },
@@ -224,7 +224,7 @@ export const templates: IncidentTemplate[] = [
           '인터페이스를 켜고 끄는 건 그 인터페이스의 설정 모드에서 하는 일이야. 어느 인터페이스인지는 위에서 본 표가 알려줘. 고친 뒤엔 저장!',
         ],
         // The fix in plain words too ("다시 켜").
-        bannedPhrases: ['no shutdown', 'no shut', `vlan ${vlan}`, `VLAN ${vlan}`, `vlan${vlan}`, `Vlan${vlan}`, 'interface vlan', '다시 켜'],
+        bannedPhrases: [`vlan ${vlan}`, `VLAN ${vlan}`, `vlan${vlan}`, `Vlan${vlan}`],
         solution: `CORE-01의 VLAN ${vlan} 인터페이스(SVI: 그 VLAN의 게이트웨이)가 누군가에 의해 shutdown 됐다 (show ip interface brief → administratively down, show logging). CORE-01: enable → configure terminal → interface vlan ${vlan} → no shutdown → end → write memory`,
         solutionSteps: [{ ios: ['enable', 'configure terminal', `interface vlan ${vlan}`, 'no shutdown', 'end', 'write memory'], host: 'CORE-01' }],
         concept: 'gateway',

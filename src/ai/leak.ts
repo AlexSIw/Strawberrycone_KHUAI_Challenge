@@ -1,19 +1,20 @@
 // Answer-leak guard for the AI 사수 (쿠사수): which strings in a reply would give the answer away.
 // Shared by the hint Worker (worker/src/index.ts) and the tests (tests/leak.test.ts).
 //
-// Banned:
-//  - the scenario's bannedPhrases;
+// The 사수 may show a fix's shape with the values blank ('switchport access vlan <번호>', see blanks.ts), never
+// the fix with its values. Banned:
+//  - the scenario's bannedPhrases (the values: which port, which VLAN, which app, which server …);
 //  - every multi-word shell solution command, and the exact values in it (IPs, CIDRs, port pairs, KEY=VALUE);
 //  - IOS solution lines (`{ ios: [...] }` steps) in every abbreviated form, via iosVariantsRegex, when they
-//    carry a value (VLAN number, IP, interface name …) or change config. Pure navigation (enable,
-//    configure terminal, end, exit, write memory) and value-less show commands are fine to mention,
-//    unless the scenario lists them in `bannedIos`;
+//    carry a value (VLAN number, IP, interface name …). Lines without one (navigation, `shutdown`,
+//    `no shutdown`, value-less show commands) are fine to mention, unless the scenario lists them in `bannedIos`;
 //  - the values in those IOS lines on their own: IPs/CIDRs, interface names in any form ('Gi1/0/5',
 //    'gi 1/0/5', 'GigabitEthernet1/0/5', '1/0/5'), and VLAN numbers ('VLAN 20', 'vlan20', '20번 VLAN').
 // A MISSION answer (the radio's mission mode) is held to the same for every incident going on, minus what the
 // mission itself shows on screen (missionBanned).
 import type { Objective } from '../content/types';
 import { canonicalize, iosVariantsRegex } from '../sim/ios';
+import { parseText } from '../sim/ios/leak';
 import { normIf } from '../sim/net/ifname';
 import type { Scenario } from '../sim/scenario';
 import type { IosLevel } from '../sim/types';
@@ -129,9 +130,15 @@ export function iosScript(lines: string[], start: IosLevel = 'user'): IosScriptL
   });
 }
 
-/** Does this line give the fix away? Values (VLAN, IP, interface…) or a config change, but not navigation. */
+/**
+ * Does this line give the fix away? Only when it carries a value (VLAN, IP, interface, number, name): the
+ * value-less lines are the shape the 사수 may show. A line the parser doesn't know is judged by its digits,
+ * and in config modes it is banned outright.
+ */
 export function iosLineBanned(l: IosScriptLine): boolean {
   if (NAVIGATION.has(l.canonical)) return false;
+  const r = parseText(l.canonical, l.level);
+  if (r?.ok) return r.path.some((p) => p.node.arg !== undefined);
   return /\d/.test(l.canonical) || CONFIG_LEVELS.includes(l.level);
 }
 

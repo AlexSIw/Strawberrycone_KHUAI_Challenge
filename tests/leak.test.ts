@@ -62,7 +62,7 @@ describe('IOS answers are caught', () => {
   });
   it('the line as the solution wrote it (short form)', () => {
     expect(svi('int vlan 30 들어가서 해봐')).toBe(true);
-    expect(svi('마지막에 no shut 하면 돼')).toBe(true);
+    expect(svi('stand 1 ip 10.10.30.1 하면 돼')).toBe(true);
   });
   it('a value on its own: an IP, an interface name in any spelling, a VLAN number', () => {
     expect(svi('게이트웨이는 10.10.30.1 이야')).toBe(true);
@@ -111,6 +111,10 @@ describe('generic hints pass', () => {
     'show vlan brief 같은 화면에서 포트 목록을 봐',
     '설정을 바꾸고 나면 end 로 나와서 저장하는 거 잊지 마',
     'NMS 경보에 뜬 장비부터 직접 접속해서 상태를 봐',
+    // The fix's shape with the values blank, and the lines that carry no value at all.
+    'interface <포트> → switchport access vlan <번호> 로 바꾸면 돼',
+    'interface vlan <번호> 에 ip address <IP> <마스크> 를 넣고 no shutdown',
+    '마지막에 no shut 하면 돼',
   ])('%s', (hint) => {
     expect(vlan(hint)).toBe(false);
     expect(svi(hint)).toBe(false);

@@ -39,7 +39,7 @@ export const templates: IncidentTemplate[] = [
           '불은 들어오는데(연결은 살아 있는데) 깨진 데이터가 쌓인다면, 신호가 지나가는 길(맨 아래 물리 계층)에 흠이 있는 거야. 그 포트에 꽂힌 게 뭔지 끝까지 따라가 봐.',
           '네트워크실 TOR 배선판 앞에서 케이블을 하나씩 검사하고 손볼 수 있어.',
         ],
-        bannedPhrases: ['케이블을 교체', '케이블 교체', '케이블을 바꿔', '케이블을 갈아', '새 케이블', '새것으로', String(v.label)],
+        bannedPhrases: [String(v.label)],
         solution:
           '케이블 속 선이 일부 손상돼서 연결은 살아 있지만 깨진 데이터(CRC 오류)가 쌓이고 있다. NMS에서 CRC가 늘어나는 TOR-01 포트를 찾아 그 케이블을 따라가고, 네트워크실 TOR 배선판에서 새 케이블로 교체한다.',
         solutionSteps: [

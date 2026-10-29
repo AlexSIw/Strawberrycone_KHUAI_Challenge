@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { blankIos, blankShell, fixShapes } from '../src/ai/blanks';
+import { bannedFor, iosScript, iosLineBanned, leaks } from '../src/ai/leak';
 import { allInstances, instance } from '../src/content/incidents';
 
 const shape = (id: string) => fixShapes(instance(id)).map((f) => `${f.hosts.join('·')}: ${f.lines.join(' → ')}`);
@@ -48,6 +49,25 @@ describe('blank command shapes', () => {
       for (const line of shapes.flatMap((f) => f.lines)) {
         expect(line, sc.id).not.toMatch(/\d/);
         expect(line, sc.id).not.toMatch(/[a-z][\w-]*:\S/i);
+      }
+    }
+  });
+
+  it('the guard lets every shape (and the hosts it is typed on) through, and still catches the real fix', () => {
+    for (const sc of allInstances()) {
+      const banned = bannedFor(sc);
+      for (const f of fixShapes(sc)) {
+        const said = `${f.hosts.join('·')}에서 ${f.lines.join(' → ')}`;
+        expect(leaks(said, banned), `${sc.id}: ${said}`).toBe(false);
+      }
+      for (const step of sc.solutionSteps) {
+        if ('cmd' in step && step.cmd.includes(' ')) expect(leaks(step.cmd, banned), `${sc.id}: ${step.cmd}`).toBe(true);
+        if ('ios' in step) {
+          for (const l of iosScript(step.ios).filter(iosLineBanned)) {
+            expect(leaks(l.line, banned), `${sc.id}: ${l.line}`).toBe(true);
+            expect(leaks(l.canonical, banned), `${sc.id}: ${l.canonical}`).toBe(true);
+          }
+        }
       }
     }
   });
