@@ -77,25 +77,6 @@
   font-size: 12px;
 }
 
-/* ----- ladder note ----- */
-.hc-ladder {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #2a2a3a;
-  border: 1px dashed var(--blue);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-.hc-ladder p {
-  margin: 0;
-  flex: 1;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.hc-ladder b { color: var(--blue); font-family: var(--pixel); font-weight: 400; }
-.hc-ladder-ok { font-size: 12px; padding: 4px 10px; }
-
 /* ----- thread ----- */
 .hc-thread {
   display: flex;
@@ -138,6 +119,31 @@
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
+/* 상황 / 할 일 / 명령: labels in a narrow column, the command in code type */
+.hc-guide {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.hc-guide dt {
+  font-family: var(--pixel);
+  font-size: 12px;
+  color: var(--tan);
+  padding-top: 2px;
+}
+.hc-guide dd {
+  margin: 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.hc-guide code {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--blue);
+}
 .hc-meta {
   display: flex;
   align-items: center;
@@ -161,7 +167,6 @@
 }
 .hc-badge.ai { color: var(--blue); border-color: #3a5f86; }
 .hc-badge.canned { color: var(--muted); }
-.hc-badge.lv { color: var(--amber); border-color: #8a6a2c; }
 .hc-badge.ok { color: var(--green); border-color: #2c8a4b; }
 .hc-badge.sol { color: #15121a; background: var(--amber); border-color: var(--amber); font-weight: 700; }
 

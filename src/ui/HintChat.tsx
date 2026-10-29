@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { parseGuide } from '../ai/answer';
 import { getStage } from '../content/stages';
 import { SEV_LABEL } from '../sim/alarms';
-import { activeScenarios, HINT_COST, type StageRun } from '../sim/engine';
+import { activeScenarios, type StageRun } from '../sim/engine';
 import type { AlarmSev, Scenario } from '../sim/scenario';
 import { dayLabel, type RoomId } from '../sim/types';
 import { gameStore, MISSION_THREAD, useGame, type HintMessage } from '../store/game';
@@ -11,9 +12,6 @@ import { PixelIcon } from './PixelIcon';
 import { Portrait } from './Portrait';
 import { useStageState } from './useStageState';
 import './HintChat.css';
-
-const LADDER_KEY = 'khu-dc-hint-ladder-seen';
-const MAX_LEVEL = 3;
 
 const ROOM_NAME: Record<RoomId, string> = {
   server: '서버실',
@@ -32,9 +30,6 @@ const ASK_EXAMPLE: Record<number, string> = {
   4: '이중화가 뭐예요?',
   5: '뭐부터 확인해야 해요?',
 };
-
-/** Points the next hint costs on this incident (Lv1 is free). */
-const nextHintCost = (level: number) => (level >= 3 ? 0 : (HINT_COST[level + 1] - HINT_COST[level]) * 5);
 
 /** What 쿠사수 says when nothing is on fire, per day. */
 const CALM_LINES: Record<number, string> = {
@@ -56,23 +51,25 @@ const tone = (sev: AlarmSev) => (sev === 'critical' || sev === 'major' ? 'critic
  */
 let askingFor: string | null = null;
 
-function ladderSeen(): boolean {
-  try {
-    return localStorage.getItem(LADDER_KEY) === '1';
-  } catch {
-    return false;
-  }
+/** 상황 / 할 일 / 명령 as three labelled rows, the command in code type; anything else as a paragraph. */
+function MentorText({ text }: { text: string }) {
+  const g = parseGuide(text);
+  if (!g) return <p>{text}</p>;
+  return (
+    <dl className="hc-guide">
+      <dt>상황</dt>
+      <dd>{g.situation}</dd>
+      <dt>할 일</dt>
+      <dd>{g.todo}</dd>
+      <dt>명령</dt>
+      <dd>
+        <code>{g.command}</code>
+      </dd>
+    </dl>
+  );
 }
 
-function markLadderSeen(): void {
-  try {
-    localStorage.setItem(LADDER_KEY, '1');
-  } catch {
-    /* storage blocked: the note just shows again next time */
-  }
-}
-
-/** `plain` = a greeting, not a hint: no level / source badges. */
+/** `plain` = a greeting, not an answer: no source badge. */
 function MentorBubble({ msg, plain = false }: { msg: HintMessage; plain?: boolean }) {
   return (
     <div className="hc-row mentor">
@@ -80,15 +77,9 @@ function MentorBubble({ msg, plain = false }: { msg: HintMessage; plain?: boolea
       <div className="hc-bubble">
         <div className="hc-meta">
           <span className="hc-who">쿠사수</span>
-          {!plain && msg.level !== undefined && <span className="hc-badge lv">Lv{msg.level}</span>}
-          {!plain && (
-            <span className={`hc-badge ${msg.source === 'ai' ? 'ai' : 'canned'}`}>
-              {/* A mission answer has no hint level */}
-              {msg.source === 'ai' ? 'AI' : msg.level === undefined ? '기본 답' : '기본 힌트'}
-            </span>
-          )}
+          {!plain && <span className={`hc-badge ${msg.source === 'ai' ? 'ai' : 'canned'}`}>{msg.source === 'ai' ? 'AI' : '기본 답'}</span>}
         </div>
-        <p>{msg.text}</p>
+        <MentorText text={msg.text} />
       </div>
     </div>
   );
@@ -264,12 +255,10 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
   const pending = useGame((s) => s.hintPending);
   /** The answer being typed is for this incident (not another tab's). */
   const typingHere = pending && askingFor === sc.id;
-  const level = run.hintLevel[sc.id] ?? 0;
   const revealed = run.revealed.includes(sc.id);
   // A question typed but not sent yet stays in the box (per incident) after closing the radio.
   const [text, setText] = useStageState(`hint:ask:${sc.id}`, '');
   const [confirming, setConfirming] = useState(false);
-  const [showLadder, setShowLadder] = useState(() => !ladderSeen());
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -286,26 +275,15 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
     return () => cancelAnimationFrame(id);
   }, [resolved]);
 
-  const closeLadder = () => {
-    markLadderSeen();
-    setShowLadder(false);
-  };
-
   const send = (question?: string) => {
     if (gameStore.getState().hintPending) return;
     askingFor = sc.id;
     void gameStore.getState().askHint(sc.id, question);
   };
 
-  const nextHint = () => {
-    if (showLadder) closeLadder();
-    send();
-  };
-
   const ask = () => {
     const q = text.trim();
     if (!q || pending) return;
-    if (showLadder) closeLadder();
     setText('');
     send(q);
     inputRef.current?.focus();
@@ -328,24 +306,13 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
         <p className="hc-room muted">먼저 가볼 곳: {ROOM_NAME[sc.room]}</p>
       </header>
 
-      {showLadder && !resolved && (
-        <div className="hc-ladder">
-          <p>
-            <b>Lv1</b> 관찰 질문 → <b>Lv2</b> 방향 → <b>Lv3</b> 도구. Lv2부터는 {dayLabel(run.stage)} 일일 리포트 점수가 조금 깎여요.
-          </p>
-          <button type="button" className="btn ghost hc-ladder-ok" onClick={closeLadder}>
-            알겠어요
-          </button>
-        </div>
-      )}
-
       <div className="hc-thread" ref={listRef} aria-live="polite">
         {thread.length === 0 && !typingHere && (
           <MentorBubble
             plain
             msg={{
               from: 'mentor',
-              text: resolved ? '해결했구나! 잘했어.' : '무슨 일이야? "힌트 받기"를 누르면 차근차근 알려줄게. 궁금한 걸 직접 물어봐도 돼.',
+              text: resolved ? '해결했구나! 잘했어.' : '"힌트 받기"를 누르면 지금 상황, 할 일, 명령을 알려줄게. 궁금한 말은 직접 물어봐도 돼.',
               source: 'canned',
             }}
           />
@@ -361,30 +328,16 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
       ) : (
         <div className="hc-controls">
           <div className="hc-buttons">
-            {level < MAX_LEVEL ? (
-              <button type="button" className="btn primary" onClick={nextHint} disabled={pending}>
-                힌트 받기 (Lv {level + 1}/{MAX_LEVEL})
-              </button>
-            ) : (
-              <button type="button" className="btn" disabled>
-                힌트 다 받았어요 ({MAX_LEVEL}/{MAX_LEVEL})
-              </button>
-            )}
-            {level >= MAX_LEVEL && !revealed && !confirming && (
+            <button type="button" className="btn primary" onClick={() => send()} disabled={pending}>
+              힌트 받기
+            </button>
+            {!revealed && !confirming && (
               <button type="button" className="btn hc-reveal" onClick={() => setConfirming(true)} disabled={pending}>
                 정답 보기
               </button>
             )}
             {revealed && <span className="tag">정답 확인함</span>}
-            <span className="hc-cost muted">
-              {pending && !typingHere
-                ? '다른 질문에 답하는 중이에요. 잠깐만요!'
-                : level >= MAX_LEVEL
-                  ? ''
-                  : nextHintCost(level) === 0
-                    ? `Lv${level + 1} 힌트는 무료예요.`
-                    : `다음 힌트(Lv${level + 1})는 −${nextHintCost(level)}점이에요.`}
-            </span>
+            <span className="hc-cost muted">{pending && !typingHere ? '다른 질문에 답하는 중이에요. 잠깐만요!' : `힌트·질문은 무료, 정답 보기만 ${dayLabel(run.stage)} 점수 −15점이에요.`}</span>
           </div>
 
           {confirming && (

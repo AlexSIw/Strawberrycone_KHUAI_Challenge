@@ -28,10 +28,9 @@ function useCountUp(to: number, delayMs = 250): number {
 
 /** What to try next: the tip for whatever cost the most points today. */
 const TIP: Record<ScorePart['key'], string> = {
-  reveal: '다음엔 "정답 보기" 전에 힌트를 한 단계씩 먼저 받아보세요.',
-  hint: '힌트를 조금만 아끼면 별이 더 늘어나요. 막히면 도감(C)의 카드부터 읽어 보세요.',
+  reveal: '다음엔 "정답 보기" 전에 터미널에서 hint 부터 쳐 보세요. 힌트는 무료예요.',
   mttd: '경보가 뜨면 관제 화면(N)에서 바로 확인(ACK)부터 눌러보세요. 터미널 옆 "지금 장애"에서도 누를 수 있어요.',
-  mttr: '고치는 데 오래 걸렸어요. 막히면 도감(C)과 쿠사수 무전기 1단계 힌트부터 써 보세요.',
+  mttr: '고치는 데 오래 걸렸어요. 막히면 터미널에서 hint 를 쳐서 쿠사수에게 바로 물어보세요(무료).',
   availability: '서비스가 멈춘 시간이 길었어요. 장애를 빨리 고치면 가용성이 올라가요.',
 };
 
@@ -96,7 +95,6 @@ export function Results() {
 
   const finish = gameStore.getState().finishResults;
   const parts = scoreParts(score);
-  const hintPoints = score.hintPenalty * 5;
   const revealPoints = score.revealed * 15;
   // D-Day (scoreAvailabilityFrom): every second from the 10:00 open, incidents included — the same number the
   // postmortem and the stars use. Weekdays: sampled only between incidents with students online (time during an
@@ -160,7 +158,6 @@ export function Results() {
           />
           <Stat label="장애" value={`${incidents}건`} gloss="오늘 일어난 장애의 수" />
           <Stat label="담당팀 이관" value={`${score.escalated}건`} gloss="다른 팀에 넘겨서 처리한 장애의 수" />
-          <Stat label="힌트 감점" value={hintPoints ? `−${hintPoints}점` : '없음'} cls={hintPoints ? 'warn' : 'ok'} gloss="쿠사수에게 받은 힌트만큼 빠진 점수" />
           <Stat
             label="정답 보기"
             value={`${score.revealed}회${revealPoints ? ` (−${revealPoints}점)` : ''}`}

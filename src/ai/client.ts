@@ -1,7 +1,8 @@
-// Asks the Worker (/api/hint → ChatKHU) for a mentor answer. Two modes:
-//  - incident: a hint on the ladder for one incident; falls back to the scenario's built-in hints;
-//  - mission: a question about the mission being built (or a term on screen); falls back to the mission's
-//    own why + next step + concept card (cannedMission).
+// Asks the Worker (/api/hint → ChatKHU) for a mentor answer, free. Two modes:
+//  - incident: what to do about one incident (상황 / 할 일 / 명령, the fix's values blank) or what a word means;
+//    falls back to the scenario's own three lines (incidentGuide) or the word's card;
+//  - mission: the mission being built (or a term on screen); falls back to the mission's next step in the same
+//    three lines, or the word's card (cannedMission).
 // Either falls back when the Worker isn't running, has no key, fails, or caught a leak. Emoji in a reply are dropped.
 import { CONCEPTS, type Concept } from '../content/concepts';
 import { getStage } from '../content/stages';
@@ -14,8 +15,14 @@ import { cableAt } from '../sim/net/basics';
 import type { Scenario } from '../sim/scenario';
 import { dayLabel, type World } from '../sim/types';
 import { guideOf, missionInFocus } from '../ui/objectiveStatus';
+import { formatGuide, incidentGuide } from './answer';
 import { stripEmoji } from './emoji';
 import { leaks, missionBanned, missionShown } from './leak';
+
+/** 'guide': answer with the three lines (a button, the terminal's `hint`); 'auto': the question decides. */
+export type Want = 'guide' | 'auto';
+
+const wantOf = (want: Want | undefined, question: string | undefined): Want => want ?? (question?.trim() ? 'auto' : 'guide');
 
 /**
  * What the 사수 sees of the game right now. Only what the player could see on screen: the NOC's alarms
@@ -100,8 +107,8 @@ export function buildSnapshot(run: StageRun, host: string, iosMode?: string | nu
 export interface HintRequest {
   run: StageRun;
   scenario: Scenario;
-  level: number;
   question?: string;
+  want?: Want;
   history: { from: string; text: string }[];
   host: string;
   /** IOS mode level when the terminal is on network gear */
@@ -109,14 +116,14 @@ export interface HintRequest {
 }
 
 export async function requestHintText(req: HintRequest): Promise<{ text: string; source: 'ai' | 'canned' }> {
-  const canned = cannedIncident(req.run, req.scenario, req.level, req.question);
+  const canned = cannedIncident(req.run, req.scenario, req.question, req.host);
   try {
     const res = await fetch('/api/hint', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         scenarioId: req.scenario.id,
-        level: req.level,
+        want: wantOf(req.want, req.question),
         question: req.question ?? '',
         history: req.history.slice(-8),
         snapshot: buildSnapshot(req.run, req.host, req.iosMode),
@@ -219,44 +226,41 @@ export function termAnswer(run: StageRun, question: string): string | undefined 
 }
 
 /**
- * The radio's own answer during an incident (no AI): the hint for this rung, and when the question asks what a
- * word means, that first (a card or the glossary, never the incident's own card or anything banned for it).
+ * The radio's own answer during an incident (no AI): what a word means when the question names one (a card or the
+ * glossary, never the incident's own card or anything banned for it), else the incident's three lines with the
+ * fix's values blank. `host`: where the player's terminal is (the 명령 line starts there).
  */
-export function cannedIncident(run: StageRun, scenario: Scenario, level: number, question = ''): string {
-  const hint = scenario.hints[Math.max(0, Math.min(2, level - 1))];
+export function cannedIncident(run: StageRun, scenario: Scenario, question = '', host?: string): string {
   const term = question.trim() ? termAnswer(run, question) : undefined;
-  if (!term) return hint;
-  const banned = missionBanned(activeScenarios(run).map((a) => a.def), []);
-  if (leaks(term, banned)) return hint;
-  return `용어 뜻부터 알려줄게. ${term}\n장애 원인은 힌트로만 알려줄게: ${hint}`;
+  if (term && !leaks(term, missionBanned(activeScenarios(run).map((a) => a.def), []))) return term;
+  return incidentGuide(scenario, host);
 }
 
+export const NO_MISSION = '지금은 열린 미션이 없어. 관제 화면(N)을 보면서 다음 상황을 기다리자. 화면에 모르는 말이 있으면 그 말을 넣어서 물어봐!';
+const TANGLED = '그건 지금 난 장애랑 얽혀 있어서 여기선 말 못 해. 터미널에서 hint를 쳐 봐!';
+
 /**
- * The radio's own answer about a mission (no AI). A question naming a card: that card, then the next step of the
- * mission's guide. Otherwise: the mission's why, the next step, and the mission's concept card. Never a part
- * that would give an incident going on away.
+ * The radio's own answer about a mission (no AI). A question naming a word: what it means. Otherwise the
+ * mission's next step in three lines (상황 / 할 일 / 명령), the step's command in full (the mission shows it).
+ * Never anything that would give an incident going on away.
  */
 export function cannedMission(run: StageRun, o: Objective | undefined, question = ''): string {
-  const asked = question.trim() ? termAnswer(run, question) : undefined;
-  const own = o?.concept ? CONCEPTS[o.concept] : undefined;
-  const parts: string[] = [];
-  if (asked) parts.push(asked);
-  // A question about something the radio has no note on: say so, then talk about the mission.
-  else if (question.trim()) parts.push('그 말은 내 메모장에 없네. 지금 AI 사수가 바빠서, 미션 이야기부터 해 줄게. 화면에 보이는 낱말(예: VLAN, DB)을 넣어서 물어보면 뜻을 알려줄 수 있어.');
-  if (o && !(o.id in run.objectivesDone)) {
-    if (!asked) parts.push(o.why ?? `지금 미션은 "${o.text}"야.`);
-    const next = guideOf(o, run)?.next;
-    if (next) parts.push(`다음 단계: ${next.text}${next.cmd ? ` → ${next.cmd}` : ''}${next.why ? ` (${next.why})` : ''}`);
-    if (own && !asked) parts.push(cardLine(own));
-  } else if (!asked) {
-    parts.push('지금은 열린 미션이 없어. 관제 화면(N)을 보면서 다음 상황을 기다리자. 화면에 모르는 말이 있으면 그 말을 넣어서 물어봐!');
-  }
   const banned = missionBanned(
     activeScenarios(run).map((a) => a.def),
     o ? missionShown(o) : [],
   );
-  const safe = parts.filter((p) => !leaks(p, banned));
-  return safe.length ? safe.join('\n') : '그건 지금 터진 장애랑 얽혀 있어서 여기선 말 못 해. 장애 탭에서 힌트를 받아 보자!';
+  const safe = (text: string) => (leaks(text, banned) ? TANGLED : text);
+  const asked = question.trim() ? termAnswer(run, question) : undefined;
+  if (asked) return safe(asked);
+  if (!o || o.id in run.objectivesDone) return NO_MISSION;
+  const next = guideOf(o, run)?.next;
+  return safe(
+    formatGuide({
+      situation: `지금 미션은 "${o.text}"야.`,
+      todo: next ? `${next.text}${next.why ? ` (${next.why})` : ''}` : o.text,
+      command: next?.cmd ?? (next ? '명령 없이 화면에서 해' : '미션 목록에서 남은 걸 확인해'),
+    }),
+  );
 }
 
 export interface MissionRequest {
@@ -264,6 +268,7 @@ export interface MissionRequest {
   /** The mission asked about (default: the one to do now, or the last one on the list when none is open) */
   objective?: Objective;
   question?: string;
+  want?: Want;
   history: { from: string; text: string }[];
   host: string;
   iosMode?: string | null;
@@ -285,6 +290,7 @@ export async function requestMissionText(req: MissionRequest): Promise<{ text: s
         objectiveDone: o.id in run.objectivesDone,
         stepsDone: guideOf(o, run)?.rows.map((r) => r.done) ?? [],
         activeScenarioIds: activeScenarios(run).map((a) => a.rt.id),
+        want: wantOf(req.want, req.question),
         question: req.question ?? '',
         history: req.history.slice(-8),
         snapshot: buildSnapshot(run, req.host, req.iosMode),

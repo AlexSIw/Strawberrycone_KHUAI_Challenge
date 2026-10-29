@@ -1,6 +1,7 @@
 // Fixes from the explain-before-do playtests that live below the UI: the radio's offline answers, the
 // daily report's 감점 line, CLI messages on the wrong host, and the new Korean glosses.
 import { describe, expect, it } from 'vitest';
+import { incidentGuide, parseGuide } from '../src/ai/answer';
 import { cannedIncident, cannedMission, glossaryIn } from '../src/ai/client';
 import { getStage } from '../src/content/stages';
 import { applyCommand, scenarioOf, scoreParts, startStage, type Score, type StageRun } from '../src/sim/engine';
@@ -21,23 +22,21 @@ describe('the radio without AI answers what a word means', () => {
     const run = startStage(2);
     const o = getStage(2).objectives[0];
     const reply = cannedMission(run, o, 'DB가 뭐예요?');
-    expect(reply.split('\n')[0]).toContain('창고 서버');
-    // Nothing matches: it says so before talking about the mission.
-    expect(cannedMission(run, o, '점심 메뉴 뭐예요?').split('\n')[0]).toContain('AI 사수가 바빠서');
+    expect(reply).toContain('창고 서버');
+    // Nothing matches: what to do next, in the three lines.
+    expect(parseGuide(cannedMission(run, o, '점심 메뉴 뭐예요?'))).not.toBeNull();
   });
 
-  it("during an incident a word question gets the word's card, then the hint, never the incident's own card", () => {
+  it("during an incident a word question gets the word's card, never the incident's own card; anything else the three lines", () => {
     let run = startStage(3);
     run = { ...run, scenarios: initRuntime([{ id: 'd2-uplink:0', trigger: { type: 'stageStart', delay: 0, overlap: true } }]) };
     const sc = scenarioOf(getStage(3), 'd2-uplink:0');
-    const hint = sc.hints[0];
-    const vlan = cannedIncident(run, sc, 1, 'VLAN이 뭐예요?');
-    expect(vlan).toContain('VLAN');
-    expect(vlan).toContain(hint);
+    expect(cannedIncident(run, sc, 'VLAN이 뭐예요?')).toContain('VLAN');
     // A card that belongs to one of today's incidents: the glossary's one-liner instead.
-    expect(cannedIncident(run, sc, 1, 'STP가 뭐예요?')).toContain('예비 길');
-    // A plain "how do I fix it" stays a hint.
-    expect(cannedIncident(run, sc, 1, '어떻게 고쳐요?')).toBe(hint);
+    expect(cannedIncident(run, sc, 'STP가 뭐예요?')).toContain('예비 길');
+    // "How do I fix it", or the 힌트 받기 button: situation, what to do, the commands with the values blank.
+    expect(cannedIncident(run, sc, '어떻게 고쳐요?', 'ops')).toBe(incidentGuide(sc, 'ops'));
+    expect(cannedIncident(run, sc)).toContain('명령: TOR-01·CORE-01 각각 ssh → (확인) show etherchannel summary');
   });
 
   it('Latin words match whole words only', () => {
@@ -48,7 +47,7 @@ describe('the radio without AI answers what a word means', () => {
 
 describe('daily report', () => {
   it('the 감점 parts add up to 100 − the score, biggest first', () => {
-    const score: Score = { stars: 3, points: 88, availability: 1, mttd: 25, mttr: 66, hintPenalty: 0, revealed: 0, escalated: 0 };
+    const score: Score = { stars: 3, points: 88, availability: 1, mttd: 25, mttr: 66, revealed: 0, escalated: 0 };
     const parts = scoreParts(score);
     expect(parts.map((p) => p.key)).toEqual(['mttr', 'mttd']);
     expect(parts.reduce((a, p) => a + p.points, 0)).toBe(12);

@@ -1,5 +1,6 @@
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
+import { GUIDE_ASK } from '../ai/answer';
 import { requestHintText, requestMissionText } from '../ai/client';
 import { missionCards } from '../content/cards';
 import { CONCEPTS } from '../content/concepts';
@@ -12,7 +13,6 @@ import {
   activeScenarios,
   applyAction,
   applyCommand,
-  bumpHint,
   escalate,
   isCleared,
   recordEvents,
@@ -68,14 +68,11 @@ const MAX_TOASTS = 3;
 export interface HintMessage {
   from: 'mentor' | 'player' | 'system';
   text: string;
-  level?: number;
   source?: 'ai' | 'canned' | 'solution';
 }
 
 /** Key of the radio's mission thread in `hints` (the others are incident ids). */
 export const MISSION_THREAD = 'mission';
-/** What the player says when they press "다음 단계 알려줘" (it goes in the thread like a typed question). */
-export const MISSION_NEXT_ASK = '다음엔 뭘 하면 돼요?';
 
 export interface ConceptPopup {
   /** The card (a preview: the first card it previews, '' when it previews none) */
@@ -854,30 +851,22 @@ export const gameStore = createStore<GameState>()((set, get) => {
       const def = getStage(s.run.stage);
       const sc = def.scenarios.find((x) => x.id === scenarioId);
       if (!sc) return;
-      let run = s.run;
-      let level = run.hintLevel[scenarioId] ?? 0;
-      // Asking for "the next hint" climbs the ladder; a free question stays on the current rung.
-      if (!question || level === 0) {
-        const b = bumpHint(run, scenarioId);
-        run = b.run;
-        level = b.level;
-      }
-      const thread = [...(s.hints[scenarioId] ?? [])];
-      if (question) thread.push({ from: 'player', text: question });
-      set({ run, hintPending: true, hints: { ...s.hints, [scenarioId]: thread } });
+      // Free: the 힌트 받기 button asks "what now?" for the player, a typed question goes as it is.
+      const thread = [...(s.hints[scenarioId] ?? []), { from: 'player' as const, text: question || GUIDE_ASK }];
+      set({ hintPending: true, hints: { ...s.hints, [scenarioId]: thread } });
       const term = get().terminal;
-      const reply = await requestHintText({ run, scenario: sc, level, question, history: thread, host: term.host, iosMode: term.mode?.level ?? null });
+      const reply = await requestHintText({ run: s.run, scenario: sc, question, history: thread, host: term.host, iosMode: term.mode?.level ?? null });
       const cur = get();
       // The stage was started again while the answer was on its way: it belongs to the old run.
       if (cur.stageEpoch !== s.stageEpoch) return;
-      const updated = [...(cur.hints[scenarioId] ?? thread), { from: 'mentor' as const, text: reply.text, level, source: reply.source }];
+      const updated = [...(cur.hints[scenarioId] ?? thread), { from: 'mentor' as const, text: reply.text, source: reply.source }];
       set({ hintPending: false, hints: { ...cur.hints, [scenarioId]: updated } });
     },
 
     askMission: async (question) => {
       const s = get();
       if (!s.run || s.hintPending) return;
-      const thread = [...(s.hints[MISSION_THREAD] ?? []), { from: 'player' as const, text: question || MISSION_NEXT_ASK }];
+      const thread = [...(s.hints[MISSION_THREAD] ?? []), { from: 'player' as const, text: question || GUIDE_ASK }];
       set({ hintPending: true, hints: { ...s.hints, [MISSION_THREAD]: thread } });
       const term = get().terminal;
       const reply = await requestMissionText({

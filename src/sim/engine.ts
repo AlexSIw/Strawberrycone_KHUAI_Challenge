@@ -35,8 +35,6 @@ export interface StageRun {
   history: MetricPoint[];
   availabilitySum: number;
   ticks: number;
-  /** scenario id → highest hint level the player has seen (1–3) */
-  hintLevel: Record<string, number>;
   revealed: string[];
 }
 
@@ -83,7 +81,6 @@ export function startStage(id: StageId, seed = 1): StageRun {
     history: [],
     availabilitySum: 0,
     ticks: 0,
-    hintLevel: {},
     revealed: [],
   };
 }
@@ -134,7 +131,6 @@ function cloneRun(run: StageRun): StageRun {
     scenarios: run.scenarios.map((s) => ({ ...s })),
     alarms: run.alarms.map((a) => ({ ...a })),
     objectivesDone: { ...run.objectivesDone },
-    hintLevel: { ...run.hintLevel },
     revealed: [...run.revealed],
   };
 }
@@ -328,21 +324,19 @@ export interface Score {
   /** Mean time from incident start to the player's ACK (or the fix, if never acknowledged) */
   mttd: number | null;
   mttr: number | null;
-  hintPenalty: number;
   revealed: number;
   /** Incidents handed to another team */
   escalated: number;
 }
 
-/** Score units (×5 points) charged per incident for the highest hint level seen. */
-export const HINT_COST = [0, 0, 1, 2];
-
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
-/** Points lost for each part of the score (unrounded): hints, answers shown, slow detection, slow repair, availability. */
-function deductions(hintPenalty: number, revealed: number, mttd: number | null, mttr: number | null, availability: number): Record<ScorePart['key'], number> {
+/**
+ * Points lost for each part of the score (unrounded): answers shown, slow detection, slow repair, availability.
+ * Hints and questions to 쿠사수 are free; only 정답 보기 costs.
+ */
+function deductions(revealed: number, mttd: number | null, mttr: number | null, availability: number): Record<ScorePart['key'], number> {
   return {
-    hint: hintPenalty * 5,
     reveal: revealed * 15,
     // Detection weighs little: it's a habit to learn, and spamming ACK shouldn't pay.
     mttd: mttd === null ? 0 : Math.max(0, Math.min(10, (mttd - 15) / 2)),
@@ -360,29 +354,28 @@ export function scoreRun(run: StageRun): Score {
       return (ack ?? s.resolvedAt!) - s.activatedAt!;
     }),
   );
-  const hintPenalty = Object.values(run.hintLevel).reduce((a, l) => a + HINT_COST[l], 0);
   const availability = run.ticks ? run.availabilitySum / run.ticks : 1;
-  const lost = Object.values(deductions(hintPenalty, run.revealed.length, mttd, mttr, availability)).reduce((a, b) => a + b, 0);
+  const lost = Object.values(deductions(run.revealed.length, mttd, mttr, availability)).reduce((a, b) => a + b, 0);
   const points = Math.max(0, Math.round(100 - lost));
   const stars = points >= 85 ? 3 : points >= 60 ? 2 : 1;
   const escalated = run.scenarios.filter((s) => s.escalatedAt !== null).length;
-  return { stars, points, availability, mttd, mttr, hintPenalty, revealed: run.revealed.length, escalated };
+  return { stars, points, availability, mttd, mttr, revealed: run.revealed.length, escalated };
 }
 
 /** One part of the daily report's 감점 line. */
 export interface ScorePart {
-  key: 'hint' | 'reveal' | 'mttd' | 'mttr' | 'availability';
+  key: 'reveal' | 'mttd' | 'mttr' | 'availability';
   /** Plain-Korean name ('탐지', '복구' …) */
   label: string;
   /** Whole points lost to it (the parts add up to 100 − score) */
   points: number;
 }
 
-const PART_LABEL: Record<ScorePart['key'], string> = { hint: '힌트', reveal: '정답 보기', mttd: '탐지 시간', mttr: '복구 시간', availability: '가용성' };
+const PART_LABEL: Record<ScorePart['key'], string> = { reveal: '정답 보기', mttd: '탐지 시간', mttr: '복구 시간', availability: '가용성' };
 
 /** What cost points in this run, biggest first, in whole points that add up to 100 − the score. */
 export function scoreParts(score: Score): ScorePart[] {
-  const raw = deductions(score.hintPenalty, score.revealed, score.mttd, score.mttr, score.availability);
+  const raw = deductions(score.revealed, score.mttd, score.mttr, score.availability);
   const keys = Object.keys(raw) as ScorePart['key'][];
   const parts = keys.map((key) => ({ key, label: PART_LABEL[key], points: Math.round(raw[key]) }));
   // Rounding each part may miss the total by a point: settle it on the biggest part.
@@ -391,14 +384,6 @@ export function scoreParts(score: Score): ScorePart[] {
   const big = [...parts].sort((a, b) => raw[b.key] - raw[a.key])[0];
   if (diff && big && raw[big.key] > 0) big.points = Math.max(0, big.points + diff);
   return parts.filter((p) => p.points > 0).sort((a, b) => b.points - a.points);
-}
-
-/** The player asked for a hint on a scenario. Returns the new level (1–3). */
-export function bumpHint(prev: StageRun, scenarioId: string): { run: StageRun; level: number } {
-  const run = cloneRun(prev);
-  const level = Math.min(3, (run.hintLevel[scenarioId] ?? 0) + 1);
-  run.hintLevel[scenarioId] = level;
-  return { run, level };
 }
 
 export function revealSolution(prev: StageRun, scenarioId: string): StageRun {

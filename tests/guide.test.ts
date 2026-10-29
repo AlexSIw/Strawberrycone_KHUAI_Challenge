@@ -23,7 +23,8 @@ import { getStage } from '../src/content/stages';
 import type { GuideStep, Objective } from '../src/content/types';
 import { applyCommand, startStage, type StageRun } from '../src/sim/engine';
 import type { IosMode } from '../src/sim/types';
-import { gameStore, MISSION_NEXT_ASK, MISSION_THREAD } from '../src/store/game';
+import { GUIDE_ASK, parseGuide } from '../src/ai/answer';
+import { gameStore, MISSION_THREAD } from '../src/store/game';
 import { guideOf, iosModeText, missionInFocus } from '../src/ui/objectiveStatus';
 
 const D4 = getStage(1);
@@ -136,11 +137,12 @@ describe('the radio, mission mode, with no AI', () => {
     expect(missionInFocus(D4, fresh)?.id).toBe('ssh');
   });
 
-  it('answers with the why, the next step (command and why) and the concept card', () => {
-    const text = cannedMission(atVlan(), vlanMission);
-    expect(text).toContain(vlanMission.why!);
-    expect(text).toContain('다음 단계: 관리자 모드로 → enable (설정을 보려면 관리자여야 해요)');
-    expect(text).toContain(`${CONCEPTS.vlan.name}: ${CONCEPTS.vlan.analogy}`);
+  it('answers in three lines: the mission, the next step (and why), its command in full', () => {
+    expect(parseGuide(cannedMission(atVlan(), vlanMission))).toEqual({
+      situation: `지금 미션은 "${vlanMission.text}"야.`,
+      todo: '관리자 모드로 (설정을 보려면 관리자여야 해요)',
+      command: 'enable',
+    });
   });
 
   it('a question naming a card answers with that card first', () => {
@@ -155,13 +157,12 @@ describe('the radio, mission mode, with no AI', () => {
     expect(conceptIn('오늘 점심 뭐 먹지')).toBeUndefined();
     const text = cannedMission(atVlan(), vlanMission, 'DNS가 뭐예요?');
     expect(text.startsWith(`${CONCEPTS.dns.name}:`)).toBe(true);
-    expect(text).toContain('다음 단계');
   });
 
   it('a mission without a guide still says what it is; no mission open says what to do meanwhile', () => {
     const run = startStage(1);
     const ssh = D4.objectives.find((o) => o.id === 'ssh')!;
-    expect(cannedMission(run, ssh)).toContain(ssh.why ?? `지금 미션은 "${ssh.text}"야.`);
+    expect(cannedMission(run, ssh)).toContain(`상황: 지금 미션은 "${ssh.text}"야.`);
     run.objectivesDone.ssh = 0;
     expect(cannedMission(run, ssh)).toContain('지금은 열린 미션이 없어');
     expect(cannedMission(run, undefined)).toContain('지금은 열린 미션이 없어');
@@ -196,27 +197,25 @@ describe('askMission (store)', () => {
     expect(S().run?.objectivesDone).toHaveProperty('ssh');
   }
 
-  it('no AI: the canned answer lands in the mission thread, free (no ladder, no points)', async () => {
+  it('no AI: the canned answer lands in the mission thread, free', async () => {
     vi.stubGlobal('fetch', () => Promise.reject(new Error('no worker')));
     playD4AtVlan();
     const S = gameStore.getState;
-    const before = S().run!;
     await S().askMission();
     const thread = S().hints[MISSION_THREAD];
     expect(thread.map((m) => m.from)).toEqual(['player', 'mentor']);
-    expect(thread[0].text).toBe(MISSION_NEXT_ASK);
+    expect(thread[0].text).toBe(GUIDE_ASK);
     expect(thread[1]).toMatchObject({ source: 'canned' });
-    expect(thread[1].text).toContain('enable');
-    expect(thread[1].level).toBeUndefined();
+    expect(thread[1].text).toContain('명령: enable');
     expect(S().hintPending).toBe(false);
-    expect(S().run!.hintLevel).toEqual(before.hintLevel);
 
     // Steps follow the real terminal: after enable, the answer moves on.
     S().command('enable');
     await S().askMission('VLAN이 뭐예요?');
     const last = S().hints[MISSION_THREAD].at(-1)!;
     expect(last.text.startsWith(`${CONCEPTS.vlan.name}:`)).toBe(true);
-    expect(last.text).toContain('configure terminal');
+    await S().askMission();
+    expect(S().hints[MISSION_THREAD].at(-1)!.text).toContain('명령: configure terminal');
   });
 
   it('with the Worker: mission mode (objectiveId, stage, steps done, incidents going on), never a scenarioId', async () => {
@@ -229,7 +228,7 @@ describe('askMission (store)', () => {
     const S = gameStore.getState;
     await S().askMission('뭐부터 해요?');
     expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatchObject({ objectiveId: 'vlan', stage: 1, objectiveDone: false, stepsDone: [false, false, false, false], activeScenarioIds: [], question: '뭐부터 해요?' });
+    expect(bodies[0]).toMatchObject({ objectiveId: 'vlan', stage: 1, objectiveDone: false, stepsDone: [false, false, false, false], activeScenarioIds: [], want: 'auto', question: '뭐부터 해요?' });
     expect(bodies[0]).not.toHaveProperty('scenarioId');
     expect(S().hints[MISSION_THREAD].at(-1)).toMatchObject({ from: 'mentor', text: 'enable부터 쳐 봐!', source: 'ai' });
   });
