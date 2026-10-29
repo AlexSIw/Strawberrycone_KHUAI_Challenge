@@ -5,7 +5,8 @@
 //  - IOS sessions: ssh into gear shows its prompt, `?` is answered on the keystroke, Ctrl+Z, exit, and a
 //    switch's own console stays on the switch;
 //  - the 속도 button cycles 1x → 1.5x → 2x, is remembered, and the lion really walks faster;
-//  - the quiz keeps its answer while the concept book or the radio is opened on top of it;
+//  - the quiz: a wrong answer shows ✕ and the explanation, then starts over; once every answer is right it
+//    stays so while the concept book or the radio is opened on top of it;
 //  - the HUD fits narrow screens.
 // Typing and clicking go through the real UI; the app's store (imported through Vite, like e2e/persist.spec.ts)
 // only starts days, skips dialogue, runs the clock, clicks concept cards away and uses map hotspots.
@@ -381,7 +382,20 @@ test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', as
   expect(problems).toEqual([]);
 });
 
-test('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로', async ({ page }) => {
+/** The right choice (its authored index) of the quiz question on the board now. */
+const rightChoice = (page: Page) =>
+  page.evaluate(async () => {
+    const url = '/src/content/stages/index.ts';
+    const days = (await import(/* @vite-ignore */ url)) as typeof import('../src/content/stages');
+    const run = (window as unknown as Win).__store.getState().run!;
+    const q = Number(document.querySelector('.qz-q')!.getAttribute('data-q'));
+    return days.getStage(run.stage).quiz!.pool[q].answer;
+  });
+
+/** The choices on the board, by authored index, in the order they are shown. */
+const shownChoices = (page: Page) => page.locator('.qz-choice').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-choice'))));
+
+test('퀴즈: 틀리면 해설 뒤 처음부터, 다 맞힌 뒤엔 위에 연 창(도감·무전기)을 닫아도 그대로', async ({ page }) => {
   const problems = watchProblems(page);
   await start(page);
   // D-5: the quiz opens after the tour of the rooms.
@@ -390,33 +404,51 @@ test('퀴즈 정답은 위에 연 창(도감·무전기)을 닫아도 그대로'
   await dismissConcepts(page);
   await interact(page, 'board');
   await expect(title(page)).toHaveText(/퀴즈/);
-  const answer = await page.evaluate(async () => {
-    const url = '/src/content/stages/index.ts';
-    const days = (await import(/* @vite-ignore */ url)) as typeof import('../src/content/stages');
-    return days.getStage(0).quiz!.answer;
-  });
-  /** The right choice marked and the 사수's explanation shown. */
-  const explained = async () => {
-    await expect(page.locator('.qz-choice').nth(answer)).toHaveClass(/right/);
-    await expect(page.locator('.qz-mentor.is-ok')).toContainText('정답!');
+  const total = Number(/\/(\d+)/.exec(await page.locator('.qz-progress').innerText())![1]);
+  await expect(page.locator('.qz-progress')).toContainText(`문제 1/${total}`);
+
+  // A wrong answer: ✕ on it and the 사수's explanation, but the right choice is not marked.
+  const right = await rightChoice(page);
+  const wrong = (await shownChoices(page)).find((c) => c !== right)!;
+  await page.locator(`.qz-choice[data-choice="${wrong}"]`).click();
+  await expect(page.locator(`.qz-choice[data-choice="${wrong}"]`)).toHaveClass(/wrong/);
+  await expect(page.locator('.qz-mentor.is-warn')).toContainText('아깝다.');
+  await expect(page.locator('.qz-mentor.is-warn')).toContainText('처음부터 다시 풀어 보자.');
+  await expect(page.locator('.qz-choice.right')).toHaveCount(0);
+  await expect(page.locator('.qz-choice:not(:disabled)')).toHaveCount(0);
+  await page.getByRole('button', { name: '처음부터 다시 ▶' }).click();
+  await expect(page.locator('.qz-progress')).toContainText(`문제 1/${total}`);
+  await expect(page.locator('.qz-mentor')).toHaveCount(0);
+
+  // Every question right in one go.
+  for (let i = 0; i < total; i++) {
+    await expect(page.locator('.qz-progress')).toContainText(`문제 ${i + 1}/${total}`);
+    const c = await rightChoice(page);
+    await page.locator(`.qz-choice[data-choice="${c}"]`).click();
+    await expect(page.locator(`.qz-choice[data-choice="${c}"]`)).toHaveClass(/right/);
+    await expect(page.locator('.qz-mentor.is-ok')).toContainText('맞았어!');
+    if (i < total - 1) await page.getByRole('button', { name: '다음 문제 ▶' }).click();
+  }
+  /** The last explanation is up, with 알겠어요! under it. */
+  const cleared = async () => {
+    await expect(page.locator('.qz-mentor.is-ok')).toContainText('맞았어!');
+    await expect(page.getByRole('button', { name: '알겠어요!' })).toBeVisible();
   };
-  await page.locator('.qz-choice').nth(answer).click();
-  await expect(page.locator('.qz-todo')).toContainText('🎉 정답');
-  await explained();
+  await cleared();
   // The mission (and its card) only completes on 알겠어요!, so nothing pops over the explanation now.
   await expect(page.locator('.ccard-backdrop')).toHaveCount(0);
 
-  // The quiz says "C 키 = 개념 도감": the 도감 opens on top, and closing it comes back to the explanation.
+  // The 도감 (C) and the radio (H) open on top, and closing them comes back to the explanation.
   await page.keyboard.press('c');
   await expect(title(page)).toHaveText(/개념 도감/);
   await page.keyboard.press('Escape');
   await expect(title(page)).toHaveText(/퀴즈/);
-  await explained();
+  await cleared();
   await page.keyboard.press('h');
   await expect(title(page)).toHaveText(/쿠사수 무전기/);
   await page.keyboard.press('Escape');
   await expect(title(page)).toHaveText(/퀴즈/);
-  await explained();
+  await cleared();
 
   // 알겠어요! closes it and completes the mission: its card comes up, 계속하기 takes it, the next mission (the rack)
   // is up with its 미션 브리핑.

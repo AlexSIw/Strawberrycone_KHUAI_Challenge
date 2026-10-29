@@ -201,10 +201,16 @@ export const day0: DaySpec = {
   },
   panels: ['power', 'links'],
   quiz: {
-    question: '학생이 수강신청 버튼을 누르면, 그 요청은 어디로 갈까?',
-    choices: ['학생 노트북 안에서 처리된다', '인터넷을 거쳐 데이터센터의 서버로 간다', '근처 와이파이 공유기 안에서 처리된다'],
-    answer: 1,
-    explain: '요청하는 쪽(클라이언트, 여기선 학생 노트북)이 요청을 보내면 데이터센터의 서버가 처리해서 응답(답장)을 돌려줘요. 이게 클라이언트-서버(client-server) 구조!',
+    pool: [
+      {
+        question: '학생이 수강신청 버튼을 누르면, 그 요청은 어디로 갈까요?',
+        choices: ['학생 노트북 안에서 처리된다', '인터넷을 거쳐 데이터센터의 서버로 간다', '근처 와이파이 공유기 안에서 처리된다'],
+        answer: 1,
+        explain: '학생 노트북(클라이언트)이 요청을 보내면 데이터센터의 서버가 처리해서 답을 돌려줘. 이게 클라이언트-서버 구조야.',
+        concept: 'datacenter',
+      },
+    ],
+    draw: 1,
   },
   /** Three new servers come off the truck: not mounted, no power, no cable. */
   unbuild: (w) => {

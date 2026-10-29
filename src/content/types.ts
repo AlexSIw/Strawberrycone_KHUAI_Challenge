@@ -90,11 +90,24 @@ export type SpotId =
   | 'crac'
   | 'monitor' | 'desk' | 'mentor' | 'board';
 
-export interface Quiz {
+/** One question of a day's 퇴근 퀴즈. */
+export interface QuizQuestion {
+  /** The question, in 해요체 (it is written on the board) */
   question: string;
+  /** 3–4 choices in authored order (the window shuffles them for every attempt) */
   choices: string[];
+  /** Index of the right choice in `choices` */
   answer: number;
+  /** 쿠사수's explanation (반말, 2 sentences at most), shown after any answer */
   explain: string;
+  /** The concept card this question checks (one a mission of that day awards) */
+  concept: string;
+}
+
+/** A day's 퇴근 퀴즈: every attempt draws `draw` questions from the pool, and all of them must be right in one go. */
+export interface Quiz {
+  pool: QuizQuestion[];
+  draw: number;
 }
 
 /** An always-on incident of the day: template id + trigger (the scheduler picks the variant by seed). */
@@ -137,6 +150,7 @@ export interface StageDef {
   health: (w: World) => Health;
   /** Dashboard panels unlocked in this stage */
   panels: ('power' | 'links' | 'traffic' | 'services' | 'temp' | 'pods')[];
+  /** The day's 퇴근 퀴즈 (src/content/quizRun.ts runs it; the 설계 보드 opens it) */
   quiz?: Quiz;
   /** Stage 7 only: seconds the player must hold the service up */
   survive?: number;

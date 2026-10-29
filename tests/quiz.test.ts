@@ -1,8 +1,9 @@
 // The 퇴근 퀴즈: the day's finale objective shows up only once every other mission is done and every
-// incident is settled.
+// incident is settled; each attempt draws its questions and shuffles their choices, and only a clean run clears it.
 import { describe, expect, it } from 'vitest';
+import { attemptView, choiceOrder, drawQuestions, QUIZ_START, quizReduce, type QuizProgress } from '../src/content/quizRun';
 import { getStage } from '../src/content/stages';
-import type { Objective, StageDef } from '../src/content/types';
+import type { Objective, Quiz, StageDef } from '../src/content/types';
 import { incidentsSettled, startStage, visibleObjectives, type StageRun } from '../src/sim/engine';
 import type { ScenarioRuntime } from '../src/sim/scenario';
 import { lockedText, objectiveStatus, waitingText } from '../src/ui/objectiveStatus';
@@ -75,5 +76,110 @@ describe('the finale objective', () => {
     const scenarios = run.scenarios.map((r) => ({ ...r, state: r.trigger.type === 'condition' ? ('waiting' as const) : ('resolved' as const) }));
     expect(scenarios.some((r) => r.state === 'waiting')).toBe(true);
     expect(incidentsSettled(def, { ...run, scenarios })).toBe(true);
+  });
+});
+
+// ---------- one attempt after another ----------
+
+/** A pool of five made-up questions (3 or 4 choices). */
+const POOL: Quiz = {
+  draw: 3,
+  pool: Array.from({ length: 5 }, (_, i) => ({
+    question: `Q${i}`,
+    choices: Array.from({ length: i % 2 ? 3 : 4 }, (_, c) => `${i}-${c}`),
+    answer: i % 3,
+    explain: '해설이야.',
+    concept: 'rack',
+  })),
+};
+
+describe('quizReduce', () => {
+  const asked = [0, 1, 2].map((q) => POOL.pool[q]);
+  const pick = (p: QuizProgress, choice: number) => quizReduce(p, { type: 'pick', choice }, asked);
+
+  it('a wrong answer stops the attempt; restart is a new attempt from the first question', () => {
+    let p = pick(QUIZ_START, asked[0].answer);
+    expect(p).toMatchObject({ phase: 'right', index: 0, picked: asked[0].answer });
+    p = quizReduce(p, { type: 'next' }, asked);
+    expect(p).toEqual({ attempt: 0, index: 1, phase: 'ask', picked: null });
+    p = pick(p, asked[1].answer + 1);
+    expect(p).toMatchObject({ phase: 'wrong', index: 1, picked: asked[1].answer + 1 });
+    p = quizReduce(p, { type: 'restart' }, asked);
+    expect(p).toEqual({ attempt: 1, index: 0, phase: 'ask', picked: null });
+  });
+
+  it('all right in one go clears it', () => {
+    let p = QUIZ_START;
+    for (let i = 0; i < asked.length; i++) {
+      p = pick(p, asked[i].answer);
+      if (i < asked.length - 1) p = quizReduce(p, { type: 'next' }, asked);
+    }
+    expect(p).toMatchObject({ phase: 'cleared', index: 2 });
+  });
+
+  it('steps only work where they belong', () => {
+    expect(quizReduce(QUIZ_START, { type: 'next' }, asked)).toBe(QUIZ_START);
+    expect(quizReduce(QUIZ_START, { type: 'restart' }, asked)).toBe(QUIZ_START);
+    const right = pick(QUIZ_START, asked[0].answer);
+    expect(pick(right, 3)).toBe(right);
+    expect(quizReduce(right, { type: 'restart' }, asked)).toBe(right);
+    const wrong = pick(QUIZ_START, asked[0].answer + 1);
+    expect(quizReduce(wrong, { type: 'next' }, asked)).toBe(wrong);
+    expect(pick(wrong, asked[0].answer)).toBe(wrong);
+  });
+});
+
+describe('the draw and the choice order', () => {
+  const SEEDS = Array.from({ length: 30 }, (_, i) => i + 1);
+
+  it('draws `draw` different questions, in pool order, the same for the same seed / day / attempt', () => {
+    for (const seed of SEEDS) {
+      for (let a = 0; a < 6; a++) {
+        const qs = drawQuestions(POOL, seed, 2, a);
+        expect(qs).toHaveLength(3);
+        expect(new Set(qs).size).toBe(3);
+        expect([...qs].sort((x, y) => x - y)).toEqual(qs);
+        expect(drawQuestions(POOL, seed, 2, a)).toEqual(qs);
+      }
+    }
+    // Other seeds and other days draw differently (not one fixed set for everyone).
+    expect(new Set(SEEDS.map((s) => drawQuestions(POOL, s, 2, 0).join())).size).toBeGreaterThan(3);
+    expect(new Set([0, 1, 2, 3, 4].map((d) => drawQuestions(POOL, 7, d, 0).join())).size).toBeGreaterThan(1);
+  });
+
+  it('a restart never draws the same three again', () => {
+    for (const seed of SEEDS) {
+      for (let a = 1; a < 12; a++) {
+        expect(drawQuestions(POOL, seed, 0, a).join(), `seed ${seed} attempt ${a}`).not.toBe(drawQuestions(POOL, seed, 0, a - 1).join());
+      }
+    }
+    // A pool of exactly `draw` questions has nothing else to draw.
+    const small: Quiz = { draw: 3, pool: POOL.pool.slice(0, 3) };
+    expect(drawQuestions(small, 1, 0, 1)).toEqual([0, 1, 2]);
+  });
+
+  it('shows every choice once, and the right one never in the same slot twice in a row for a question', () => {
+    for (const seed of SEEDS) {
+      const last = new Map<number, number>();
+      for (let a = 0; a < 12; a++) {
+        const view = attemptView(POOL, seed, 1, a);
+        expect(view.questions).toEqual(drawQuestions(POOL, seed, 1, a));
+        view.questions.forEach((q, i) => {
+          const order = view.orders[i];
+          expect([...order].sort()).toEqual(POOL.pool[q].choices.map((_, c) => c));
+          expect(choiceOrder(POOL, seed, 1, a, q)).toEqual(order);
+          const slot = order.indexOf(POOL.pool[q].answer);
+          expect(slot, `seed ${seed} attempt ${a} question ${q}`).not.toBe(last.get(q));
+          last.set(q, slot);
+        });
+      }
+    }
+  });
+
+  it('the right answer lands in every slot over many seeds (the shuffle is not stuck)', () => {
+    const slots = new Set(
+      SEEDS.map((s) => attemptView(POOL, s, 0, 0)).flatMap((v) => v.questions.map((q, i) => v.orders[i].indexOf(POOL.pool[q].answer))),
+    );
+    expect(slots.size).toBe(4);
   });
 });

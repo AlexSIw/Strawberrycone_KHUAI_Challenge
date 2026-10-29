@@ -258,21 +258,28 @@ test('창 상태 기억: 퀴즈, 랙, 설계 보드, 무전기 질문', async ({
   await page.evaluate(() => localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best: {}, cards: [] })));
   await exposeStore(page);
 
-  // ---- D-5 quiz: a wrong guess stays crossed out (with the nudge) ----
+  // ---- D-5 quiz: a wrong answer stays marked with its explanation; a fresh attempt keeps its choice order ----
   await play(page, 0);
   await interact(page, 'board');
-  const answer = await page.evaluate(async () => {
+  const right = await page.evaluate(async () => {
     const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
-    return C.getStage(0).quiz!.answer;
+    const q = Number(document.querySelector('.qz-q')!.getAttribute('data-q'));
+    return C.getStage(0).quiz!.pool[q].answer;
   });
-  const wrongIdx = answer === 0 ? 1 : 0;
-  await page.locator('.qz-choice').nth(wrongIdx).click();
+  const shown = () => page.locator('.qz-choice').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-choice'))));
+  const wrongIdx = (await shown()).find((c) => c !== right)!;
+  await page.locator(`.qz-choice[data-choice="${wrongIdx}"]`).click();
   await expect(page.locator('.qz-choice.wrong')).toHaveCount(1);
   await closeWindow(page);
   await interact(page, 'board');
-  await expect(page.locator('.qz-choice.wrong')).toHaveCount(1);
-  await expect(page.locator('.qz-choice').nth(wrongIdx)).toBeDisabled();
+  await expect(page.locator(`.qz-choice[data-choice="${wrongIdx}"]`)).toHaveClass(/wrong/);
   await expect(page.locator('.qz-mentor.is-warn')).toBeVisible();
+  await page.getByRole('button', { name: '처음부터 다시 ▶' }).click();
+  const order = await shown();
+  await closeWindow(page);
+  await interact(page, 'board');
+  expect(await shown()).toEqual(order);
+  await expect(page.locator('.qz-mentor')).toHaveCount(0);
   await closeWindow(page);
 
   // ---- D-5 rack: a server stays in the U it was put in ----

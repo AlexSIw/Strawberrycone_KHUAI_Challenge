@@ -1,6 +1,18 @@
 /* Whiteboard quiz (prefix: qz-) */
 
-.qz-todo { margin: 0 0 12px; line-height: 1.6; }
+/* "문제 2/3 ●●○" and what to do now */
+.qz-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
+.qz-progress {
+  flex-shrink: 0;
+  font-family: var(--pixel);
+  font-size: 14px;
+  padding: 3px 10px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--tan);
+}
+.qz-todo { flex: 1; min-width: 220px; margin: 0; line-height: 1.6; }
 
 .qz-board {
   background: #f4f1ea;
@@ -74,6 +86,5 @@
   background: var(--panel-2);
 }
 .qz-mentor p { margin: 0; line-height: 1.6; }
-.qz-mentor .qz-card { margin-top: 6px; font-size: 14px; color: var(--tan); }
 .qz-mentor.is-ok { border-color: var(--green); }
 .qz-mentor.is-warn { border-color: var(--amber); }
