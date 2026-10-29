@@ -23,6 +23,7 @@ import {
   roomAt,
   SPOT_BY_ID,
   SPOTS,
+  spotRectPx,
   TILE,
   TRAYS,
   UNBOXED_SPOTS,
@@ -33,7 +34,7 @@ import {
   type SpotDef,
 } from '../map';
 import { PX } from '../pixelArt';
-import { facingFor, LION_FEET_Y, LION_FRAME, LION_HEAD_CLEAR, LION_SCALE, lionLook, type Facing } from '../sprites/lion';
+import { facingFor, facingToward, LION_HEAD_CLEAR, LION_SCALE, lionAnim, lionFrame, type Facing } from '../sprites/lion';
 import {
   BOARD_TEX,
   CABINET_TEX,
@@ -198,9 +199,7 @@ export class DataCenter extends Phaser.Scene {
   private facing: Facing = 'down';
   private area: AreaId | null = null;
   private near: { spot: SpotDef; kind: InteractionKind } | null = null;
-  private lastSpot: SpotDef | null = null;
   private inputReadyAt = 0;
-  private angry = false;
   private cleanups: (() => void)[] = [];
   private spots: { spot: SpotDef; kind: InteractionKind; area: AreaId | null }[] = [];
 
@@ -248,9 +247,7 @@ export class DataCenter extends Phaser.Scene {
     this.facing = 'down';
     this.area = null;
     this.near = null;
-    this.lastSpot = null;
     this.inputReadyAt = 0;
-    this.angry = false;
     this.cleanups = [];
     this.spots = [];
     this.promptLabel = null;
@@ -552,15 +549,15 @@ export class DataCenter extends Phaser.Scene {
 
   private buildPlayer(): void {
     const { x, y } = PLAYER_SPAWN_PX;
-    this.shadow = this.add.image(x, y, 'shadow');
-    this.player = this.physics.add.sprite(x, y, 'lion_walk', 0);
-    this.player.setOrigin(0.5, LION_FEET_Y / LION_FRAME).setScale(LION_SCALE);
-    // small body at the feet (frame units; Arcade scales it with the sprite)
+    this.shadow = this.add.image(x, y - 2, 'shadow');
+    this.player = this.physics.add.sprite(x, y, 'lion', lionFrame('idle', 'down', 0));
+    // feet on the frame's bottom row, one art px = PX world px like the rest of the map
+    this.player.setOrigin(0.5, 1).setScale(LION_SCALE);
+    // small body at the feet (frame units; Arcade scales it with the sprite): half a tile wide, a quarter tall
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    body.setSize(40, 20, false);
-    body.setOffset((LION_FRAME - 40) / 2, LION_FEET_Y - 20);
+    body.setSize(16, 8, false).setOffset(8, 24);
     this.player.setCollideWorldBounds(true);
-    this.player.play('lion-idle');
+    if (this.anims.exists('lion-idle-down')) this.player.play('lion-idle-down');
   }
 
   private buildPrompt(): void {
@@ -777,7 +774,6 @@ export class DataCenter extends Phaser.Scene {
   private refreshAlarms(run: StageRun): void {
     const open = openAlarms(run.alarms);
     const severe = open.some((a) => a.sev === 'critical' || a.sev === 'major');
-    this.angry = open.some((a) => a.sev === 'critical');
     this.alertLevel = severe ? 'critical' : open.length ? 'warning' : 'none';
     this.mentorBubble.setVisible(open.length > 0);
   }
@@ -944,22 +940,17 @@ export class DataCenter extends Phaser.Scene {
 
     // animation
     const fixing = s.fixing && !!s.modal;
-    const look = lionLook({ moving, facing: this.facing, angry: this.angry, fixing });
-    // The walk cycle speeds up with the walk, so the paws keep pace with the floor instead of sliding.
+    const anim = lionAnim({ moving, facing: this.facing, fixing });
+    // The run cycle speeds up with the walk, so the paws keep pace with the floor instead of sliding.
     this.player.anims.timeScale = moving ? mul : 1;
-    if ('anim' in look) {
-      // a sheet that failed to load has no animation: don't warn "Missing animation" every frame
-      if (this.anims.exists(look.anim)) this.player.play(look.anim, true);
-    } else {
-      this.player.anims.stop();
-      if (this.player.texture.key !== look.texture || this.player.frame.name !== String(look.frame)) {
-        this.player.setTexture(look.texture, look.frame);
-      }
-    }
-    const spot = this.lastSpot;
-    this.player.setFlipX(fixing && !!spot && (spot.x + spot.w / 2) * TILE < this.player.x);
-    this.player.setDepth(this.player.y);
-    this.shadow.setPosition(this.player.x, this.player.y - 1).setDepth(this.player.y - 1);
+    // Only on a change of pose: the interact animation plays once and then holds its last frame.
+    // (A sheet that failed to load has no animation: don't warn "Missing animation" every frame.)
+    if (this.player.anims.currentAnim?.key !== anim && this.anims.exists(anim)) this.player.play(anim);
+    // The body has already moved this frame (the sprite catches up after update): its bottom is where the
+    // feet are drawn, so the shadow doesn't trail behind a running lion.
+    const feet = this.player.body as Phaser.Physics.Arcade.Body;
+    this.player.setDepth(feet.bottom);
+    this.shadow.setPosition(feet.center.x, feet.bottom - 2).setDepth(feet.bottom - 1);
 
     // rooms
     const area = roomAt(Math.floor(this.player.x / TILE), Math.floor(this.player.y / TILE));
@@ -981,7 +972,8 @@ export class DataCenter extends Phaser.Scene {
   private tryInteract(): void {
     const s = gameStore.getState();
     if (!this.near || isBlocked(s)) return;
-    this.lastSpot = this.near.spot;
+    // Turn to the device: the interact pose faces it, and so does the lion standing there afterwards.
+    this.facing = facingToward(this.player.x, this.player.y - 8, spotRectPx(this.near.spot));
     s.interact(this.near.spot.id);
     EventBus.emit('interact', this.near.spot.id);
   }
