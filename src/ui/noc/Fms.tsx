@@ -104,18 +104,18 @@ export function FmsTab({ run }: { run: StageRun }) {
     const s = gameStore.getState();
     for (const a of facilityAlarms) if (a.ackAt === null) s.ackAlarm(a.id);
     s.event('fms:notify');
-    setSent(events ? `📨 시설팀에 알렸어요. (시설 경보 ${events}건)` : '📨 시설팀에 알렸어요. 지금 울리는 시설 경보는 없어요.');
+    setSent(events ? `시설팀에 알렸어요. (시설 경보 ${events}건)` : '시설팀에 알렸어요. 지금 울리는 시설 경보는 없어요.');
   };
 
   return (
     <div className="fms">
-      <p className="fms-note">🏢 시설은 시설팀 담당이에요. 우리는 지켜보고, 이상하면 알려요.</p>
+      <p className="fms-note">시설은 시설팀 담당이에요. 우리는 지켜보고, 이상하면 알려요.</p>
       {cut.length > 0 && (
         <div className="fms-gauges fms-alert" role="alert">
           {cut.map((r) => (
             <Gauge
               key={r}
-              label={`🔥 ${placeName(r)}`}
+              label={r.startsWith('net') ? `${placeName(r)} 화재` : placeName(r)}
               value="✕ 전원 차단"
               tone="bad"
               sub={r.startsWith('net') ? '화재 감지 → 자동 소화 설비 작동 · 랙 전원 차단 (시설팀이 점검 후 복구)' : '랙 전원 차단 (시설팀이 점검 후 복구)'}
@@ -140,7 +140,7 @@ export function FmsTab({ run }: { run: StageRun }) {
       </div>
       <div className="fms-actions">
         <button className="btn primary" onClick={notify}>
-          📞 시설팀 통보
+          시설팀 통보
         </button>
         <span className="muted">{sent ?? (events ? `시설 경보 ${events}건이 울리고 있어요.` : '시설에서 온 경보는 없어요.')}</span>
       </div>

@@ -159,7 +159,7 @@ export function TopologyMap({ w, alarms, selected, onSelect }: Props) {
             <g key={id} className="nms-cloud">
               <ellipse cx={p.x} cy={p.y} rx={58} ry={17} />
               <text x={p.x} y={p.y + 4}>
-                ☁ 인터넷
+                인터넷
               </text>
             </g>
           );

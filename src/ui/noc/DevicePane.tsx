@@ -65,7 +65,7 @@ export function DevicePane({ run, id }: { run: StageRun; id: string }) {
   );
   const sshButton = ssh && (
     <button className="btn nms-ssh" onClick={() => sshTo(id)} title={`관리 PC 터미널에서 ssh ${id}`}>
-      🔑 SSH 접속
+      SSH 접속
     </button>
   );
 

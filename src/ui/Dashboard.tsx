@@ -6,6 +6,7 @@ import type { MetricPoint, StageRun } from '../sim/engine';
 import { readyPods } from '../sim/k8s';
 import { cableAt, linkUp, powered } from '../sim/network';
 import type { Device, Health, World } from '../sim/types';
+import { KIND_LABEL } from './deviceKind';
 import { availLevel, latencyLevel, type Level } from './levels';
 import './Dashboard.css';
 
@@ -270,7 +271,7 @@ function ServicesPanel({ h, w, half }: { h: Health; w: World; half: boolean }) {
       <div className="dash-notes">
         <h4>지금 보이는 문제</h4>
         {h.notes.length === 0 ? (
-          <p className="ok">✅ 눈에 띄는 문제 없음</p>
+          <p className="ok">✓ 눈에 띄는 문제 없음</p>
         ) : (
           <ul>
             {h.notes.map((n) => (
@@ -284,8 +285,6 @@ function ServicesPanel({ h, w, half }: { h: Health; w: World; half: boolean }) {
 }
 
 const visibleDevices = (w: World): Device[] => Object.values(w.devices).filter((d) => d.kind !== 'internet');
-
-const KIND_ICON: Record<Device['kind'], string> = { server: '🖥️', switch: '🔀', router: '🌐', internet: '☁️', firewall: '🧱', lb: '⚖️' };
 
 function LinksPanel({ w }: { w: World }) {
   return (
@@ -302,10 +301,10 @@ function LinksPanel({ w }: { w: World }) {
             <div key={d.id} className="dash-device">
               <div className="dash-device-head">
                 <span>
-                  {KIND_ICON[d.kind]} {d.label} <code>{d.id}</code>
+                  <span className="dash-kind">{KIND_LABEL[d.kind]}</span> {d.label} <code>{d.id}</code>
                 </span>
                 {!d.installed ? (
-                  <span className="tag">📦 아직 랙에 안 꽂음</span>
+                  <span className="tag">아직 랙에 안 꽂음</span>
                 ) : (
                   <Led on={on} tone="ok" label={on ? '전원 ON' : '전원 OFF'} />
                 )}
@@ -340,7 +339,7 @@ function PowerPanel({ w, h }: { w: World; h: Health }) {
       <div className="dash-power-top">
         <div className={`dash-tile ${p.mains ? 'ok' : 'bad'}`}>
           <span>한전 전기 (바깥 전기)</span>
-          <b>{p.mains ? '⚡ 정상' : '✕ 정전'}</b>
+          <b>{p.mains ? '● 정상' : '✕ 정전'}</b>
         </div>
         <div className={`dash-tile ${p.ups ? 'ok' : 'warn'}`}>
           <span>UPS (무정전 전원장치)</span>
@@ -380,7 +379,7 @@ function PowerPanel({ w, h }: { w: World; h: Health }) {
                 <td>
                   <Led on={d.feeds.includes('B')} tone="ok" label={d.feeds.includes('B') ? '연결' : '—'} />
                 </td>
-                <td className={on ? 'ok' : d.installed ? 'bad' : 'muted'}>{on ? '● 켜짐' : d.installed ? '✕ 꺼짐' : '📦 미설치'}</td>
+                <td className={on ? 'ok' : d.installed ? 'bad' : 'muted'}>{on ? '● 켜짐' : d.installed ? '✕ 꺼짐' : '○ 미설치'}</td>
               </tr>
             );
           })}

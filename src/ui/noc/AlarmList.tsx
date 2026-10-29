@@ -57,15 +57,15 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
           )}
           {isOpen && a.scenarioId && (
             <button className="btn nms-act" onClick={() => store.openModal({ type: 'hint', scenarioId: a.scenarioId ?? undefined })}>
-              📻 쿠사수에게 묻기
+              쿠사수에게 묻기
             </button>
           )}
           {isOpen && sc?.escalate && rt && (rt.escalatedAt === null ? (
             <button className="btn nms-act" onClick={() => store.escalate(sc.id)} title={`${sc.escalate.team}에 넘겨요. 처리될 때까지 시간이 걸려요.`}>
-              📨 담당팀 이관
+              담당팀 이관
             </button>
           ) : (
-            <span className="muted">📨 {sc.escalate.team} 처리 중</span>
+            <span className="muted">{sc.escalate.team} 처리 중</span>
           ))}
         </span>
       </li>
@@ -77,9 +77,9 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
   return (
     <section className={`nms-alarms${calm ? ' calm' : ''}`} aria-label="경보 목록">
       <header className="nms-sec-head">
-        <h3>🔔 경보 (Alarm)</h3>
+        <h3>경보 (Alarm)</h3>
         {calm ? (
-          <p className="nms-calm">✅ 지금 울리는 경보가 없어요.</p>
+          <p className="nms-calm">지금 울리는 경보가 없어요.</p>
         ) : (
           <p className="muted">장비와 감시 시스템이 이상하다고 알린 것들이에요. 위에 있을수록 급해요. 봤으면 확인(ACK)을 눌러요.</p>
         )}
@@ -95,7 +95,7 @@ export function AlarmList({ run, onSelect }: { run: StageRun; onSelect: (device:
       )}
       {!calm && (
         <p className="nms-poll muted">
-          📡 관제 시스템이 {every}초마다 장비에 상태를 물어봐요(SNMP 폴링 = 정해진 간격의 순찰). 그래서 어떤 경보는 늦게 떠요.
+          관제 시스템이 {every}초마다 장비에 상태를 물어봐요(SNMP 폴링 = 정해진 간격의 순찰). 그래서 어떤 경보는 늦게 떠요.
         </p>
       )}
     </section>

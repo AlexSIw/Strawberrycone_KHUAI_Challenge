@@ -14,11 +14,11 @@ export function GaugeModal({ target }: { target: 'ups' | 'pdu' | 'crac' }) {
       size="narrow"
       footer={
         <button className="btn" onClick={() => gameStore.getState().openModal({ type: 'noc', tab: 'fms' })}>
-          🖥️ 관제 화면 FMS 보기
+          관제 화면 FMS 보기
         </button>
       }
     >
-      <p className="fms-note">🏢 시설은 시설팀 담당이에요. 우리는 지켜보고 알려요.</p>
+      <p className="fms-note">시설은 시설팀 담당이에요. 우리는 지켜보고 알려요.</p>
       {w && (target === 'crac' ? <CoolingGauges w={w} /> : <PowerGauges w={w} only={target} />)}
     </ModalFrame>
   );

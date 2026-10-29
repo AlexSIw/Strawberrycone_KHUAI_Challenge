@@ -31,7 +31,7 @@ function NmsTab({ run, selected, onSelect }: { run: StageRun; selected: string |
       <div className="nms-top">
         <section className="nms-mapbox" aria-label="네트워크 구성도">
           <header className="nms-sec-head">
-            <h3>🗺 네트워크 구성도</h3>
+            <h3>네트워크 구성도</h3>
             <p className="muted">선 색이 길의 상태예요. 장비를 누르면 포트와 로그를 볼 수 있어요.</p>
           </header>
           <TopologyMap w={run.world} alarms={run.alarms} selected={selected} onSelect={onSelect} />
@@ -60,7 +60,7 @@ function NmsTab({ run, selected, onSelect }: { run: StageRun; selected: string |
           {selected ? (
             <DevicePane run={run} id={selected} />
           ) : (
-            <p className="nms-pick muted">👈 구성도에서 장비를 눌러 보세요. 포트 상태, LED, 에러 숫자, 장비 로그가 여기 나와요.</p>
+            <p className="nms-pick muted">구성도에서 장비를 눌러 보세요. 포트 상태, LED, 에러 숫자, 장비 로그가 여기 나와요.</p>
           )}
         </section>
       </div>
