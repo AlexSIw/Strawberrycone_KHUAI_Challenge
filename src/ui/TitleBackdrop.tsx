@@ -91,10 +91,11 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
   return leds;
 }
 
-function drawLeds(ctx: CanvasRenderingContext2D, width: number, height: number, leds: Led[], blink: number): void {
-  ctx.clearRect(0, 0, width, height);
+/** Repaint just the LEDs: each blink touches only their few rects (resizing the canvas already clears it whole). */
+function drawLeds(ctx: CanvasRenderingContext2D, leds: Led[], blink: number): void {
   for (const l of leds) {
     const look = ledLook(l.state, blink, l.phase);
+    ctx.clearRect(l.x, l.y, l.w, l.h);
     ctx.globalAlpha = look.alpha;
     ctx.fillStyle = `#${look.color.toString(16).padStart(6, '0')}`;
     ctx.fillRect(l.x, l.y, l.w, l.h);
@@ -128,7 +129,7 @@ export function TitleBackdrop() {
       }
       a.imageSmoothingEnabled = false;
       leds = drawScene(a, w, h, zoomFor(window.innerWidth, window.innerHeight));
-      drawLeds(b, w, h, leds, blink);
+      drawLeds(b, leds, blink);
     };
     layout();
     const ro = new ResizeObserver(layout);
@@ -137,7 +138,7 @@ export function TitleBackdrop() {
       ? undefined
       : window.setInterval(() => {
           blink++;
-          drawLeds(b, size.w, size.h, leds, blink);
+          drawLeds(b, leds, blink);
         }, BLINK_MS);
     return () => {
       ro.disconnect();
