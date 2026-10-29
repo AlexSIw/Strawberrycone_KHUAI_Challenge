@@ -34,7 +34,7 @@ import {
   type SpotDef,
 } from '../map';
 import { PX } from '../pixelArt';
-import { facingFor, facingToward, LION_HEAD_CLEAR, LION_SCALE, lionAnim, lionFrame, type Facing } from '../sprites/lion';
+import { attachLionDust, facingFor, facingToward, LION_HEAD_CLEAR, LION_SCALE, lionAnim, lionFrame, type Facing } from '../sprites/lion';
 import {
   BOARD_TEX,
   CABINET_TEX,
@@ -557,6 +557,8 @@ export class DataCenter extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setSize(16, 8, false).setOffset(8, 24);
     this.player.setCollideWorldBounds(true);
+    // dust lies on the floor: over the room labels, under every y-sorted object (depth = its feet y)
+    attachLionDust(this, this.player, DEPTH.label + 1);
     if (this.anims.exists('lion-idle-down')) this.player.play('lion-idle-down');
   }
 

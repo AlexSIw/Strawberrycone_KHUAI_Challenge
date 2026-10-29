@@ -1,4 +1,5 @@
-// The player: the KHU lion pixel sheet (public/assets/sprites/lion.png, from art/lion_sprite/lion_spritesheet.json).
+// The player: the KHU lion pixel sheet (public/assets/sprites/lion.png, from art/lion_sprite/lion_spritesheet.json)
+// and the dust its running feet kick up.
 // Phaser is imported for types only, so the pure helpers below can be unit-tested without a browser.
 import type Phaser from 'phaser';
 import { PX } from '../pixelArt';
@@ -34,8 +35,44 @@ export function lionFrame(state: LionState, dir: Facing, col: number): number {
 
 export const lionAnimKey = (state: LionState, dir: Facing) => `lion-${state}-${dir}`;
 
+// Dust under the running feet (art/lion_sprite/effects/dust.json): a 16 x 16 puff, 6 frames played once.
+const DUST_FRAME = 16;
+const DUST_DURATIONS = [100, 100, 150, 150, 150, 150];
+/** The puff's pixel that sits on the foot */
+const DUST_ANCHOR = { x: 8, y: 15 };
+/** At most this many puffs at once (a puff lasts 0.8 s; at 2x speed one spawns every ~0.1 s, so about 8 are up) */
+const DUST_POOL = 12;
+type DustEffect = 'dust_puff' | 'dust_side_left' | 'dust_side_right';
+/** Effect and foot points (art px in the lion frame) for run columns 0 and 3, where a foot lands. */
+const DUST: Record<Facing, { effect: DustEffect; feet: [{ x: number; y: number }, { x: number; y: number }] }> = {
+  right: { effect: 'dust_side_right', feet: [{ x: 14, y: 31 }, { x: 14, y: 31 }] },
+  left: { effect: 'dust_side_left', feet: [{ x: 17, y: 31 }, { x: 17, y: 31 }] },
+  down: { effect: 'dust_puff', feet: [{ x: 13, y: 31 }, { x: 18, y: 31 }] },
+  up: { effect: 'dust_puff', feet: [{ x: 13, y: 31 }, { x: 18, y: 31 }] },
+};
+
+/**
+ * The puff for a run frame of a lion whose feet are at (x, y) (world px), or null on a frame where no foot lands:
+ * its texture (also its animation key) and top-left, placed so the puff's anchor pixel sits on the landing foot,
+ * on the even-px art grid.
+ */
+export function dustSpawn(dir: Facing, col: number, x: number, y: number): { key: DustEffect; x: number; y: number } | null {
+  if (col !== 0 && col !== 3) return null;
+  const { effect, feet } = DUST[dir];
+  const foot = feet[col === 0 ? 0 : 1];
+  const snap = (v: number) => Math.round(v / PX) * PX;
+  return {
+    key: effect,
+    x: snap(x - (LION_FRAME / 2) * PX + (foot.x - DUST_ANCHOR.x) * PX),
+    y: snap(y - LION_FRAME * PX + (foot.y - DUST_ANCHOR.y) * PX),
+  };
+}
+
 const SHEETS = {
   lion: { url: 'assets/sprites/lion.png', frame: LION_FRAME },
+  dust_puff: { url: 'assets/sprites/dust_puff.png', frame: DUST_FRAME },
+  dust_side_left: { url: 'assets/sprites/dust_side_left.png', frame: DUST_FRAME },
+  dust_side_right: { url: 'assets/sprites/dust_side_right.png', frame: DUST_FRAME },
 } as const;
 
 type SheetKey = keyof typeof SHEETS;
@@ -87,9 +124,16 @@ export function addLionSheets(scene: Phaser.Scene, images: SheetImages): void {
   }
 }
 
-/** Call after loading: every lion animation, lion-{idle,run,interact}-{facing} (animations are global to the game). */
+/**
+ * Call after loading: every lion animation, lion-{idle,run,interact}-{facing}, and one per dust effect, keyed like
+ * its texture (animations are global to the game).
+ */
 export function setupLion(scene: Phaser.Scene): void {
   const anims = scene.anims;
+  for (const key of new Set(Object.values(DUST).map((d) => d.effect))) {
+    if (anims.exists(key) || !scene.textures.exists(key)) continue;
+    anims.create({ key, frames: DUST_DURATIONS.map((duration, frame) => ({ key, frame, duration })), repeat: 0 });
+  }
   // a sheet that failed to load leaves the lion on Phaser's "missing" texture instead of crashing
   if (!scene.textures.exists('lion')) return;
   for (const state of Object.keys(ANIMS) as LionState[]) {
@@ -105,6 +149,34 @@ export function setupLion(scene: Phaser.Scene): void {
       });
     }
   }
+}
+
+/**
+ * Kick up dust where the running lion's feet land. The puffs stay where they were spawned (world space), at
+ * `depth`: over the floor, under everything that stands on it. None when the player prefers reduced motion.
+ */
+export function attachLionDust(scene: Phaser.Scene, player: Phaser.GameObjects.Sprite, depth: number): void {
+  const reduced = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const pool = scene.add.group({ maxSize: DUST_POOL });
+  // A loop back to column 0 fires both UPDATE and REPEAT for the same frame: one puff per frame shown.
+  let last: Phaser.Animations.AnimationFrame | null = null;
+  const onFrame = (started: boolean) => (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
+    if (!started && frame === last) return;
+    last = frame;
+    if (reduced?.matches || !anim.key.startsWith('lion-run-')) return;
+    const dir = anim.key.slice('lion-run-'.length) as Facing;
+    const spawn = dustSpawn(dir, Number(frame.textureFrame) % COLUMNS, player.x, player.y);
+    if (!spawn || !scene.anims.exists(spawn.key)) return;
+    // null when all the puffs are still up
+    const puff = pool.get(spawn.x, spawn.y, spawn.key) as Phaser.GameObjects.Sprite | null;
+    if (!puff) return;
+    puff.setActive(true).setVisible(true).setOrigin(0).setScale(PX).setDepth(depth).setPosition(spawn.x, spawn.y);
+    puff.once('animationcomplete', () => pool.killAndHide(puff));
+    puff.play(spawn.key);
+  };
+  player.on('animationstart', onFrame(true));
+  player.on('animationupdate', onFrame(false));
+  player.on('animationrepeat', onFrame(false));
 }
 
 export interface LionPose {

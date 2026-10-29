@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TILE } from '../src/game/map';
-import { facingFor, facingToward, LION_FRAME, LION_SCALE, lionAnim, lionFrame } from '../src/game/sprites/lion';
+import { PX } from '../src/game/pixelArt';
+import { dustSpawn, facingFor, facingToward, LION_FRAME, LION_SCALE, lionAnim, lionFrame } from '../src/game/sprites/lion';
 
 describe('lion sheet', () => {
   it('one frame covers exactly one tile', () => {
@@ -58,5 +59,48 @@ describe('facingToward', () => {
   it('from inside the footprint, turns toward its centre', () => {
     expect(facingToward(4.1 * TILE, 3.5 * TILE, rect)).toBe('right');
     expect(facingToward(5 * TILE, 3.9 * TILE, rect)).toBe('up');
+  });
+});
+
+describe('dustSpawn', () => {
+  // the lion's feet at (100, 200): its frame's top-left is (100 - 16 PX, 200 - 32 PX)
+  const left = 100 - 16 * PX;
+  const top = 200 - 32 * PX;
+  /** World px of a lion-frame art pixel, and of the puff's anchor pixel (8, 15) */
+  const lionPx = (x: number, y: number) => ({ x: left + x * PX, y: top + y * PX });
+  const anchor = (d: { x: number; y: number }) => ({ x: d.x + 8 * PX, y: d.y + 15 * PX });
+
+  it('only where a foot lands: run columns 0 and 3', () => {
+    for (const col of [1, 2, 4, 5]) expect(dustSpawn('down', col, 100, 200)).toBeNull();
+    expect(dustSpawn('down', 0, 100, 200)).not.toBeNull();
+    expect(dustSpawn('down', 3, 100, 200)).not.toBeNull();
+  });
+
+  it('puts the puff anchor on the landing foot', () => {
+    const right = dustSpawn('right', 0, 100, 200)!;
+    expect(right.key).toBe('dust_side_right');
+    expect(anchor(right)).toEqual(lionPx(14, 31));
+    expect(anchor(dustSpawn('right', 3, 100, 200)!)).toEqual(lionPx(14, 31));
+
+    const l = dustSpawn('left', 3, 100, 200)!;
+    expect(l.key).toBe('dust_side_left');
+    expect(anchor(l)).toEqual(lionPx(17, 31));
+
+    for (const dir of ['down', 'up'] as const) {
+      const a = dustSpawn(dir, 0, 100, 200)!;
+      const b = dustSpawn(dir, 3, 100, 200)!;
+      expect(a.key).toBe('dust_puff');
+      expect(b.key).toBe('dust_puff');
+      // the feet alternate
+      expect(anchor(a)).toEqual(lionPx(13, 31));
+      expect(anchor(b)).toEqual(lionPx(18, 31));
+    }
+  });
+
+  it('lands on the art grid when the lion is between pixels', () => {
+    const d = dustSpawn('left', 0, 101.3, 200.9)!;
+    expect(d.x % PX).toBe(0);
+    expect(d.y % PX).toBe(0);
+    expect(Math.abs(anchor(d).x - (101.3 - 16 * PX + 17 * PX))).toBeLessThanOrEqual(PX / 2);
   });
 });
