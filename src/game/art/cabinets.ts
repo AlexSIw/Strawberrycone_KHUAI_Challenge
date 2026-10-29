@@ -1,10 +1,10 @@
 // Network and power cabinets: TOR switch, border router, patch panel, PDU, UPS.
 // Drawn in art px of U screen px each; layout constants are screen px relative to the texture's top-left.
-import { COLORS as C, PX } from '../pixelArt';
+import { COLORS as C, OLD_UNIT } from '../pixelArt';
 import type { Painter, TextureSpec } from './painter';
 
-/** Screen px per art px for this module's art. */
-const U = PX;
+/** Screen px per art px for this module's art (old 16-px-per-tile art until it is redrawn). */
+const U = OLD_UNIT;
 
 export const CABINET_TEX = { w: 32 * U, h: 40 * U, top: 8 * U };
 

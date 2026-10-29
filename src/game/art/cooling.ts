@@ -1,10 +1,10 @@
 // The CRAC (항온항습기) unit, its spinning fan and the grille over it.
 // Drawn in art px of U screen px each; layout constants are screen px relative to the texture's top-left.
-import { COLORS as C, PX } from '../pixelArt';
+import { COLORS as C, OLD_UNIT } from '../pixelArt';
 import type { Painter, TextureSpec } from './painter';
 
-/** Screen px per art px for this module's art. */
-const U = PX;
+/** Screen px per art px for this module's art (old 16-px-per-tile art until it is redrawn). */
+const U = OLD_UNIT;
 
 export const CRAC_TEX = {
   w: 48 * U,
@@ -13,6 +13,8 @@ export const CRAC_TEX = {
   /** Centre of the fan opening */
   fanX: 24.5 * U,
   fanY: 33.5 * U,
+  /** Origin of the fan sprite: the blade art's centre pixel (11, 11) of its 22-px texture */
+  fanOrigin: 11.5 / 22,
   led: { x: 39 * U, y: 11 * U, w: 3 * U, h: 3 * U },
   display: { x: 5 * U, y: 10 * U, w: 12 * U, h: 5 * U },
 };

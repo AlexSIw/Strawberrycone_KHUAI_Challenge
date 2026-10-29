@@ -1,10 +1,10 @@
 // Small props: water cooler, overhead cable tray, KHU banner, potted plant, cardboard box.
 // Drawn in art px of U screen px each; layout constants are screen px relative to the texture's top-left.
-import { BOX, BOX_PALETTE, COLORS as C, PLANT, PLANT_PALETTE, PX } from '../pixelArt';
+import { BOX, BOX_PALETTE, COLORS as C, PLANT, PLANT_PALETTE, OLD_UNIT } from '../pixelArt';
 import type { Painter, TextureSpec } from './painter';
 
-/** Screen px per art px for this module's art. */
-const U = PX;
+/** Screen px per art px for this module's art (old 16-px-per-tile art until it is redrawn). */
+const U = OLD_UNIT;
 
 function drawWater(p: Painter): void {
   // 16 x 24 water cooler

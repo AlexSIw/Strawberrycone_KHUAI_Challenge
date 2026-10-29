@@ -1,10 +1,10 @@
 // Ops-room furniture: the NOC monitor wall, the admin desk, chairs and the design whiteboard.
 // Drawn in art px of U screen px each; layout constants are screen px relative to the texture's top-left.
-import { COLORS as C, PX } from '../pixelArt';
+import { COLORS as C, OLD_UNIT } from '../pixelArt';
 import type { Painter, TextureSpec } from './painter';
 
-/** Screen px per art px for this module's art. */
-const U = PX;
+/** Screen px per art px for this module's art (old 16-px-per-tile art until it is redrawn). */
+const U = OLD_UNIT;
 
 export const MONITOR_TEX = { w: 48 * U, h: 32 * U };
 /** Screens on the NOC monitor wall (tinted red/amber during incidents). */

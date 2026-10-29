@@ -1,7 +1,10 @@
 // Hand-placed pixel sprites as text grids (1 char = one art pixel of PX screen px; '.' = transparent).
 // Kept free of imports so it can be previewed outside Phaser.
 
-export const PX = 3;
+/** Screen px per art px: one 64 px tile is 32 x 32 art px, the same density as the lion. */
+export const PX = 2;
+/** Screen px per art px for art still drawn at the old 16-px-per-tile density (until it is redrawn). */
+export const OLD_UNIT = 4;
 
 export const COLORS = {
   outline: 0x2a1410,

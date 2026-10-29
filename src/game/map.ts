@@ -2,7 +2,7 @@
 import type { SpotId } from '../content/types';
 import type { RoomId } from '../sim/types';
 
-export const TILE = 48;
+export const TILE = 64;
 export const MAP_W = 40;
 export const MAP_H = 26;
 export const WORLD_W = MAP_W * TILE;
@@ -103,6 +103,8 @@ export const RACK_SPOTS: { spot: SpotId; rack: string }[] = [
 
 /** Player spawn tile (corridor, right outside the NOC door). */
 export const PLAYER_SPAWN = { x: 19, y: 13 };
+/** Where the lion's feet start (world px): middle of the spawn tile, a little low. */
+export const PLAYER_SPAWN_PX = { x: (PLAYER_SPAWN.x + 0.5) * TILE, y: (PLAYER_SPAWN.y + 0.5) * TILE + TILE / 4 };
 
 export interface DecorDef {
   tex: string;

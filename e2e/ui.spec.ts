@@ -10,6 +10,7 @@
 // Typing and clicking go through the real UI; the app's store (imported through Vite, like e2e/persist.spec.ts)
 // only starts days, skips dialogue, runs the clock, clicks concept cards away and uses map hotspots.
 import { expect, test, type Page } from '@playwright/test';
+import { PLAYER_SPAWN_PX } from '../src/game/map';
 
 type GameStore = (typeof import('../src/store/game'))['gameStore'];
 /** The page's window with the app's store on it (see exposeStore). */
@@ -280,11 +281,11 @@ async function waitForLion(page: Page) {
  * right on a busy machine, where frames come late and the game falls behind the wall clock.
  */
 async function walkSpeed(page: Page): Promise<{ speed: number; timeScale: number }> {
-  await page.evaluate(() => {
+  await page.evaluate((spawn) => {
     const lion = (window as GameWin).__khuGame!.scene.getScene('DataCenter')!.player!;
     // The spawn tile (19, 13): corridor, with open floor to the right.
-    lion.body.reset(19.5 * 48, 13.5 * 48 + 10);
-  });
+    lion.body.reset(spawn.x, spawn.y);
+  }, PLAYER_SPAWN_PX);
   await page.keyboard.down('ArrowRight');
   try {
     await page.waitForTimeout(200);
@@ -335,8 +336,8 @@ test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', as
 
   // 1x: the normal walk.
   const slow = await walkSpeed(page);
-  expect(slow.speed).toBeGreaterThan(150);
-  expect(slow.speed).toBeLessThan(270);
+  expect(slow.speed).toBeGreaterThan(200);
+  expect(slow.speed).toBeLessThan(360);
   expect(slow.timeScale).toBe(1);
 
   await button.click();
@@ -360,10 +361,10 @@ test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', as
   await expect(page.getByRole('button', { name: /이동 속도/ })).toHaveText(/2x/);
 
   // A change applies at once, also mid-walk: 2x → 1x while → is held.
-  await page.evaluate(() => {
+  await page.evaluate((spawn) => {
     const lion = (window as GameWin).__khuGame!.scene.getScene('DataCenter')!.player!;
-    lion.body.reset(19.5 * 48, 13.5 * 48 + 10);
-  });
+    lion.body.reset(spawn.x, spawn.y);
+  }, PLAYER_SPAWN_PX);
   await page.keyboard.down('ArrowRight');
   await page.waitForTimeout(150);
   await page.getByRole('button', { name: /이동 속도/ }).click(); // → 1x
@@ -373,8 +374,8 @@ test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', as
   const b = await readClock(page);
   await page.keyboard.up('ArrowRight');
   const midSpeed = b.speed;
-  expect(midSpeed).toBeGreaterThan(150);
-  expect(midSpeed).toBeLessThan(270);
+  expect(midSpeed).toBeGreaterThan(200);
+  expect(midSpeed).toBeLessThan(360);
   expect(b.timeScale).toBe(1);
 
   expect(problems).toEqual([]);

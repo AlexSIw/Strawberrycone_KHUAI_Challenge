@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { textureSpecs } from '../src/game/art';
 import { Painter, type PixelTarget } from '../src/game/art/painter';
+import { TILE } from '../src/game/map';
+import { OLD_UNIT, PX } from '../src/game/pixelArt';
+import { zoomFor } from '../src/game/view';
+
+describe('pixel density', () => {
+  it('a tile is 32 x 32 art px (the lion frame), or 16 for art not redrawn yet', () => {
+    expect(TILE).toBe(32 * PX);
+    expect(TILE).toBe(16 * OLD_UNIT);
+  });
+
+  it('the camera only zooms to steps where an art pixel stays a whole number of screen px', () => {
+    for (const [w, h] of [
+      [375, 667],
+      [1280, 720],
+      [1280, 800],
+      [1440, 900],
+      [1920, 1080],
+      [2560, 1440],
+      [3840, 2160],
+    ]) {
+      const z = zoomFor(w, h);
+      expect([1, 1.5, 2], `${w}x${h}`).toContain(z);
+      expect(Number.isInteger(z * PX), `${w}x${h}`).toBe(true);
+    }
+    expect(zoomFor(1920, 1080)).toBe(1);
+    expect(zoomFor(2560, 1440)).toBe(1.5);
+    expect(zoomFor(3840, 2160)).toBe(2);
+  });
+});
 
 /** Records every filled rect instead of drawing it. */
 function recorder() {

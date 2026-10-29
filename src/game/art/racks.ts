@@ -1,10 +1,10 @@
 // Server racks and the server units mounted in them.
 // Drawn in art px of U screen px each; layout constants are screen px relative to the texture's top-left.
-import { COLORS as C, PX } from '../pixelArt';
+import { COLORS as C, OLD_UNIT } from '../pixelArt';
 import type { Painter, TextureSpec } from './painter';
 
-/** Screen px per art px for this module's art. */
-const U = PX;
+/** Screen px per art px for this module's art (old 16-px-per-tile art until it is redrawn). */
+const U = OLD_UNIT;
 
 export const RACK_TEX = {
   w: 32 * U,
@@ -17,9 +17,16 @@ export const RACK_TEX = {
   slots: 5,
   unitW: 24 * U,
   unitH: 6 * U,
+  /** A mounted unit sits this far below the top of its slot */
+  unitDy: 1 * U,
   /** LED inside a server unit */
   ledX: 19 * U,
   ledY: 2 * U,
+  ledW: 2 * U,
+  ledH: 2 * U,
+  /** Host-name label on the unit's label strip */
+  labelX: 1.5 * U,
+  labelY: 1 * U,
 };
 
 function drawRack(p: Painter, n: number): void {

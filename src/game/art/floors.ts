@@ -1,10 +1,10 @@
 // Room floors, walls and doors (one tile each).
 // Drawn in art px of U screen px each; layout constants are screen px relative to the texture's top-left.
-import { COLORS as C, PX } from '../pixelArt';
+import { COLORS as C, OLD_UNIT } from '../pixelArt';
 import { rng, type Painter, type TextureSpec } from './painter';
 
-/** Screen px per art px for this module's art. */
-const U = PX;
+/** Screen px per art px for this module's art (old 16-px-per-tile art until it is redrawn). */
+const U = OLD_UNIT;
 
 interface FloorStyle {
   base: number;

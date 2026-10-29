@@ -1,9 +1,12 @@
 // The player: KHU lion mascot sheets (smooth hand-drawn art, so LINEAR filtering instead of the pixel-art NEAREST).
 import Phaser from 'phaser';
+import { TILE } from '../map';
 
 export const LION_FRAME = 96;
 /** ~1.2 tiles tall on screen */
-export const LION_SCALE = 0.62;
+export const LION_SCALE = (0.62 * TILE) / 48;
+/** How far above the feet the [E] prompt must stay to clear the lion's head (world px) */
+export const LION_HEAD_CLEAR = (60 * TILE) / 48;
 /** Feet baseline inside a 96 px frame (see scripts/prepare-sprites.mjs: 240/256 of a cell) */
 export const LION_FEET_Y = 90;
 
