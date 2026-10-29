@@ -58,7 +58,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
     const img = image;
     gameStore.getState().act((w) => applyDesired(w, APP, n, img), 'board:desired');
     setDraft(null);
-    setMsg({ tone: 'ok', text: '적용 완료! 쿠버네티스가 pod 개수를 맞추는 중이에요. 관리 PC 터미널에서 pods 로 확인해보세요.' });
+    setMsg({ tone: 'ok', text: '적용 완료! 쿠버네티스가 pod 개수를 맞추는 중이야. 관리 PC 터미널에서 pods 로 확인해봐.' });
   };
 
   const applyCount = () => {
@@ -67,7 +67,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
     // Only the count changes here: no image, so a version that is deployed or still rolling out stays as it is.
     gameStore.getState().act((w) => applyDesired(w, APP, n), 'board:desired');
     setDraft(null);
-    setMsg({ tone: 'ok', text: `원하는 개수를 ${n}개로 바꿨어요. 쿠버네티스가 알아서 맞춰요.` });
+    setMsg({ tone: 'ok', text: `원하는 개수를 ${n}개로 바꿨네. 나머지는 쿠버네티스가 알아서 맞춰.` });
   };
 
   const ready = !!image && replicas >= 2;
