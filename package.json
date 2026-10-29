@@ -11,7 +11,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "sprites": "node scripts/prepare-sprites.mjs",
     "typecheck": "tsc --noEmit -p .",
     "typecheck:worker": "tsc --noEmit -p worker"
   },
@@ -33,7 +32,6 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
-    "sharp": "0.35.5",
     "typescript": "5.9.3",
     "vite": "7.3.7",
     "vitest": "4.1.12"

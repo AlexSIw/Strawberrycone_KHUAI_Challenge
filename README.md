@@ -188,7 +188,7 @@ src/
 worker/             Cloudflare Worker: dist 정적 서빙 + POST /api/hint (ChatKHU 프록시)
 tests/              vitest: 네트워크 · IOS · 장비 명령 · 엔진 · 저장 · 소리, 하루 자동 플레이 (autoplay.ts)
 e2e/                Playwright: 스모크, 창 · 터미널, 저장, 소리, 6일 전체 플레이
-art/                사자 원본 그림 · scripts/prepare-sprites.mjs 로 변환
+art/lion_sprite/    사자 스프라이트 원본 시트 · 메타데이터(JSON) · 생성 스크립트(Python)
 public/assets/audio/  배경음악 · 효과음 · 대화 소리 (출처와 라이선스: docs/ASSETS.md)
 ```
 
@@ -209,23 +209,12 @@ public/assets/audio/  배경음악 · 효과음 · 대화 소리 (출처와 라�
 
 ## 사자 그림 바꾸기
 
-원본은 `art/` 에 있어요 (투명 배경 PNG, 1024×1024).
+사자는 32×32 픽셀 시트 한 장이에요: `public/assets/sprites/lion.png` (원본 · 메타데이터 · 생성 스크립트는 `art/lion_sprite/`).
 
-- `art/lion_walk.png`, `art/lion_angry.png`: 4×4 칸(한 칸 256px). 행 순서 = **아래, 왼쪽, 오른쪽, 위**. 각 행의 첫 칸은 서 있는 자세.
-- `art/lion_extras.png`: 초상화 2개(웃음/걱정) + 대기 2프레임 + 수리 2프레임. 자르는 위치는 `scripts/prepare-sprites.mjs` 의 `EXTRAS` 좌표.
-
-```bash
-npm run sprites
-```
-
-결과물 (`public/assets/`):
-
-| 파일 | 크기 | 배치 |
-|---|---|---|
-| `sprites/lion_walk.png`, `sprites/lion_angry.png` | 384×384 | 4×4 프레임(96×96), 행 = 아래·왼쪽·오른쪽·위, 0번 = 서 있기 |
-| `sprites/lion_idle.png` | 192×96 | 2프레임 (2번째 = 눈 깜빡) |
-| `sprites/lion_fix.png` | 192×96 | 2프레임 (드라이버 들고 쭈그려 앉기) |
-| `portraits/lion_happy.png`, `portraits/lion_worried.png` | 192×192 | 대화창 초상화 |
+- 6열 × 12행, 한 칸 32×32. 행 순서 = idle 아래·왼쪽·오른쪽·위 (4프레임, 반복) → run 아래·왼쪽·오른쪽·위 (6프레임, 반복) → interact 아래·왼쪽·오른쪽·위 (4프레임, 한 번 재생 후 마지막 프레임 유지). 재생 속도는 `src/game/sprites/lion.ts`.
+- 게임은 맵 한 칸 = 32×32 아트 픽셀 = 화면 64px(2배)로 그려요. 시트를 고칠 때도 32×32 격자를 지켜 주세요.
+- 먼지 효과: `dust_puff.png` · `dust_side_left.png` · `dust_side_right.png` (16×16 × 6프레임). 달리기에서 발이 닿는 프레임(0·3)마다 발 위치에 생기고 그 자리에 남아요 (`art/lion_sprite/effects/dust.json`).
+- 대화 초상화(사자 · 쿠사수 · 팀장님 · 안내)와 맵의 나머지 그림은 이미지 파일 없이 코드로 그린 같은 밀도의 픽셀 아트예요: `src/game/art/` (`portraits.ts`, 맵 텍스처 모듈, 공용 색 `palette.ts`).
 
 ## 배포 (Cloudflare Workers)
 
