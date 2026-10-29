@@ -10,9 +10,10 @@ import type { Device, Health, PlayContext, World } from '../../sim/types';
 import { RACK_RESTORE } from '../incidents/d1';
 import { k8sHealth, k8sLayer } from '../k8sWorld';
 import { ADDR } from '../topology';
+import { QUIZZES } from '../quizzes';
 import type { DaySpec, GuideStep } from '../types';
 import { emptyHealth } from '../worlds';
-import { BASE_INTERACTIONS, WEEKDAY_CLOCK } from './common';
+import { BASE_INTERACTIONS, QUIZ_OBJECTIVE, WEEKDAY_CLOCK } from './common';
 
 /** Rehearsal traffic: requests per second all day. */
 const REHEARSAL_RPS = 1500;
@@ -298,6 +299,7 @@ export const day4: DaySpec = {
       steps: CHECKLIST_STEPS,
       lesson: '게이트웨이 둘(HSRP), 업링크 두 줄(LACP), 전원 두 줄(A/B). 점검표로는 "둘 다 있다"까지 확인했어요. 하지만 "하나가 죽어도 된다"는 다른 얘기예요.',
     },
+    QUIZ_OBJECTIVE,
   ],
   interactions: {
     ...BASE_INTERACTIONS,
@@ -315,6 +317,7 @@ export const day4: DaySpec = {
   },
   health,
   panels: ['traffic', 'services', 'links', 'temp', 'pods'],
+  quiz: QUIZZES[4],
   /**
    * What D-1 builds or fixes, taken back out: CORE-02's VLAN 10/40 gateways (the other CORE-02 SVIs are
    * 선배's), the K8S VLAN on TOR-02's uplink to CORE-02 (fixed during today's fire), and the cluster.

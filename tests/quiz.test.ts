@@ -4,12 +4,24 @@ import { describe, expect, it } from 'vitest';
 import { missionCards } from '../src/content/cards';
 import { CONCEPTS } from '../src/content/concepts';
 import { attemptView, choiceOrder, drawQuestions, QUIZ_START, quizReduce, type QuizProgress } from '../src/content/quizRun';
+import { template } from '../src/content/incidents';
 import { getStage, planIncidents, STAGES } from '../src/content/stages';
 import type { Objective, Quiz, StageDef } from '../src/content/types';
-import { incidentsSettled, startStage, visibleObjectives, type StageRun } from '../src/sim/engine';
+import {
+  ackAlarm,
+  incidentsSettled,
+  isCleared,
+  recordEvents,
+  scenarioOf,
+  startStage,
+  tickRun,
+  visibleObjectives,
+  type StageRun,
+} from '../src/sim/engine';
 import type { ScenarioRuntime } from '../src/sim/scenario';
 import { interactionAt } from '../src/store/game';
 import { lockedText, objectiveStatus, waitingText } from '../src/ui/objectiveStatus';
+import { apply, AUTOPLAY } from './autoplay';
 
 // ---------- the finale rule ----------
 
@@ -270,5 +282,56 @@ describe('the 설계 보드 during the day and at its end', () => {
     expect(interactionAt(missionsDone(def, (_r, i) => (i === 0 ? 'active' : 'resolved')), 'board')).toEqual(def.interactions.board);
     run = { ...run, objectivesDone: { ...run.objectivesDone, quiz: 1 } };
     expect(interactionAt(run, 'board')).toEqual(def.interactions.board);
+  });
+
+  it('the fixed incidents some questions build on have a single variant (D-2 LACP: d2-uplink, D-1 uncordon: d1-heat)', () => {
+    expect(template('d2-uplink').variants).toHaveLength(1);
+    expect(template('d1-heat').variants).toHaveLength(1);
+    expect(getStage(3).fixed.map((f) => f.template)).toContain('d2-uplink');
+    expect(getStage(4).fixed.map((f) => f.template)).toContain('d1-heat');
+  });
+});
+
+// ---------- the clock runs on while the quiz is up ----------
+
+/** One second of a day like tests/autoplay.ts playDay: tick, ACK alarms 2 s after they show, solutions 2 s after that. */
+function second(def: StageDef, run: StageRun, solved: Set<string>): StageRun {
+  run = tickRun(run).run;
+  const now = run.ctx.stageTime;
+  for (const a of run.alarms) if (a.ackAt === null && a.clearedAt === null && now >= a.raisedAt + 2) run = ackAlarm(run, a.id);
+  for (const a of run.alarms) {
+    const r = run.scenarios.find((x) => x.id === a.scenarioId);
+    if (!r || r.state !== 'active' || a.ackAt === null || solved.has(r.id) || now < a.ackAt + 2) continue;
+    for (const st of scenarioOf(def, r.id).solutionSteps) run = apply(run, st, null);
+    solved.add(r.id);
+  }
+  return run;
+}
+
+describe.each(QUIZ_DAYS.map((d) => [d.label, d] as const))('%s: a slow quiz', (_label, def) => {
+  // D-1's rack power comes back 30 s after the fire is out and CORE-01 takes Active back: with the quiz to
+  // answer, the clock now runs that far.
+  it.each([1, 2, 3, 4, 5, 6])('seed %i: three minutes on the quiz break nothing, then the day clears', (seed) => {
+    let run = startStage(def.id, seed);
+    const solved = new Set<string>();
+    for (let i = 0; i < 900 && !finaleShown(def, run); i++) {
+      for (const o of visibleObjectives(def, run)) {
+        if (o.id in run.objectivesDone || o.finale) continue;
+        for (const st of AUTOPLAY[def.id]?.[o.id] ?? []) run = apply(run, st, null);
+      }
+      run = second(def, run, solved);
+    }
+    expect(finaleShown(def, run)).toBe(true);
+    const fired = run.scenarios.filter((r) => r.activatedAt !== null).length;
+    const availability = run.health.availability;
+    for (let i = 0; i < 180; i++) run = second(def, run, solved);
+    expect(run.scenarios.filter((r) => r.activatedAt !== null).length).toBe(fired);
+    expect(incidentsSettled(def, run)).toBe(true);
+    expect(finaleShown(def, run)).toBe(true);
+    expect(run.health.availability).toBeGreaterThanOrEqual(Math.min(availability, 0.99));
+    expect(run.world.power?.racksDown ?? []).toEqual([]);
+    run = recordEvents(run, ['open:quiz', 'quiz:correct']).run;
+    expect(run.objectivesDone).toHaveProperty('quiz');
+    expect(isCleared(run)).toBe(true);
   });
 });

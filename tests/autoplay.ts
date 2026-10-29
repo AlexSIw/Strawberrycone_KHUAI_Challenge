@@ -93,6 +93,7 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
       { cmd: 'ssh CORE-01', host: 'ops' },
       { ios: ['enable', 'write memory'], host: 'CORE-01' },
     ],
+    quiz: [{ events: ['open:quiz', 'quiz:correct'] }],
   },
   // D-3 (WP5)
   2: {
@@ -115,6 +116,7 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
     ],
     sms: [{ events: ['noc:sms'] }],
     msa: [{ events: ['open:board'] }, { action: decompose, events: ['board:decompose'] }],
+    quiz: [{ events: ['open:quiz', 'quiz:correct'] }],
   },
   // D-2 (WP6): containers on APP-01 / DB-02; the bundle itself is the load-test incident's fix.
   // The rows follow the missions' first-time guides (steps), ssh and exit included.
@@ -143,6 +145,7 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
       { ios: ['enable', 'show etherchannel summary', 'write memory'], host: 'TOR-01' },
       { ios: ['enable', 'write memory'], host: 'CORE-01' },
     ],
+    quiz: [{ events: ['open:quiz', 'quiz:correct'] }],
   },
   // D-1 (WP6): the cluster, CORE-02 as HSRP standby, the redundancy checklist.
   4: {
@@ -182,6 +185,7 @@ export const AUTOPLAY: Record<number, Record<string, Step[]>> = {
       { ios: ['enable', 'show etherchannel summary'], host: 'TOR-01' },
       { events: ['noc:fms'] },
     ],
+    quiz: [{ events: ['open:quiz', 'quiz:correct'] }],
   },
   // D-Day (WP7): the pre-check, then the clock; the postmortem board is a UI event.
   5: {

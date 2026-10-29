@@ -9,9 +9,10 @@ import { campusDelivery, lbView, reach, studentDelivery } from '../../sim/networ
 import type { Device, DockerState, Health, PlayContext, World } from '../../sim/types';
 import { APP_HOST, appContainer, badImage, DB_HOST, dbOnVolume, enrollUnreachable, poBundled, UPLINK_PORTS } from '../incidents/d2';
 import { ipOf } from '../incidents/d4';
+import { QUIZZES } from '../quizzes';
 import type { DaySpec, GuideStep } from '../types';
 import { emptyHealth } from '../worlds';
-import { BASE_INTERACTIONS, WEEKDAY_CLOCK } from './common';
+import { BASE_INTERACTIONS, QUIZ_OBJECTIVE, WEEKDAY_CLOCK } from './common';
 
 /** Enrollment rows in last night's DB backup (restored into an empty volume). */
 const BACKUP_ROWS = 1520;
@@ -287,6 +288,7 @@ export const day3: DaySpec = {
       why: '케이블 두 줄을 LACP로 묶으면 두 장비는 그 둘을 Port-channel 1(Po1)이라는 한 줄짜리 길로 써요. show etherchannel summary 에서 Po1(SU)는 "묶음이 일하는 중", 멤버 포트 옆 (P)는 "묶여서 일하는 중"이에요. 묶음도 업링크라서 trunk(여러 VLAN을 한 줄로 함께 실어 나르는 포트)로 일하고, 실어 나를 VLAN 목록이 NMS에 "trunk 10,20,40,50"처럼 보여요.',
       lesson: '케이블 두 줄을 LACP로 묶으면 장비는 한 줄(Port-channel)로 봐요. 그래서 STP가 막을 고리도 없고, 둘 다 일해서 폭이 두 배예요. 한 줄이 끊겨도 나머지로 버텨요.',
     },
+    QUIZ_OBJECTIVE,
   ],
   interactions: {
     ...BASE_INTERACTIONS,
@@ -305,6 +307,7 @@ export const day3: DaySpec = {
   },
   health,
   panels: ['traffic', 'services', 'links'],
+  quiz: QUIZZES[3],
   /**
    * What D-2 builds, taken back out: the TOR-01 ↔ CORE-01 bundle (the second cable stays, unbundled).
    * Also CORE-02's VLAN 20 gateway: 선배 sets that standby up after D-2 (D-1 starts with it), so up to D-2

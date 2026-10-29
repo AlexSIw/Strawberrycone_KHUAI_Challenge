@@ -7,9 +7,10 @@ import { campusDelivery, hostDelivery, reach } from '../../sim/network';
 import type { Device, PlayContext, World } from '../../sim/types';
 import { ipOf } from '../incidents/d4';
 import { ADDR } from '../topology';
+import { QUIZZES } from '../quizzes';
 import type { DaySpec } from '../types';
 import { emptyHealth } from '../worlds';
-import { BASE_INTERACTIONS, WEEKDAY_CLOCK } from './common';
+import { BASE_INTERACTIONS, QUIZ_OBJECTIVE, WEEKDAY_CLOCK } from './common';
 
 const TOR = 'TOR-01';
 const CORE = 'CORE-01';
@@ -331,6 +332,7 @@ export const day1: DaySpec = {
         { text: 'CORE-01 저장', cmd: 'write memory', why: 'exit → ssh CORE-01 → enable → write memory', done: (w) => savedGear(w).includes(CORE) },
       ],
     },
+    QUIZ_OBJECTIVE,
   ],
   interactions: {
     ...BASE_INTERACTIONS,
@@ -367,6 +369,7 @@ export const day1: DaySpec = {
     return emptyHealth(w, { availability: ok, errorRate: 1 - ok, latencyMs: ok < 1 ? 600 : 20, services, notes });
   },
   panels: ['links', 'services'],
+  quiz: QUIZZES[1],
   /**
    * What D-4 builds, taken back out: VLANs 10/20 on TOR-01 and its three server ports, the VLAN 10/20
    * gateways on the cores, the web/db DNS records. Everything else stays as 선배 left it.

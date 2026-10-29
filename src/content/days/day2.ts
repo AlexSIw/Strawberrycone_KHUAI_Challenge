@@ -6,9 +6,10 @@ import { capacity } from '../../sim/app';
 import { hostDelivery, lbView, listening, studentDelivery } from '../../sim/network';
 import type { AppService, Health, PlayContext, World } from '../../sim/types';
 import { studentsServed } from '../incidents/d3';
+import { QUIZZES } from '../quizzes';
 import type { DaySpec } from '../types';
 import { emptyHealth } from '../worlds';
-import { BASE_INTERACTIONS, WEEKDAY_CLOCK } from './common';
+import { BASE_INTERACTIONS, QUIZ_OBJECTIVE, WEEKDAY_CLOCK } from './common';
 import { resave } from './day1';
 
 /** Beta testers only: about 20 requests a second. */
@@ -252,6 +253,7 @@ export const day2: DaySpec = {
       alsoConcepts: ['isolation'],
       lesson: '한 덩어리(모놀리스)는 알림 버그 하나에도 전체가 멈춰요. 기능별 작은 서비스로 나누면(MSA) 푸드코트처럼 탈 난 매장만 문을 닫아요.',
     },
+    QUIZ_OBJECTIVE,
   ],
   interactions: {
     ...BASE_INTERACTIONS,
@@ -270,6 +272,7 @@ export const day2: DaySpec = {
   },
   health,
   panels: ['traffic', 'services', 'links'],
+  quiz: QUIZZES[2],
   /** What D-3 builds on the L4, taken back out: its pool members and the /health check. And what later days build. */
   unbuild: (w) => {
     laterDaysOut(w);
