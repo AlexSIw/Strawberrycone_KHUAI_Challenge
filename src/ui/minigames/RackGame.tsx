@@ -1,5 +1,7 @@
 // 랙 장착 미니게임: 카트의 서버 상자를 끌어서 자기 랙의 빈 칸(U)에 꽂는다.
 import { useRef, useState } from 'react';
+import type { StageDef } from '../../content/types';
+import { mapDevicesOf } from '../../game/worldView';
 import { mount } from '../../sim/actions';
 import { linkUp, powered } from '../../sim/network';
 import type { Device, World } from '../../sim/types';
@@ -14,6 +16,7 @@ import {
   TaskBar,
   prefersReducedMotion,
   rackName,
+  useDay,
   useDragDrop,
   useNote,
   useTimers,
@@ -31,12 +34,13 @@ type Slots = Record<string, string>;
 
 type Layout = Record<string, (string | null)[]>;
 
-function rackServers(w: World): Device[] {
-  return Object.values(w.devices).filter((d) => d.kind === 'server' && !!d.rack);
+/** Today's rack-mounted devices (def.mapDevices; without a list, every rack server). */
+function rackServers(w: World, day: StageDef): Device[] {
+  return mapDevicesOf(day, w).filter((d) => !!d.rack);
 }
 
 function racksOf(servers: Device[]): string[] {
-  const all = new Set([...BASE_RACKS, ...servers.map((d) => d.rack!)]);
+  const all = new Set(servers.length ? servers.map((d) => d.rack!) : BASE_RACKS);
   return [...all].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
@@ -69,6 +73,7 @@ function ServerBox({ d, lifted }: { d: Device; lifted?: boolean }) {
 
 export function RackGame() {
   const world = useWorld();
+  const day = useDay();
   // Kept for the stage: reopening the rack shows every server in the U the player chose.
   const [slots, setSlots] = useStageState<Slots>('rack:slots', {});
   const [selected, setSelected] = useState<string | null>(null);
@@ -98,7 +103,8 @@ export function RackGame() {
     const [kind, rack, slotStr] = zone.split(':');
     if (kind !== 'slot' && kind !== 'rack') return;
     if (rack !== d.rack) return wrongRack(d, rack);
-    const col = layoutOf(rackServers(w), slots)[rack];
+    if (!day) return;
+    const col = layoutOf(rackServers(w, day), slots)[rack];
     let slot = Number(slotStr);
     if (kind === 'rack') slot = DEFAULT_ORDER.find((i) => col[i] === null) ?? -1;
     if (slot < 0 || col[slot]) {
@@ -110,13 +116,13 @@ export function RackGame() {
     setSelected(null);
     setSnapped(id);
     later(() => setSnapped((cur) => (cur === id ? null : cur)), 700);
-    showNote('ok', `철컥! ${d.label} 장착 완료 🔩`);
+    showNote('ok', `철컥! ${d.label} 장착 완료`);
   };
 
   const { drag, bind } = useDragDrop<string>(place);
 
-  if (!world) return null;
-  const servers = rackServers(world);
+  if (!world || !day) return null;
+  const servers = rackServers(world, day);
   const layout = layoutOf(servers, slots);
   const onCart = servers.filter((d) => !d.installed);
   const done = onCart.length === 0;
@@ -128,7 +134,7 @@ export function RackGame() {
     const id = layout[rack][i];
     const d = id ? world.devices[id] : undefined;
     if (d) {
-      showNote('info', powered(world, d.id) ? `${d.label}: 장착 완료, 전원 ON ⚡` : `${d.label}: 장착 완료. LED가 꺼져 있는 건 아직 전기가 없어서예요.`);
+      showNote('info', powered(world, d.id) ? `${d.label}: 장착 완료, 전원 ON` : `${d.label}: 장착 완료. LED가 꺼져 있는 건 아직 전기가 없어서예요.`);
     } else {
       showNote('info', done ? '빈 칸이에요. 지금은 넣을 서버가 없어요.' : '먼저 카트에서 서버 상자를 하나 고르세요.');
     }
@@ -137,15 +143,14 @@ export function RackGame() {
   const allPowered = servers.every((d) => powered(world, d.id));
   const allLinked = servers.every((d) => linkUp(world, d.id, d.ports[0] ?? 'eth0'));
   const nextStep = !allPowered
-    ? 'LED가 꺼져 있죠? 아직 전기가 없어서예요. 다음은 전원실 PDU에서 전원을 꽂아 주세요.'
+    ? 'LED가 꺼져 있죠? 아직 전기가 없어서예요. 다음은 전기실 PDU에서 전원을 꽂아 주세요.'
     : !allLinked
-      ? '전원 OK! 이제 네트워크실 스위치에 케이블을 연결하면 오른쪽 LED도 켜져요.'
+      ? '전원 OK! 이제 네트워크실 TOR 배선판에서 TOR-01에 케이블을 연결하면 오른쪽 LED도 켜져요.'
       : '전원도 케이블도 연결 끝! 서버들이 초록불로 반짝여요.';
 
   return (
     <MiniGameFrame
       title="서버실 · 랙에 서버 장착"
-      icon="🗄️"
       size="wide"
       onEscape={() => {
         if (!selected) return false;
@@ -167,9 +172,9 @@ export function RackGame() {
 
       <div className="rk-floor">
         <div className="rk-cart" data-drop="cart">
-          <div className="rk-cart-title">📦 배송 카트</div>
+          <div className="rk-cart-title">배송 카트</div>
           <div className="rk-cart-shelf">
-            {onCart.length === 0 && <div className="rk-cart-empty">카트가 비었어요 🎉</div>}
+            {onCart.length === 0 && <div className="rk-cart-empty">카트가 비었어요!</div>}
             {onCart.map((d) => (
               <button
                 key={d.id}
@@ -196,6 +201,8 @@ export function RackGame() {
           {Object.entries(layout).map(([rack, col]) => {
             const mine = servers.filter((d) => d.rack === rack);
             const mounted = mine.filter((d) => d.installed).length;
+            // The rack's own top-of-rack switch (TOR-01 on rack 1): already there, not a slot to fill.
+            const tor = Object.values(world.devices).find((d) => d.kind === 'switch' && d.rack === rack);
             return (
               <div key={rack} className={`rk-rack${flash === rack ? ' flash' : ''}`} data-drop={`rack:${rack}`}>
                 <div className="rk-plate">
@@ -205,6 +212,15 @@ export function RackGame() {
                   </span>
                 </div>
                 <div className="rk-cabinet">
+                  {tor && (
+                    <div className="rk-slot rk-tor" title={`${tor.label}: 이 랙 서버들을 묶는 랙 스위치(Top of Rack). 케이블은 네트워크실 배선판에서 이 스위치 포트로 연결해요.`}>
+                      <span className="rk-u">맨 위</span>
+                      <span className="rk-server rk-switch">
+                        <span className="rk-ports" aria-hidden />
+                        <span className="rk-srv-label">{tor.label} · 랙 스위치</span>
+                      </span>
+                    </div>
+                  )}
                   {col.map((id, i) => {
                     const zone = `slot:${rack}:${i}`;
                     const d = id ? world.devices[id] : undefined;

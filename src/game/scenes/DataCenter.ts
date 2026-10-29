@@ -1,10 +1,15 @@
-// The walkable data center: floor plan, equipment with live LEDs, the lion, the mentor and incident markers.
+// The walkable data center: floor plan, equipment with live LEDs, the lion and the mentor. What is broken is
+// only shown in the NOC (alarms); the map just flashes the monitor wall while alarms are open.
 import Phaser from 'phaser';
 import { getStage } from '../../content/stages';
 import type { InteractionKind, SpotId, StageDef } from '../../content/types';
-import { activeScenarios, visibleObjectives, type StageRun } from '../../sim/engine';
+import { openAlarms } from '../../sim/alarms';
+import { visibleObjectives, type StageRun } from '../../sim/engine';
 import type { World } from '../../sim/types';
-import { gameStore, type GameState } from '../../store/game';
+import { gameStore, interactionAt, type GameState } from '../../store/game';
+import { ARROW_SCREEN_SCALE } from '../art/markers';
+import { MENTOR_ANIM } from '../art/mentor';
+import { canDash, DASH_COOLDOWN_MS, DASH_DIST, DASH_MS, DASH_SPEED, dashDir, GHOST_ALPHA, GHOST_EVERY_MS, GHOST_FADE_MS } from '../dash';
 import { EventBus } from '../EventBus';
 import {
   DECOR,
@@ -12,12 +17,14 @@ import {
   MAP_H,
   MAP_W,
   PLAYER_SPAWN,
+  PLAYER_SPAWN_PX,
   RACK_SPOTS,
   ROOM_BY_ID,
   ROOMS,
   roomAt,
   SPOT_BY_ID,
   SPOTS,
+  spotRectPx,
   TILE,
   TRAYS,
   UNBOXED_SPOTS,
@@ -27,7 +34,8 @@ import {
   type AreaId,
   type SpotDef,
 } from '../map';
-import { facingFor, LION_FEET_Y, LION_FRAME, LION_SCALE, lionLook, type Facing } from '../sprites/lion';
+import { PX } from '../pixelArt';
+import { attachLionDust, facingFor, facingToward, LION_HEAD_CLEAR, LION_SCALE, lionAnim, lionFrame, type Facing } from '../sprites/lion';
 import {
   BOARD_TEX,
   CABINET_TEX,
@@ -43,10 +51,13 @@ import {
   UPS_LCD,
   UPS_LED,
 } from '../textures';
+import { zoomFor } from '../view';
 import {
   blackout,
   cracOk,
   LED_COLOR,
+  ledLook,
+  mapSwitchOf,
   patchLed,
   pduLeds,
   rackSlots,
@@ -54,13 +65,14 @@ import {
   routerLeds,
   SWITCH_PORTS,
   switchPortLeds,
+  torOf,
   unmountedServers,
   upsView,
   type LedState,
 } from '../worldView';
 
-/** Walking speed (px/s) at 1x; the HUD's 🏃 setting (store.moveSpeed) multiplies it. */
-const SPEED = 210;
+/** Walking speed (px/s): about 4.4 tiles a second. */
+const SPEED = TILE * 4.375;
 /** Max distance from the lion's feet to a device's footprint for the [E] prompt */
 const INTERACT_RANGE = TILE * 1.1;
 const FONT = 'Galmuri11, "Noto Sans KR", monospace';
@@ -78,6 +90,8 @@ interface Cover {
   y1: number;
 }
 
+/** Widest floor texture baked at once (px): the smallest WebGL max texture size still in use. */
+const FLOOR_BAND_PX = 2048;
 const DEPTH = { floor: 0, wallDecor: 2, label: 3, overhead: 5000, overlay: 6000, marker: 7000, prompt: 8000, arrow: 8500 };
 
 // Verbs stay neutral ("전원 설정", not "UPS 연결하기") so the prompt never hints at an incident's answer.
@@ -88,23 +102,36 @@ const VERB: Record<InteractionKind['kind'], string> = {
   console: '콘솔 접속',
   consolePick: '콘솔 접속',
   terminal: '터미널 열기',
-  dashboard: '대시보드 보기',
+  dashboard: '관제 화면 보기',
   mentor: '말 걸기',
-  repair: '수리하기',
+  repair: '계기판 보기',
   board: '열기',
   quiz: '퀴즈 풀기',
   inspect: '살펴보기',
+  noc: '관제 화면 보기',
+  gauge: '계기판 보기',
 };
 
-function verbFor(k: InteractionKind, cracWorking: boolean): string {
+function verbFor(k: InteractionKind): string {
   if (k.kind === 'cable' && k.mode === 'repair') return '케이블 점검';
   if (k.kind === 'console') return `콘솔 접속 (${k.host})`;
-  if (k.kind === 'repair' && cracWorking) return '점검하기';
   return VERB[k.kind];
 }
 
-/** How far a spot's sprite sticks up above its footprint (for placing the prompt). */
-const OVERHANG: Partial<Record<SpotId, number>> = { monitor: 48, board: 48, mentor: 18 };
+/**
+ * A spot's name in the prompt, from what it opens today: the network-room switch is where the day's map
+ * switch is cabled ("TOR 배선판 (TOR-01)"), the router cabinet is a console to the switches on console days.
+ */
+function spotLabel(spot: SpotDef, kind: InteractionKind, def: StageDef): string {
+  // One name everywhere (missions, calls, hints): the TOR 배선판, with the switch it is wired to.
+  if (spot.id === 'switch' && kind.kind === 'cable') return `TOR 배선판 (${mapSwitchOf(def)})`;
+  if (spot.id === 'router' && kind.kind === 'consolePick') return '스위치 콘솔';
+  return spot.label;
+}
+
+/** How far a spot's sprite sticks up above its footprint, in tiles (for placing the prompt); others stick up half a tile. */
+const OVERHANG: Partial<Record<SpotId, number>> = { monitor: 1, board: 1, mentor: 0.125 };
+const overhangPx = (id: SpotId) => (OVERHANG[id] ?? 0.5) * TILE;
 
 const SCROLL_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
@@ -173,13 +200,25 @@ export class DataCenter extends Phaser.Scene {
   private shadow!: Phaser.GameObjects.Image;
   private keys!: Record<KeyName, Phaser.Input.Keyboard.Key>;
   private facing: Facing = 'down';
+  /** The interact gesture already played while windows stayed open (back at the device it holds, not replays). */
+  private interactShown: string | null = null;
+  /**
+   * The dash in progress (Space): which way, where the body started (it ends after DASH_DIST, whatever the frame
+   * rate), a time cap in case it gets stuck, and when the next afterimage is due.
+   */
+  private dash: { dx: number; dy: number; x0: number; y0: number; until: number; nextGhost: number } | null = null;
+  /** No new dash before this loop time (the cooldown). */
+  private dashReadyAt = 0;
+  /** Pooled afterimages of the dashing lion (copies of its current frame that fade out). */
+  private ghosts!: Phaser.GameObjects.Group;
+  private reducedMotion = false;
   private area: AreaId | null = null;
   private near: { spot: SpotDef; kind: InteractionKind } | null = null;
-  private lastSpot: SpotDef | null = null;
   private inputReadyAt = 0;
-  private angry = false;
   private cleanups: (() => void)[] = [];
   private spots: { spot: SpotDef; kind: InteractionKind; area: AreaId | null }[] = [];
+  /** What each spot opens right now (interactionAt: the board turns into the 퇴근 퀴즈), refreshed as the run changes */
+  private kinds = new Map<SpotId, InteractionKind>();
 
   private prompt!: Phaser.GameObjects.Container;
   private promptBg!: Phaser.GameObjects.Graphics;
@@ -198,21 +237,18 @@ export class DataCenter extends Phaser.Scene {
   private upsLed!: Led;
   private upsLcd!: Phaser.GameObjects.Rectangle;
   private upsLcdState: 'normal' | 'battery' | 'off' = 'normal';
-  private cracFan!: Phaser.GameObjects.Image;
+  private cracFan!: Phaser.GameObjects.Sprite;
   private cracLed!: Led;
   private cracDisplay!: Phaser.GameObjects.Rectangle;
   private cracText!: Phaser.GameObjects.Text;
   private cracWarn!: Phaser.GameObjects.Container;
-  private cracSpinning = true;
   private powerOverlay!: Phaser.GameObjects.Rectangle;
-  private powerLamp!: Phaser.GameObjects.Arc;
+  private powerLamp!: Phaser.GameObjects.Image;
   private monitorAlerts: Phaser.GameObjects.Rectangle[] = [];
   private alertLevel: 'none' | 'warning' | 'critical' = 'none';
   private boxes: Phaser.GameObjects.Image[] = [];
   private mentorBubble!: Phaser.GameObjects.Image;
-  private markers = new Map<string, Marker>();
-  private markerKey = '';
-  /** Blue "여기" marker over the device of the current objective (hidden during incidents) */
+  /** Blue "여기" marker over the device of the current objective (hidden while alarms are open) */
   private goal!: Marker;
   private goalSpot: SpotId | null = null;
   /** Objective panel and toast stack, in canvas px (re-read every COVER_REFRESH_MS) */
@@ -228,11 +264,10 @@ export class DataCenter extends Phaser.Scene {
     this.facing = 'down';
     this.area = null;
     this.near = null;
-    this.lastSpot = null;
     this.inputReadyAt = 0;
-    this.angry = false;
     this.cleanups = [];
     this.spots = [];
+    this.kinds = new Map();
     this.promptLabel = null;
     this.leds = [];
     this.blink = 0;
@@ -241,12 +276,12 @@ export class DataCenter extends Phaser.Scene {
     this.monitorAlerts = [];
     this.alertLevel = 'none';
     this.boxes = [];
-    this.markers = new Map();
-    this.markerKey = '';
     this.goalSpot = null;
     this.covers = [];
     this.coversAt = 0;
-    this.cracSpinning = true;
+    this.interactShown = null;
+    this.dash = null;
+    this.dashReadyAt = 0;
   }
 
   create(): void {
@@ -270,8 +305,12 @@ export class DataCenter extends Phaser.Scene {
 
     this.spots = SPOTS.flatMap((spot) => {
       const kind = this.def.interactions[spot.id];
-      if (!kind || (kind.kind === 'quiz' && !this.def.quiz)) return [];
-      return [{ spot, kind, area: roomAt(spot.x, spot.y) }];
+      if (!kind) return [];
+      // A rack with a top-of-rack switch says so in its prompt ("랙 1 · TOR-01").
+      const rack = RACK_SPOTS.find((r) => r.spot === spot.id)?.rack;
+      const tor = rack && run ? torOf(run.world, rack) : undefined;
+      const label = spotLabel(spot, kind, this.def);
+      return [{ spot: { ...spot, label: tor ? `${label} · ${tor.label}` : label }, kind, area: roomAt(spot.x, spot.y) }];
     });
     this.area = roomAt(PLAYER_SPAWN.x, PLAYER_SPAWN.y);
 
@@ -279,8 +318,9 @@ export class DataCenter extends Phaser.Scene {
 
     if (run) {
       this.refreshWorld(run.world);
-      this.refreshIncidents(run);
+      this.refreshAlarms(run);
       this.refreshGoal(run);
+      this.refreshKinds(run);
     }
     this.cleanups.push(gameStore.subscribe((s, prev) => this.onStore(s, prev)));
 
@@ -302,26 +342,34 @@ export class DataCenter extends Phaser.Scene {
   // ---------- building the world ----------
 
   private buildFloor(): void {
-    const rt = this.add.renderTexture(0, 0, WORLD_W, WORLD_H).setOrigin(0).setDepth(DEPTH.floor);
-    rt.beginDraw();
-    for (let ty = 0; ty < MAP_H; ty++) {
-      for (let tx = 0; tx < MAP_W; tx++) {
-        let key: string;
-        if (isWall(tx, ty)) {
-          // In 3/4 view a wall shows its painted face when there is floor in front (below) of it.
-          key = isWall(tx, ty + 1) ? 'wall-top' : `wall-face-${ty === 11 ? 1 : 0}`;
-        } else {
-          key = floorKey(roomAt(tx, ty), tx, ty);
+    // Baked in bands at most 2048 px wide: some GPUs can't hold one texture the size of the whole map.
+    const band = Math.max(1, Math.floor(FLOOR_BAND_PX / TILE));
+    for (let x0 = 0; x0 < MAP_W; x0 += band) {
+      const cols = Math.min(band, MAP_W - x0);
+      const rt = this.add.renderTexture(x0 * TILE, 0, cols * TILE, WORLD_H).setOrigin(0).setDepth(DEPTH.floor);
+      rt.beginDraw();
+      for (let ty = 0; ty < MAP_H; ty++) {
+        for (let tx = x0; tx < x0 + cols; tx++) {
+          let key: string;
+          if (isWall(tx, ty)) {
+            // In 3/4 view a wall shows its painted face when there is floor in front (below) of it.
+            key = isWall(tx, ty + 1) ? 'wall-top' : `wall-face-${ty === 11 ? 1 : 0}`;
+          } else {
+            key = floorKey(roomAt(tx, ty), tx, ty);
+          }
+          rt.batchDrawFrame(key, undefined, (tx - x0) * TILE, ty * TILE);
         }
-        rt.batchDrawFrame(key, undefined, tx * TILE, ty * TILE);
       }
+      // a door straddling two bands is drawn into both (each band clips its half)
+      for (const r of ROOMS) {
+        if (r.door && r.door.x < x0 + cols && r.door.x + r.door.w > x0) rt.batchDrawFrame('door', undefined, (r.door.x - x0) * TILE, r.door.y * TILE);
+      }
+      rt.endDraw();
     }
-    for (const r of ROOMS) if (r.door) rt.batchDrawFrame('door', undefined, r.door.x * TILE, r.door.y * TILE);
-    rt.endDraw();
 
     // wall decorations
-    this.add.image(27 * TILE, 15 * TILE + 8, 'banner').setOrigin(0).setDepth(DEPTH.wallDecor);
-    this.add.image(19 * TILE, 11 * TILE + 8, 'banner').setOrigin(0).setDepth(DEPTH.wallDecor);
+    this.add.image(27 * TILE, 15 * TILE + 6 * PX, 'banner').setOrigin(0).setDepth(DEPTH.wallDecor);
+    this.add.image(19 * TILE, 11 * TILE + 6 * PX, 'banner').setOrigin(0).setDepth(DEPTH.wallDecor);
   }
 
   private buildLabels(): void {
@@ -331,7 +379,7 @@ export class DataCenter extends Phaser.Scene {
       this.add
         .text(Math.round(r.label.x * TILE), Math.round(r.label.y * TILE), r.name, {
           fontFamily: FONT,
-          fontSize: '22px',
+          fontSize: '28px',
           color: light ? '#1f1830' : '#ffffff',
         })
         .setOrigin(0.5)
@@ -341,9 +389,9 @@ export class DataCenter extends Phaser.Scene {
       if (r.door) {
         const top = r.door.y < 12;
         const cx = Math.round((r.door.x + r.door.w / 2) * TILE);
-        const y = top ? 12 * TILE + 14 : 14 * TILE + 34;
+        const y = top ? 12 * TILE + 20 : 14 * TILE + 44;
         this.add
-          .text(cx, y, `${top ? '▲' : '▼'} ${r.name}`, { fontFamily: FONT, fontSize: '13px', color: '#5a4636' })
+          .text(cx, y, `${top ? '▲' : '▼'} ${r.name}`, { fontFamily: FONT, fontSize: '16px', color: '#5a4636' })
           .setOrigin(0.5)
           .setAlpha(0.8)
           .setDepth(DEPTH.label);
@@ -386,9 +434,9 @@ export class DataCenter extends Phaser.Scene {
     for (const { spot, rack } of RACK_SPOTS) {
       const p = this.place(`rack-${rack.slice(4)}`, SPOT_BY_ID[spot], RACK_TEX.h);
       const temp = this.add
-        .text(p.left + RACK_TEX.w / 2, p.top - 2, '', {
+        .text(p.left + RACK_TEX.w / 2, p.top - PX, '', {
           fontFamily: FONT,
-          fontSize: '12px',
+          fontSize: '15px',
           color: '#ffb547',
           backgroundColor: '#221c28',
           padding: { x: 4, y: 2 },
@@ -426,26 +474,29 @@ export class DataCenter extends Phaser.Scene {
     const crac = this.place('crac', SPOT_BY_ID.crac, CRAC_TEX.h);
     const fx = crac.left + CRAC_TEX.fanX;
     const fy = crac.top + CRAC_TEX.fanY;
-    // the blade art's centre pixel sits 1.5 px right/below the texture centre
-    this.cracFan = this.add.image(fx, fy, 'crac-fan').setOrigin(34.5 / 66).setDepth(crac.depth + 0.1);
+    if (!this.anims.exists('crac-fan-spin')) {
+      this.anims.create({ key: 'crac-fan-spin', frames: this.anims.generateFrameNumbers('crac-fan', {}), frameRate: 16, repeat: -1 });
+    }
+    this.cracFan = this.add.sprite(fx, fy, 'crac-fan', 0).setOrigin(CRAC_TEX.fanOrigin).setDepth(crac.depth + 0.1);
+    this.cracFan.play('crac-fan-spin');
     this.add.image(fx, fy, 'crac-grille').setDepth(crac.depth + 0.2);
     const d = CRAC_TEX.display;
     this.cracDisplay = this.add.rectangle(crac.left + d.x, crac.top + d.y, d.w, d.h, 0x1d4a34).setOrigin(0).setDepth(crac.depth + 0.1);
     this.cracText = this.add
-      .text(crac.left + d.x + d.w / 2, crac.top + d.y + d.h / 2, 'OK', { fontFamily: FONT, fontSize: '11px', color: '#4fd17a' })
+      .text(crac.left + d.x + d.w / 2, crac.top + d.y + d.h / 2, 'OK', { fontFamily: FONT, fontSize: '14px', color: '#4fd17a' })
       .setOrigin(0.5)
       .setDepth(crac.depth + 0.2);
     const l = CRAC_TEX.led;
     this.cracLed = this.makeLed(crac.left + l.x, crac.top + l.y, l.w, l.h, crac.depth + 0.2);
-    const warnIcon = this.add.image(0, 0, 'warn').setScale(1.4).setOrigin(0.5, 1);
+    const warnIcon = this.add.image(0, 0, 'warn').setOrigin(0.5, 1);
     const warnText = this.add
-      .text(0, 2, '고장!', { fontFamily: FONT, fontSize: '12px', color: '#ffffff', backgroundColor: '#d7262b', padding: { x: 4, y: 2 } })
+      .text(0, 2, '고장!', { fontFamily: FONT, fontSize: '15px', color: '#ffffff', backgroundColor: '#d7262b', padding: { x: 4, y: 2 } })
       .setOrigin(0.5, 0);
     this.cracWarn = this.add
-      .container(crac.left + CRAC_TEX.w / 2, crac.top - 22, [warnIcon, warnText])
+      .container(crac.left + CRAC_TEX.w / 2, crac.top - 30, [warnIcon, warnText])
       .setDepth(DEPTH.overhead + 2)
       .setVisible(false);
-    this.tweens.add({ targets: this.cracWarn, y: crac.top - 30, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: this.cracWarn, y: crac.top - 40, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     const mon = this.place('monitor-wall', SPOT_BY_ID.monitor, MONITOR_TEX.h);
     this.monitorAlerts = MONITOR_SCREENS.map((r) =>
@@ -467,28 +518,25 @@ export class DataCenter extends Phaser.Scene {
       .setAlpha(0.66)
       .setDepth(DEPTH.overlay)
       .setVisible(false);
-    this.powerLamp = this.add
-      .circle(6.5 * TILE, 16.5 * TILE, 70, 0xff2a2a, 0.22)
-      .setDepth(DEPTH.overlay + 1)
-      .setVisible(false);
+    this.powerLamp = this.add.image(6.5 * TILE, 16.5 * TILE, 'lamp-glow').setDepth(DEPTH.overlay + 1).setVisible(false);
     this.tweens.add({ targets: this.powerLamp, alpha: 0.05, duration: 500, yoyo: true, repeat: -1 });
   }
 
   private buildDecor(solids: Phaser.Physics.Arcade.StaticGroup): void {
     for (const d of DECOR) {
       const x = (d.x + 0.5) * TILE;
-      const y = (d.y + 1) * TILE - 2;
+      const y = (d.y + 1) * TILE - PX;
       this.add.image(x, y, d.tex).setOrigin(0.5, 1).setDepth(d.overhead ? DEPTH.overhead : y);
       if (d.solid) solids.add(this.add.zone(x, (d.y + 0.65) * TILE, TILE * 0.8, TILE * 0.6));
     }
     for (const t of TRAYS) {
       for (let x = t.x0; x <= t.x1; x++) {
-        this.add.image(x * TILE, t.y * TILE + 4, 'tray').setOrigin(0).setDepth(DEPTH.overhead).setAlpha(0.95);
+        this.add.image(x * TILE, t.y * TILE + 2 * PX, 'tray').setOrigin(0).setDepth(DEPTH.overhead).setAlpha(0.95);
       }
     }
     // Cardboard boxes for servers that haven't been mounted yet (stage 1).
     this.boxes = UNBOXED_SPOTS.map((b) => {
-      const y = (b.y + 1) * TILE - 4;
+      const y = (b.y + 1) * TILE - 2 * PX;
       return this.add
         .image((b.x + 0.5) * TILE, y, 'box')
         .setOrigin(0.5, 1)
@@ -500,23 +548,20 @@ export class DataCenter extends Phaser.Scene {
   private buildMentor(solids: Phaser.Physics.Arcade.StaticGroup): void {
     const s = SPOT_BY_ID.mentor;
     const x = (s.x + 0.5) * TILE;
-    const y = (s.y + 1) * TILE - 4;
+    const y = (s.y + 1) * TILE - 2 * PX;
     if (!this.anims.exists('mentor-idle')) {
       this.anims.create({
         key: 'mentor-idle',
-        frames: [
-          { key: 'mentor', frame: 0, duration: 900 },
-          { key: 'mentor', frame: 1, duration: 650 },
-        ],
+        frames: MENTOR_ANIM.map((f) => ({ key: 'mentor', ...f })),
         repeat: -1,
       });
     }
     this.add.image(x, y, 'shadow').setDepth(y - 1);
     this.add.sprite(x, y, 'mentor', 0).setOrigin(0.5, 1).setDepth(y).play('mentor-idle');
     this.add
-      .text(x, y + 3, '쿠사수', {
+      .text(x, y + 2 * PX, '쿠사수', {
         fontFamily: FONT,
-        fontSize: '11px',
+        fontSize: '14px',
         color: '#f4ece4',
         backgroundColor: '#22305e',
         padding: { x: 4, y: 1 },
@@ -524,32 +569,35 @@ export class DataCenter extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(y + 0.5);
     this.mentorBubble = this.add
-      .image(x + 24, y - 56, 'bubble-question')
+      .image(x + TILE / 2, y - 60, 'bubble-question')
       .setOrigin(0.5, 1)
       .setDepth(DEPTH.marker - 1)
       .setVisible(false);
-    this.tweens.add({ targets: this.mentorBubble, y: y - 62, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: this.mentorBubble, y: y - 68, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     solids.add(this.add.zone(x, (s.y + 0.6) * TILE, TILE * 0.8, TILE * 0.8));
   }
 
   private buildPlayer(): void {
-    const x = (PLAYER_SPAWN.x + 0.5) * TILE;
-    const y = (PLAYER_SPAWN.y + 0.5) * TILE + 10;
-    this.shadow = this.add.image(x, y, 'shadow');
-    this.player = this.physics.add.sprite(x, y, 'lion_walk', 0);
-    this.player.setOrigin(0.5, LION_FEET_Y / LION_FRAME).setScale(LION_SCALE);
-    // small body at the feet (frame units; Arcade scales it with the sprite)
+    const { x, y } = PLAYER_SPAWN_PX;
+    this.shadow = this.add.image(x, y - 2, 'shadow');
+    this.player = this.physics.add.sprite(x, y, 'lion', lionFrame('idle', 'down', 0));
+    // feet on the frame's bottom row, one art px = PX world px like the rest of the map
+    this.player.setOrigin(0.5, 1).setScale(LION_SCALE);
+    // small body at the feet (frame units; Arcade scales it with the sprite): half a tile wide, a quarter tall
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    body.setSize(40, 20, false);
-    body.setOffset((LION_FRAME - 40) / 2, LION_FEET_Y - 20);
+    body.setSize(16, 8, false).setOffset(8, 24);
     this.player.setCollideWorldBounds(true);
-    this.player.play('lion-idle');
+    // dust lies on the floor: over the room labels, under every y-sorted object (depth = its feet y)
+    attachLionDust(this, this.player, DEPTH.label + 1);
+    this.ghosts = this.add.group({ maxSize: 8 });
+    this.reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (this.anims.exists('lion-idle-down')) this.player.play('lion-idle-down');
   }
 
   private buildPrompt(): void {
     this.promptBg = this.add.graphics();
-    this.promptKey = this.add.text(0, 0, 'E', { fontFamily: FONT, fontSize: '12px', color: '#2a1410' }).setOrigin(0.5);
-    this.promptText = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '13px', color: '#f4ece4' }).setOrigin(0, 0.5);
+    this.promptKey = this.add.text(0, 0, 'E', { fontFamily: FONT, fontSize: '15px', color: '#2a1410' }).setOrigin(0.5);
+    this.promptText = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '16px', color: '#f4ece4' }).setOrigin(0, 0.5);
     this.prompt = this.add.container(0, 0, [this.promptBg, this.promptKey, this.promptText]).setDepth(DEPTH.prompt).setVisible(false);
     this.prompt.on('pointerdown', () => this.tryInteract());
   }
@@ -566,7 +614,8 @@ export class DataCenter extends Phaser.Scene {
     // Use the key's down event rather than polling JustDown: a quick tap whose keydown and keyup
     // land in the same frame would otherwise be lost (Key.onUp clears the just-down flag).
     this.keys.e.on(Phaser.Input.Keyboard.Events.DOWN, this.onActionKey, this);
-    this.keys.space.on(Phaser.Input.Keyboard.Events.DOWN, this.onActionKey, this);
+    // Space dashes; only E interacts.
+    this.keys.space.on(Phaser.Input.Keyboard.Events.DOWN, this.onDashKey, this);
 
     // While walking around (no window open), stop Space/arrows from scrolling the page or re-clicking a focused HUD button.
     const onKeyDown = (e: KeyboardEvent) => {
@@ -578,6 +627,54 @@ export class DataCenter extends Phaser.Scene {
     };
     window.addEventListener('keydown', onKeyDown);
     this.cleanups.push(() => window.removeEventListener('keydown', onKeyDown));
+  }
+
+  /** The movement keys held right now, as -1/0/1 per axis. */
+  private heldDir(): { vx: number; vy: number } {
+    const k = this.keys;
+    return {
+      vx: (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0),
+      vy: (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0),
+    };
+  }
+
+  /** Space: a short leap the way the keys point (or the lion faces), once the last one has cooled down. */
+  private onDashKey(): void {
+    const now = this.game.loop.now;
+    if (this.dash || now < this.inputReadyAt || !canDash(now, this.dashReadyAt) || isBlocked(gameStore.getState())) return;
+    const { vx, vy } = this.heldDir();
+    const { dx, dy } = dashDir(vx, vy, this.facing);
+    const b = this.player.body as Phaser.Physics.Arcade.Body;
+    this.dash = { dx, dy, x0: b.x, y0: b.y, until: now + DASH_MS * 3, nextGhost: now };
+  }
+
+  private endDash(now: number): void {
+    this.dash = null;
+    this.dashReadyAt = now + DASH_COOLDOWN_MS;
+  }
+
+  /** Did the dash run into a wall or a device (the body is stopped on the side it is heading for)? */
+  private dashBlocked(dx: number, dy: number): boolean {
+    const b = this.player.body as Phaser.Physics.Arcade.Body;
+    const hit = (side: 'left' | 'right' | 'up' | 'down') => b.blocked[side] || b.touching[side];
+    return (dx > 0 && hit('right')) || (dx < 0 && hit('left')) || (dy > 0 && hit('down')) || (dy < 0 && hit('up'));
+  }
+
+  /** One afterimage: a copy of the lion's current frame where it stands, fading out (the art itself is untouched). */
+  private spawnGhost(): void {
+    const p = this.player;
+    const g = this.ghosts.get(p.x, p.y, p.texture.key, p.frame.name) as Phaser.GameObjects.Sprite | null;
+    if (!g) return;
+    this.tweens.killTweensOf(g);
+    g.setActive(true)
+      .setVisible(true)
+      .setTexture(p.texture.key, p.frame.name)
+      .setPosition(p.x, p.y)
+      .setOrigin(p.originX, p.originY)
+      .setScale(p.scaleX, p.scaleY)
+      .setDepth(p.depth - 0.5)
+      .setAlpha(GHOST_ALPHA);
+    this.tweens.add({ targets: g, alpha: 0, duration: GHOST_FADE_MS, onComplete: () => this.ghosts.killAndHide(g) });
   }
 
   private onActionKey(): void {
@@ -592,7 +689,9 @@ export class DataCenter extends Phaser.Scene {
     // Zoom, bounds and offset first: startFollow snaps to the lion using the offset it is given
     // (it resets followOffset), so passing the real one avoids a slide-in pan at stage start.
     this.layoutCamera();
-    cam.startFollow(this.player, true, 0.12, 0.12, cam.followOffset.x, cam.followOffset.y);
+    // No easing (lerp 1): an easing camera sits at fractional scroll values and is rounded apart from the
+    // lion, so the pixel-art lion would jitter back and forth by a pixel on screen while walking.
+    cam.startFollow(this.player, true, 1, 1, cam.followOffset.x, cam.followOffset.y);
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutCamera, this);
     this.cleanups.push(() => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutCamera, this));
   }
@@ -602,7 +701,7 @@ export class DataCenter extends Phaser.Scene {
     const { width, height } = this.scale.gameSize;
     // Never below 1: pixelArt uses NEAREST sampling, so zooming out drops pixel rows and the
     // Galmuri labels / 3 px art become unreadable (1280x720 used to get 0.75).
-    const zoom = Phaser.Math.Clamp(Math.floor(Math.min(width / 1280, height / 800) * 4) / 4, 1, 2);
+    const zoom = zoomFor(width, height);
     cam.setZoom(zoom);
     // Phaser subtracts followOffset from the target, so a positive x puts the lion right of centre:
     // the middle of the area not covered by the objective panel on wide screens (and a bit below the HUD).
@@ -626,8 +725,11 @@ export class DataCenter extends Phaser.Scene {
       return;
     }
     if (s.run && s.run.world !== prev.run?.world) this.refreshWorld(s.run.world);
-    if (s.run && s.run.scenarios !== prev.run?.scenarios) this.refreshIncidents(s.run);
-    if (s.run && s.run !== prev.run) this.refreshGoal(s.run);
+    if (s.run && s.run.alarms !== prev.run?.alarms) this.refreshAlarms(s.run);
+    if (s.run && s.run !== prev.run) {
+      this.refreshGoal(s.run);
+      this.refreshKinds(s.run);
+    }
     // A window opened/closed: drop held keys so the lion doesn't keep walking.
     if (isBlocked(s) !== isBlocked(prev)) this.input.keyboard?.resetKeys();
   }
@@ -641,26 +743,20 @@ export class DataCenter extends Phaser.Scene {
 
   private setLed(led: Led | undefined, state: LedState): void {
     if (!led) return;
-    if (led.state !== state) {
-      led.state = state;
-      led.rect.setFillStyle(LED_COLOR[state]);
-    }
+    led.state = state;
     this.applyBlinkTo(led);
   }
 
-  /** Green flickers like network activity, red flashes, amber/off stay steady. */
   private applyBlinkTo(led: Led): void {
-    const t = this.blink + led.phase;
-    if (led.state === 'green') led.rect.setAlpha(t % 3 === 0 ? 0.4 : 1);
-    else if (led.state === 'red') led.rect.setAlpha(t % 2 === 0 ? 1 : 0.4);
-    else led.rect.setAlpha(1);
+    const look = ledLook(led.state, this.blink, led.phase);
+    led.rect.setFillStyle(look.color).setAlpha(look.alpha);
   }
 
   private onBlink(): void {
     this.blink++;
     for (const l of this.leds) this.applyBlinkTo(l);
     const on = this.blink % 2 === 0;
-    // NOC screens flash during incidents
+    // NOC screens flash while alarms are open
     const color = this.alertLevel === 'critical' ? 0xff3b3b : 0xffb547;
     for (const r of this.monitorAlerts) {
       r.setFillStyle(color);
@@ -678,7 +774,7 @@ export class DataCenter extends Phaser.Scene {
 
   private refreshWorld(w: World): void {
     for (const r of this.racks) this.refreshRack(r, w);
-    switchPortLeds(w).forEach((s, i) => this.setLed(this.switchLeds[i], s));
+    switchPortLeds(w, mapSwitchOf(this.def)).forEach((s, i) => this.setLed(this.switchLeds[i], s));
     const rl = routerLeds(w);
     this.setLed(this.routerLeds.wan, rl.wan);
     this.setLed(this.routerLeds.lan, rl.lan);
@@ -692,7 +788,8 @@ export class DataCenter extends Phaser.Scene {
     this.applyUpsLcd();
 
     const ok = cracOk(w);
-    this.cracSpinning = ok;
+    if (ok) this.cracFan.play('crac-fan-spin', true);
+    else this.cracFan.anims.stop();
     this.setLed(this.cracLed, ok ? 'green' : 'red');
     this.cracDisplay.setFillStyle(ok ? 0x1d4a34 : 0x5a1416);
     this.cracText.setText(ok ? 'OK' : 'ERR').setColor(ok ? '#4fd17a' : '#ff5a5f');
@@ -702,13 +799,13 @@ export class DataCenter extends Phaser.Scene {
     this.powerOverlay.setVisible(dark);
     this.powerLamp.setVisible(dark);
 
-    const boxed = unmountedServers(w);
+    const boxed = unmountedServers(w, this.def);
     this.boxes.forEach((b, i) => b.setVisible(i < boxed));
   }
 
   private refreshRack(r: RackView, w: World): void {
     const slots = rackSlots(w, r.rack).slice(0, RACK_TEX.slots);
-    const sig = slots.map((s) => `${s.id}:${s.installed ? 1 : 0}`).join(',');
+    const sig = slots.map((s) => `${s.label}:${s.installed ? 1 : 0}`).join(',');
     if (sig !== r.sig) {
       r.sig = sig;
       // the "설치 전" outline has an endless tween; Phaser doesn't stop tweens of destroyed objects
@@ -722,27 +819,23 @@ export class DataCenter extends Phaser.Scene {
       r.leds = [];
       slots.forEach((s, i) => {
         const ux = r.left + RACK_TEX.slotX;
-        const uy = r.top + RACK_TEX.slotY0 + i * RACK_TEX.slotH + 3;
+        const uy = r.top + RACK_TEX.slotY0 + i * RACK_TEX.slotH + RACK_TEX.unitDy;
         if (s.installed) {
           const unit = this.add.image(ux, uy, 'server-unit').setOrigin(0).setDepth(r.depth + 0.1);
           const label = this.add
-            .text(ux + 5, uy + 3, s.id, { fontFamily: FONT, fontSize: '11px', color: '#e8eefc' })
+            .text(ux + RACK_TEX.labelX, uy + RACK_TEX.labelY, s.label, { fontFamily: FONT, fontSize: '14px', color: '#e8eefc' })
             .setDepth(r.depth + 0.3);
-          const led = this.makeLed(ux + RACK_TEX.ledX, uy + RACK_TEX.ledY, 6, 6, r.depth + 0.2);
+          const led = this.makeLed(ux + RACK_TEX.ledX, uy + RACK_TEX.ledY, RACK_TEX.ledW, RACK_TEX.ledH, r.depth + 0.2);
           r.parts.push(unit, label, led.rect);
           r.units.push(unit);
           r.leds.push(led);
         } else {
           // Dashed-looking outline where a not-yet-mounted server goes.
-          const ghost = this.add
-            .rectangle(ux + 1, uy + 1, RACK_TEX.unitW - 2, RACK_TEX.unitH - 2)
-            .setOrigin(0)
-            .setStrokeStyle(2, 0xffb547, 0.8)
-            .setDepth(r.depth + 0.1);
+          const ghost = this.add.image(ux, uy, 'server-ghost').setOrigin(0).setAlpha(0.8).setDepth(r.depth + 0.1);
           const label = this.add
-            .text(ux + 5, uy + 3, `${s.id} 설치 전`, { fontFamily: FONT, fontSize: '11px', color: '#ffb547' })
+            .text(ux + RACK_TEX.labelX, uy + RACK_TEX.labelY, `${s.label} 설치 전`, { fontFamily: FONT, fontSize: '14px', color: '#ffb547' })
             .setDepth(r.depth + 0.3);
-          if (label.width > RACK_TEX.unitW - 8) label.setText(s.id);
+          if (label.width > RACK_TEX.unitW - 8) label.setText(s.label);
           this.tweens.add({ targets: ghost, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
           r.parts.push(ghost, label);
         }
@@ -765,63 +858,12 @@ export class DataCenter extends Phaser.Scene {
     } else r.temp.setVisible(false);
   }
 
-  private refreshIncidents(run: StageRun): void {
-    const active = activeScenarios(run);
-    this.angry = active.some((a) => a.def.severity === 'critical');
-    this.alertLevel = this.angry ? 'critical' : active.length ? 'warning' : 'none';
-    this.mentorBubble.setVisible(active.length > 0);
-
-    const key = active.map((a) => a.rt.id).join('|');
-    if (key === this.markerKey) return;
-    this.markerKey = key;
-
-    const ids = new Set(active.map((a) => a.rt.id));
-    for (const [id, m] of this.markers) {
-      if (ids.has(id)) continue;
-      // stop the endless pulse tweens too (they'd keep running on destroyed objects)
-      this.tweens.killTweensOf([...m.container.list, m.arrow]);
-      m.container.destroy();
-      m.arrow.destroy();
-      this.markers.delete(id);
-    }
-    const byRoom = new Map<AreaId, typeof active>();
-    for (const a of active) byRoom.set(a.def.room, [...(byRoom.get(a.def.room) ?? []), a]);
-    for (const [room, list] of byRoom) {
-      const r = ROOM_BY_ID[room];
-      // Clear of the room name painted on the floor, so neither hides the other.
-      const at = r.marker ?? { x: r.label.x, y: r.label.y - 1.5 };
-      list.forEach((a, i) => {
-        const x = Math.round(at.x * TILE + (i - (list.length - 1) / 2) * 170);
-        const y = Math.round(at.y * TILE);
-        let m = this.markers.get(a.rt.id);
-        if (!m) {
-          m = this.createMarker(a.def.title, a.def.severity);
-          this.markers.set(a.rt.id, m);
-        }
-        m.x = x;
-        m.y = y;
-        m.container.setPosition(x, y);
-      });
-    }
-  }
-
-  private createMarker(title: string, severity: 'critical' | 'warning'): Marker {
-    const bubble = this.add.image(0, 0, 'bubble-alert').setOrigin(0.5, 1).setScale(1.5);
-    const critical = severity === 'critical';
-    const tag = this.add
-      .text(0, 4, title, {
-        fontFamily: FONT,
-        fontSize: '12px',
-        color: critical ? '#ffffff' : '#2a1410',
-        backgroundColor: critical ? '#d7262b' : '#ffb547',
-        padding: { x: 5, y: 2 },
-      })
-      .setOrigin(0.5, 0);
-    const container = this.add.container(0, 0, [bubble, tag]).setDepth(DEPTH.marker);
-    this.tweens.add({ targets: bubble, scale: 1.8, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    const arrow = this.add.image(0, 0, 'arrow').setDepth(DEPTH.arrow).setVisible(false);
-    this.tweens.add({ targets: arrow, alpha: 0.45, duration: 380, yoyo: true, repeat: -1 });
-    return { container, arrow, x: 0, y: 0, half: Math.ceil(tag.width / 2) };
+  /** The monitor wall flashes (red for critical/major, amber otherwise) while the NOC has open alarms. */
+  private refreshAlarms(run: StageRun): void {
+    const open = openAlarms(run.alarms);
+    const severe = open.some((a) => a.sev === 'critical' || a.sev === 'major');
+    this.alertLevel = severe ? 'critical' : open.length ? 'warning' : 'none';
+    this.mentorBubble.setVisible(open.length > 0);
   }
 
   /** The "go here" marker for the current objective: a small blue tag that bobs over the device. */
@@ -829,23 +871,23 @@ export class DataCenter extends Phaser.Scene {
     const tag = this.add
       .text(0, 0, '▼ 여기', {
         fontFamily: FONT,
-        fontSize: '12px',
+        fontSize: '15px',
         color: '#ffffff',
         backgroundColor: '#2f6fc0',
         padding: { x: 5, y: 2 },
       })
       .setOrigin(0.5, 1);
     const container = this.add.container(0, 0, [tag]).setDepth(DEPTH.marker - 2).setVisible(false);
-    this.tweens.add({ targets: tag, y: -6, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: tag, y: -8, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     const arrow = this.add.image(0, 0, 'arrow-blue').setDepth(DEPTH.arrow - 1).setVisible(false);
     this.tweens.add({ targets: arrow, alpha: 0.5, duration: 500, yoyo: true, repeat: -1 });
     return { container, arrow, x: 0, y: 0, half: Math.ceil(tag.width / 2) };
   }
 
-  /** Point at the device of the first unfinished objective, unless an incident needs the player. */
+  /** Point at the device of the first unfinished objective, unless an alarm needs the player. */
   private refreshGoal(run: StageRun): void {
     const next = visibleObjectives(this.def, run).find((o) => !(o.id in run.objectivesDone));
-    const spot = activeScenarios(run).length === 0 && next?.spot && this.def.interactions[next.spot] ? next.spot : null;
+    const spot = openAlarms(run.alarms).length === 0 && next?.spot && this.def.interactions[next.spot] ? next.spot : null;
     if (spot === this.goalSpot) return;
     this.goalSpot = spot;
     if (!spot) {
@@ -855,7 +897,7 @@ export class DataCenter extends Phaser.Scene {
     }
     const s = SPOT_BY_ID[spot];
     this.goal.x = Math.round((s.x + s.w / 2) * TILE);
-    this.goal.y = Math.round(s.y * TILE - (OVERHANG[spot] ?? 24) - 4);
+    this.goal.y = Math.round(s.y * TILE - overhangPx(spot) - 4);
     this.goal.container.setPosition(this.goal.x, this.goal.y);
   }
 
@@ -874,13 +916,13 @@ export class DataCenter extends Phaser.Scene {
   }
 
   /**
-   * Off-screen markers get an arrow at the edge of the view pointing at them. A marker hidden under
+   * An off-screen goal marker gets an arrow at the edge of the view pointing at it. A marker hidden under
    * the objective panel or the toast stack counts as off-screen too, and a marker whose tag only
    * partly sticks under one of them is nudged sideways so the whole tag can be read.
    */
   private updateArrows(time: number): void {
     const goalOn = this.goalSpot !== null;
-    if (this.markers.size === 0 && !goalOn) return;
+    if (!goalOn) return;
     this.readCovers(time);
     const cam = this.cameras.main;
     const v = cam.worldView;
@@ -895,8 +937,8 @@ export class DataCenter extends Phaser.Scene {
     const place = (m: Marker, alpha: number) => {
       // screen-px vertical span of the marker (bubble above its anchor, tag below)
       const sy = (m.y - v.y) * z;
-      const y0 = sy - 40 * z;
-      const y1 = sy + 24 * z;
+      const y0 = sy - ((40 * TILE) / 48) * z;
+      const y1 = sy + TILE * 0.5 * z;
       let left = 24;
       let right = width - 28;
       for (const c of covers) {
@@ -923,45 +965,73 @@ export class DataCenter extends Phaser.Scene {
       }
       const wx = v.x + ax / z;
       const wy = v.y + ay / z;
-      m.arrow.setPosition(wx, wy).setRotation(Math.atan2(m.y - wy, m.x - wx)).setScale(1.6 / z);
+      // Pixel art only turns in quarter turns: snap to eight directions, the odd ones drawn diagonally.
+      const k = ((Math.round(Math.atan2(m.y - wy, m.x - wx) / (Math.PI / 4)) % 8) + 8) % 8;
+      m.arrow
+        .setTexture(k % 2 ? 'arrow-blue-diag' : 'arrow-blue')
+        .setPosition(Math.round(wx), Math.round(wy))
+        .setRotation(((k - (k % 2)) * Math.PI) / 4)
+        .setScale(ARROW_SCREEN_SCALE / z);
     };
 
-    for (const m of this.markers.values()) {
-      // fade a marker the lion is standing under so it doesn't hide him
-      const close = Math.abs(m.x - this.player.x) < 90 && m.y - 70 < this.player.y && this.player.y < m.y + 70;
-      place(m, close ? 0.35 : 1);
-    }
-    if (goalOn) {
-      // The [E] prompt takes over once the lion is at the device.
-      const there = this.near?.spot.id === this.goalSpot;
-      this.goal.container.setVisible(!there);
-      if (there) this.goal.arrow.setVisible(false);
-      else place(this.goal, 1);
-    }
+    // The [E] prompt takes over once the lion is at the device.
+    const there = this.near?.spot.id === this.goalSpot;
+    this.goal.container.setVisible(!there);
+    if (there) this.goal.arrow.setVisible(false);
+    else place(this.goal, 1);
   }
 
   // ---------- per frame ----------
 
-  update(time: number, delta: number): void {
+  /** −1 / +1: the way to slide to reach the door just ahead (walking `vy`), 0 when the way is clear or no door is near. */
+  private doorNudge(vy: number): number {
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const aheadY = Math.floor(((vy < 0 ? body.top : body.bottom) + vy * 8) / TILE);
+    const t0 = Math.floor(body.left / TILE);
+    const t1 = Math.floor((body.right - 0.01) / TILE);
+    if (!isWall(t0, aheadY) && !isWall(t1, aheadY)) return 0;
+    for (const r of ROOMS) {
+      if (!r.door || r.door.y !== aheadY) continue;
+      const dx = (r.door.x + r.door.w / 2) * TILE - body.center.x;
+      if (Math.abs(dx) > 2 && Math.abs(dx) < TILE * 1.6) return Math.sign(dx);
+    }
+    return 0;
+  }
+
+  update(time: number): void {
     const s = gameStore.getState();
     const blocked = isBlocked(s);
     if (blocked) this.inputReadyAt = time + 200;
+    // A window opening mid-dash stops it.
+    if (blocked && this.dash) this.endDash(time);
 
-    let vx = 0;
-    let vy = 0;
-    if (!blocked) {
-      const k = this.keys;
-      if (k.left.isDown || k.a.isDown) vx -= 1;
-      if (k.right.isDown || k.d.isDown) vx += 1;
-      if (k.up.isDown || k.w.isDown) vy -= 1;
-      if (k.down.isDown || k.s.isDown) vy += 1;
+    let { vx, vy } = blocked ? { vx: 0, vy: 0 } : this.heldDir();
+    // Walking straight up or down into the wall beside a door: slide toward the opening, so the lion
+    // doesn't need lining up to the pixel.
+    if (vx === 0 && vy !== 0) vx = this.doorNudge(vy);
+    // The leap overrides walking. It ends after DASH_DIST (the last step slowed so it lands exactly there), or
+    // early against a wall or a device.
+    if (this.dash) {
+      const d = this.dash;
+      const b = this.player.body as Phaser.Physics.Arcade.Body;
+      const left = DASH_DIST - Math.hypot(b.x - d.x0, b.y - d.y0);
+      if (left < 0.5 || time >= d.until || this.dashBlocked(d.dx, d.dy)) this.endDash(time);
     }
-    const moving = vx !== 0 || vy !== 0;
-    // Read every frame, so a new speed applies at once, also mid-walk.
-    const mul = s.moveSpeed;
-    if (moving) {
+    const dash = this.dash;
+    const moving = vx !== 0 || vy !== 0 || dash !== null;
+    if (dash) {
+      const b = this.player.body as Phaser.Physics.Arcade.Body;
+      const left = DASH_DIST - Math.hypot(b.x - dash.x0, b.y - dash.y0);
+      const v = Math.min(DASH_SPEED, left * this.physics.world.fps);
+      this.player.setVelocity(dash.dx * v, dash.dy * v);
+      this.facing = facingFor(dash.dx, dash.dy, this.facing);
+      if (!this.reducedMotion && time >= dash.nextGhost) {
+        this.spawnGhost();
+        dash.nextGhost = time + GHOST_EVERY_MS;
+      }
+    } else if (moving) {
       const len = Math.hypot(vx, vy);
-      this.player.setVelocity((vx / len) * SPEED * mul, (vy / len) * SPEED * mul);
+      this.player.setVelocity((vx / len) * SPEED, (vy / len) * SPEED);
       this.facing = facingFor(vx, vy, this.facing);
     } else {
       this.player.setVelocity(0, 0);
@@ -969,22 +1039,23 @@ export class DataCenter extends Phaser.Scene {
 
     // animation
     const fixing = s.fixing && !!s.modal;
-    const look = lionLook({ moving, facing: this.facing, angry: this.angry, fixing });
-    // The walk cycle speeds up with the walk, so the paws keep pace with the floor instead of sliding.
-    this.player.anims.timeScale = moving ? mul : 1;
-    if ('anim' in look) {
-      // a sheet that failed to load has no animation: don't warn "Missing animation" every frame
-      if (this.anims.exists(look.anim)) this.player.play(look.anim, true);
-    } else {
-      this.player.anims.stop();
-      if (this.player.texture.key !== look.texture || this.player.frame.name !== String(look.frame)) {
-        this.player.setTexture(look.texture, look.frame);
-      }
+    const anim = lionAnim({ moving, facing: this.facing, fixing });
+    // the run cycle hurries through the leap
+    this.player.anims.timeScale = dash ? 1.6 : 1;
+    // Only on a change of pose: the interact animation plays once and then holds its last frame. Closing a
+    // window opened on top (the radio over the terminal) comes back to the held frame instead of replaying it.
+    // (A sheet that failed to load has no animation: don't warn "Missing animation" every frame.)
+    if (!s.modal) this.interactShown = null;
+    if (this.player.anims.currentAnim?.key !== anim && this.anims.exists(anim)) {
+      const held = fixing && this.interactShown === anim;
+      this.player.play(held ? { key: anim, startFrame: this.anims.get(anim).frames.length - 1 } : anim);
+      if (fixing) this.interactShown = anim;
     }
-    const spot = this.lastSpot;
-    this.player.setFlipX(fixing && !!spot && (spot.x + spot.w / 2) * TILE < this.player.x);
-    this.player.setDepth(this.player.y);
-    this.shadow.setPosition(this.player.x, this.player.y - 1).setDepth(this.player.y - 1);
+    // The body has already moved this frame (the sprite catches up after update): its bottom is where the
+    // feet are drawn, so the shadow doesn't trail behind a running lion.
+    const feet = this.player.body as Phaser.Physics.Arcade.Body;
+    this.player.setDepth(feet.bottom);
+    this.shadow.setPosition(feet.center.x, feet.bottom - 2).setDepth(feet.bottom - 1);
 
     // rooms
     const area = roomAt(Math.floor(this.player.x / TILE), Math.floor(this.player.y / TILE));
@@ -1000,21 +1071,21 @@ export class DataCenter extends Phaser.Scene {
     this.near = blocked ? null : this.findSpot();
     this.updatePrompt(time);
 
-    if (this.cracSpinning) this.cracFan.rotation += delta * 0.012;
     this.updateArrows(time);
   }
 
   private tryInteract(): void {
     const s = gameStore.getState();
     if (!this.near || isBlocked(s)) return;
-    this.lastSpot = this.near.spot;
+    // Turn to the device: the interact pose faces it, and so does the lion standing there afterwards.
+    this.facing = facingToward(this.player.x, this.player.y - 8, spotRectPx(this.near.spot));
     s.interact(this.near.spot.id);
     EventBus.emit('interact', this.near.spot.id);
   }
 
   private findSpot(): { spot: SpotDef; kind: InteractionKind } | null {
     const px = this.player.x;
-    const py = this.player.y - 6;
+    const py = this.player.y - 8;
     let best: { spot: SpotDef; kind: InteractionKind } | null = null;
     let bestD = INTERACT_RANGE;
     for (const c of this.spots) {
@@ -1027,10 +1098,19 @@ export class DataCenter extends Phaser.Scene {
       const d = Math.hypot(dx, dy);
       if (d <= bestD) {
         bestD = d;
-        best = { spot: c.spot, kind: c.kind };
+        best = { spot: c.spot, kind: this.kinds.get(c.spot.id) ?? c.kind };
       }
     }
     return best;
+  }
+
+  /** What each spot opens now (per run change, not per frame). */
+  private refreshKinds(run: StageRun): void {
+    for (const c of this.spots) {
+      const k = interactionAt(run, c.spot.id);
+      if (k) this.kinds.set(c.spot.id, k);
+      else this.kinds.delete(c.spot.id);
+    }
   }
 
   private updatePrompt(time: number): void {
@@ -1040,8 +1120,8 @@ export class DataCenter extends Phaser.Scene {
       return;
     }
     const { spot, kind } = near;
-    // the verb can change while standing still (CRAC breaks → "점검하기" becomes "수리하기")
-    const label = `${spot.label} · ${verbFor(kind, this.cracSpinning)}`;
+    // redrawn only when the text changes
+    const label = `${spot.label} · ${verbFor(kind)}`;
     if (this.promptLabel !== label) {
       this.promptLabel = label;
       this.drawPrompt(label);
@@ -1049,44 +1129,57 @@ export class DataCenter extends Phaser.Scene {
     const x = Math.round((spot.x + spot.w / 2) * TILE);
     // keep clear of the CRAC's "고장!" sign and a hot rack's °C tag when they are up
     let lift = 0;
-    if (spot.id === 'crac' && this.cracWarn.visible) lift = 44;
-    else if (this.racks.some((r) => r.rack === spot.id && r.temp.visible)) lift = 22;
-    let y = Math.round(spot.y * TILE - (OVERHANG[spot.id] ?? 24) - lift - 4 + Math.sin(time / 260) * 2);
+    if (spot.id === 'crac' && this.cracWarn.visible) lift = 58;
+    else if (this.racks.some((r) => r.rack === spot.id && r.temp.visible)) lift = 30;
+    // the bob moves in whole art pixels
+    let y = Math.round(spot.y * TILE - overhangPx(spot.id) - lift - 2 * PX + Math.round(Math.sin(time / 260)) * PX);
     // The lion standing just above the device (e.g. between the switch and the patch panel) would be
     // covered by the prompt: lift it over his head instead.
-    y = Math.min(y, Math.round(this.player.y - 60));
+    y = Math.min(y, Math.round((this.player.y - LION_HEAD_CLEAR) / PX) * PX);
     this.prompt.setPosition(x, y).setVisible(true);
   }
 
   private drawPrompt(label: string): void {
     this.promptText.setText(label);
-    const keyW = 18;
-    const gap = 7;
-    const padX = 8;
-    const h = Math.max(Math.ceil(this.promptText.height), 16) + 10;
-    const w = Math.ceil(padX + keyW + gap + this.promptText.width + padX);
-    const top = -h - 7;
+    const P = PX;
+    const snap = (v: number) => Math.ceil(v / P) * P;
+    const keyW = 10 * P;
+    const keyH = 10 * P;
+    const gap = 4 * P;
+    const padX = 4 * P;
+    const h = snap(Math.max(this.promptText.height, keyH) + 4 * P);
+    const w = snap(padX + keyW + gap + this.promptText.width + padX);
+    // the tail's tip sits on the container's origin
+    const top = -h - 4 * P;
+    const left = -Math.round(w / 2 / P) * P;
     const g = this.promptBg;
     g.clear();
-    g.fillStyle(0x2a1410, 1);
-    g.fillRoundedRect(-w / 2 - 2, top - 2, w + 4, h + 4, 7);
-    g.fillTriangle(-7, -8, 7, -8, 0, 0);
-    g.fillStyle(0x221c28, 0.97);
-    g.fillRoundedRect(-w / 2, top, w, h, 6);
-    g.fillTriangle(-4, -9, 4, -9, 0, -3);
+    /** Rect with its four corner pixels cut off: a pixel-art rounded corner. */
+    const panel = (x: number, y: number, bw: number, bh: number, color: number, alpha = 1) => {
+      g.fillStyle(color, alpha);
+      g.fillRect(x + P, y, bw - 2 * P, bh);
+      g.fillRect(x, y + P, P, bh - 2 * P);
+      g.fillRect(x + bw - P, y + P, P, bh - 2 * P);
+    };
+    panel(left - P, top - P, w + 2 * P, h + 2 * P, 0x2a1410);
+    for (let i = 0; i < 3; i++) g.fillRect(-(3 - i) * P, top + h + P + i * P, 2 * (3 - i) * P, P);
+    panel(left, top, w, h, 0x221c28, 0.97);
+    for (let i = 0; i < 2; i++) g.fillRect(-(2 - i) * P, top + h + i * P, 2 * (2 - i) * P, P);
     g.fillStyle(0xd7262b, 1);
-    g.fillRect(-w / 2 + 6, top, w - 12, 2);
+    g.fillRect(left + 2 * P, top, w - 4 * P, P);
     // key cap
-    const kx = Math.round(-w / 2 + padX);
-    const ky = Math.round(top + (h - 18) / 2);
+    const kx = left + padX;
+    const ky = top + Math.round((h - keyH) / 2 / P) * P;
     g.fillStyle(0xc48e57, 1);
-    g.fillRoundedRect(kx, ky, keyW, 18, 4);
+    g.fillRect(kx + P, ky + P, keyW - 2 * P, keyH - P);
+    g.fillRect(kx, ky + 2 * P, keyW, keyH - 3 * P);
     g.fillStyle(0xe9b77c, 1);
-    g.fillRoundedRect(kx, ky, keyW, 15, 4);
-    this.promptKey.setPosition(kx + keyW / 2, ky + 8);
-    this.promptText.setPosition(kx + keyW + gap, Math.round(top + h / 2));
+    g.fillRect(kx + P, ky, keyW - 2 * P, keyH - 2 * P);
+    g.fillRect(kx, ky + P, keyW, keyH - 4 * P);
+    this.promptKey.setPosition(kx + keyW / 2, ky + (keyH - 2 * P) / 2);
+    this.promptText.setPosition(kx + keyW + gap, top + h / 2);
     // clicking the prompt works too
-    const area = new Phaser.Geom.Rectangle(-w / 2, top, w, h);
+    const area = new Phaser.Geom.Rectangle(left, top, w, h);
     if (this.prompt.input) this.prompt.input.hitArea = area;
     else this.prompt.setInteractive({ hitArea: area, hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true });
   }

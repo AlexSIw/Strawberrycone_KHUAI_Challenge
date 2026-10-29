@@ -18,7 +18,8 @@
   border-left-color: var(--green);
   background: #1d2a22;
 }
-.mg-task-icon { font-size: 18px; flex-shrink: 0; }
+.mg-task-icon { font-size: 18px; flex-shrink: 0; color: var(--amber); }
+.mg-task.done .mg-task-icon { color: var(--green); }
 .mg-task-text { flex: 1; }
 
 /* Wraps ModalFrame without adding a box (the backdrop stays positioned against the game root). */
@@ -81,9 +82,14 @@
 .mg-led.blink { background: var(--green); box-shadow: 0 0 6px var(--green); animation: mg-blink 0.9s linear infinite; }
 .mg-led.bad { background: var(--red-2); box-shadow: 0 0 6px var(--red-2); }
 .mg-led.warn { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.mg-led.crc { background: var(--green); box-shadow: 0 0 6px var(--amber); animation: mg-crc 0.8s steps(1, end) infinite; }
 @keyframes mg-blink {
   0%, 60% { opacity: 1; }
   61%, 100% { opacity: 0.25; }
+}
+@keyframes mg-crc {
+  0% { background: var(--green); }
+  50% { background: var(--amber); }
 }
 
 /* Something being dragged (rendered into <body>) */
@@ -124,4 +130,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mg-led.blink, .mg-shake, .mg-done-stamp, .mg-note { animation: none; }
+  .mg-led.crc { animation: none; background: var(--amber); }
 }

@@ -6,9 +6,8 @@ import type { MetricPoint, StageRun } from '../sim/engine';
 import { readyPods } from '../sim/k8s';
 import { cableAt, linkUp, powered } from '../sim/network';
 import type { Device, Health, World } from '../sim/types';
-import { useGame } from '../store/game';
+import { KIND_LABEL } from './deviceKind';
 import { availLevel, latencyLevel, type Level } from './levels';
-import { ModalFrame } from './ModalFrame';
 import './Dashboard.css';
 
 type Panel = StageDef['panels'][number];
@@ -28,9 +27,9 @@ const CRIT_LINE = '#ff5a5f';
 const TEMP_WARN = 35;
 const TEMP_CRIT = 45;
 
-const LEVEL_TEXT: Record<Level, string> = { ok: '● 좋음', warn: '▲ 주의', bad: '✕ 위험' };
+export const LEVEL_TEXT: Record<Level, string> = { ok: '● 좋음', warn: '▲ 주의', bad: '✕ 위험' };
 
-function levelOf(kind: 'availability' | 'latency' | 'error' | 'temp', v: number): Level {
+export function levelOf(kind: 'availability' | 'latency' | 'error' | 'temp', v: number): Level {
   switch (kind) {
     case 'availability':
       return availLevel(v);
@@ -43,8 +42,8 @@ function levelOf(kind: 'availability' | 'latency' | 'error' | 'temp', v: number)
   }
 }
 
-const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
-const fmtNum = (v: number) => Math.round(v).toLocaleString('ko-KR');
+export const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
+export const fmtNum = (v: number) => Math.round(v).toLocaleString('ko-KR');
 
 // ---------- KPI header ----------
 
@@ -61,9 +60,11 @@ function Kpi({ label, value, explain, level }: { label: string; value: string; e
   );
 }
 
-function KpiRow({ h }: { h: Health }) {
+export function KpiRow({ h }: { h: Health }) {
   // No students yet (stage 1): there are no requests to fail, so only the readiness number means something.
   const idle = h.rps <= 0;
+  // Nothing is served (a total outage): a "0 ms" would read as a fast, healthy answer (as the HUD shows "—").
+  const noAnswer = !idle && (h.availability < 0.05 || !Number.isFinite(h.latencyMs) || h.latencyMs <= 0);
   return (
     <div className="dash-kpis">
       <Kpi
@@ -74,9 +75,9 @@ function KpiRow({ h }: { h: Health }) {
       />
       <Kpi
         label="응답시간"
-        value={idle ? '—' : `${fmtNum(h.latencyMs)} ms`}
-        explain="요청 하나에 답하는 데 걸린 시간"
-        level={idle ? undefined : levelOf('latency', h.latencyMs)}
+        value={idle || noAnswer ? '—' : `${fmtNum(h.latencyMs)} ms`}
+        explain={noAnswer ? '응답이 오지 않아요: 요청이 성공하지 못하고 있어요' : '요청 하나에 답하는 데 걸린 시간'}
+        level={idle ? undefined : noAnswer ? 'bad' : levelOf('latency', h.latencyMs)}
       />
       <Kpi
         label="에러율"
@@ -91,7 +92,7 @@ function KpiRow({ h }: { h: Health }) {
 
 // ---------- shared bits ----------
 
-function Section({ title, hint, half, children }: { title: string; hint: string; half?: boolean; children: ReactNode }) {
+export function Section({ title, hint, half, children }: { title: string; hint: string; half?: boolean; children: ReactNode }) {
   return (
     <section className={`dash-section ${half ? 'half' : ''}`}>
       <header>
@@ -104,7 +105,7 @@ function Section({ title, hint, half, children }: { title: string; hint: string;
 }
 
 /** `title` spells the state out for screen readers / hover, since the LED itself is only a color. */
-function Led({ on, tone, label, title }: { on: boolean; tone?: 'ok' | 'bad' | 'warn'; label: string; title?: string }) {
+export function Led({ on, tone, label, title }: { on: boolean; tone?: 'ok' | 'bad' | 'warn'; label: string; title?: string }) {
   return (
     <span className={`dash-led ${on ? tone ?? 'ok' : 'off'}`} title={title ?? label} aria-label={title}>
       <i aria-hidden />
@@ -113,7 +114,7 @@ function Led({ on, tone, label, title }: { on: boolean; tone?: 'ok' | 'bad' | 'w
   );
 }
 
-interface ChartRow {
+export interface ChartRow {
   t: number;
   availability: number;
   errorRate: number;
@@ -122,7 +123,7 @@ interface ChartRow {
   temp: number;
 }
 
-const toRows = (history: MetricPoint[]): ChartRow[] =>
+export const toRows = (history: MetricPoint[]): ChartRow[] =>
   history.map((p) => ({
     t: p.t,
     availability: p.availability * 100,
@@ -149,7 +150,7 @@ interface MiniChartProps {
   refs?: { y: number; color: string; label: string }[];
 }
 
-function MiniChart({ title, rows, dataKey, unit, format, domain = [0, 'auto'], height = 150, refs = [] }: MiniChartProps) {
+export function MiniChart({ title, rows, dataKey, unit, format, domain = [0, 'auto'], height = 150, refs = [] }: MiniChartProps) {
   const last = rows[rows.length - 1];
   return (
     <div className="dash-chart">
@@ -270,7 +271,7 @@ function ServicesPanel({ h, w, half }: { h: Health; w: World; half: boolean }) {
       <div className="dash-notes">
         <h4>지금 보이는 문제</h4>
         {h.notes.length === 0 ? (
-          <p className="ok">✅ 눈에 띄는 문제 없음</p>
+          <p className="ok">✓ 눈에 띄는 문제 없음</p>
         ) : (
           <ul>
             {h.notes.map((n) => (
@@ -284,8 +285,6 @@ function ServicesPanel({ h, w, half }: { h: Health; w: World; half: boolean }) {
 }
 
 const visibleDevices = (w: World): Device[] => Object.values(w.devices).filter((d) => d.kind !== 'internet');
-
-const KIND_ICON: Record<Device['kind'], string> = { server: '🖥️', switch: '🔀', router: '🌐', internet: '☁️' };
 
 function LinksPanel({ w }: { w: World }) {
   return (
@@ -302,10 +301,10 @@ function LinksPanel({ w }: { w: World }) {
             <div key={d.id} className="dash-device">
               <div className="dash-device-head">
                 <span>
-                  {KIND_ICON[d.kind]} {d.label} <code>{d.id}</code>
+                  <span className="dash-kind">{KIND_LABEL[d.kind]}</span> {d.label} <code>{d.id}</code>
                 </span>
                 {!d.installed ? (
-                  <span className="tag">📦 아직 랙에 안 꽂음</span>
+                  <span className="tag">아직 랙에 안 꽂음</span>
                 ) : (
                   <Led on={on} tone="ok" label={on ? '전원 ON' : '전원 OFF'} />
                 )}
@@ -330,7 +329,7 @@ function PowerPanel({ w, h }: { w: World; h: Health }) {
   const p = w.power;
   if (!p) {
     return (
-      <Section title="전원 (Power)" hint="이 단계에서는 전원을 따로 보지 않아요.">
+      <Section title="전원 (Power)" hint="오늘은 전원을 따로 보지 않아요.">
         <p className="muted dash-empty">전원 정보 없음</p>
       </Section>
     );
@@ -340,7 +339,7 @@ function PowerPanel({ w, h }: { w: World; h: Health }) {
       <div className="dash-power-top">
         <div className={`dash-tile ${p.mains ? 'ok' : 'bad'}`}>
           <span>한전 전기 (바깥 전기)</span>
-          <b>{p.mains ? '⚡ 정상' : '✕ 정전'}</b>
+          <b>{p.mains ? '● 정상' : '✕ 정전'}</b>
         </div>
         <div className={`dash-tile ${p.ups ? 'ok' : 'warn'}`}>
           <span>UPS (무정전 전원장치)</span>
@@ -380,7 +379,7 @@ function PowerPanel({ w, h }: { w: World; h: Health }) {
                 <td>
                   <Led on={d.feeds.includes('B')} tone="ok" label={d.feeds.includes('B') ? '연결' : '—'} />
                 </td>
-                <td className={on ? 'ok' : d.installed ? 'bad' : 'muted'}>{on ? '● 켜짐' : d.installed ? '✕ 꺼짐' : '📦 미설치'}</td>
+                <td className={on ? 'ok' : d.installed ? 'bad' : 'muted'}>{on ? '● 켜짐' : d.installed ? '✕ 꺼짐' : '○ 미설치'}</td>
               </tr>
             );
           })}
@@ -525,9 +524,10 @@ function PodsPanel({ w }: { w: World }) {
   );
 }
 
-// ---------- window ----------
+// ---------- the day's panels (shown in the NOC's SMS tab) ----------
 
-function DashboardBody({ run }: { run: StageRun }) {
+/** KPI row + the panels this day unlocks, in a fixed order; `extra` goes right under the KPIs. */
+export function DashboardPanels({ run, extra }: { run: StageRun; extra?: ReactNode }) {
   const def = getStage(run.stage);
   const rows = useMemo(() => toRows(run.history), [run.history]);
   const panels = PANEL_ORDER.filter((p) => def.panels.includes(p));
@@ -537,8 +537,8 @@ function DashboardBody({ run }: { run: StageRun }) {
   const w = run.world;
   return (
     <>
-      <p className="dash-next muted">빨간 숫자부터 살펴보세요. Tab 키를 다시 누르면 닫혀요.</p>
       <KpiRow h={h} />
+      {extra}
       <div className="dash-grid">
         {panels.map((p) => {
           switch (p) {
@@ -558,14 +558,5 @@ function DashboardBody({ run }: { run: StageRun }) {
         })}
       </div>
     </>
-  );
-}
-
-export function Dashboard() {
-  const run = useGame((s) => s.run);
-  return (
-    <ModalFrame title="관제 대시보드 (NOC)" icon="📊" size="wide">
-      {run ? <DashboardBody run={run} /> : <p className="muted">게임을 시작하면 데이터가 보여요.</p>}
-    </ModalFrame>
   );
 }

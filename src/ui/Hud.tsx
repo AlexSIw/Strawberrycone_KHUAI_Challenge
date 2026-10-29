@@ -1,17 +1,17 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { getStage } from '../content/stages';
-import { activeScenarios } from '../sim/engine';
-import { gameStore, useGame } from '../store/game';
+import { fmtClock, gameSec, koDate, parseHms } from '../sim/clock';
+import { activeScenarios, visibleObjectives } from '../sim/engine';
+import { LAST_DAY } from '../sim/types';
+import { cardsWaitForIncident, gameStore, missionPreview, useGame } from '../store/game';
 import { availLevel, latencyLevel, type Level } from './levels';
 import { ModalFrame } from './ModalFrame';
+import { PixelIcon } from './PixelIcon';
 import { SoundToggle } from './SoundToggle';
 import './Hud.css';
 
-/** Seconds → "mm:ss". */
-function clock(sec: number): string {
-  const s = Math.max(0, Math.floor(sec));
-  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-}
+/** Weekday game time past this means overtime (야근). */
+const OVERTIME = parseHms('18:00:00');
 
 type Tone = 'good' | 'warn' | 'bad';
 
@@ -34,9 +34,12 @@ export function Hud() {
   const run = useGame((s) => s.run);
   const screen = useGame((s) => s.screen);
   const modal = useGame((s) => s.modal?.type);
-  const speed = useGame((s) => s.moveSpeed);
   const busy = useGame((s) => s.screen !== 'playing' || !!s.dialogue);
+  // Today's work is done: the exit button becomes 퇴근하기 (the outro also starts once every window is closed).
+  const dayDone = useGame((s) => s.dayDone && s.screen === 'playing' && !s.dialogue);
   const [confirmExit, setConfirmExit] = useState(false);
+  const held = useGame((s) => s.heldConcepts.length);
+  const previewed = useGame((s) => s.previewed);
 
   // The stage ended (outro / results / next stage) while the exit question was open: drop it.
   useEffect(() => {
@@ -49,7 +52,7 @@ export function Hud() {
     return () => gameStore.getState().setPaused(false);
   }, [confirmExit]);
 
-  // While the exit question is open, keys must not reach the hotkeys (Tab/H/C) or move the lion.
+  // While the exit question is open, keys must not reach the hotkeys (N/Tab/H/C) or move the lion.
   // keyup still passes so a held arrow key is released in the game.
   useEffect(() => {
     if (!confirmExit) return;
@@ -80,9 +83,25 @@ export function Hud() {
   const availTone = TONE[availLevel(h.availability)];
   // Green only while students are actually being served; a fast error is not a healthy response.
   const latencyTone: Tone | 'plain' = availTone === 'bad' && latencyLevel(h.latencyMs) === 'ok' ? 'plain' : TONE[latencyLevel(h.latencyMs)];
-  const remaining = def.survive ? Math.max(0, def.survive - t) : null;
   const store = gameStore.getState();
-  const incidentsLeft = remaining === 0 ? activeScenarios(run).length : 0;
+  const dday = run.stage === LAST_DAY;
+  const now = gameSec(def.clock, t);
+  const overtime = !dday && now >= OVERTIME;
+  // What waits for the open window to close (cards, new missions' briefings) or for the incident to end.
+  // The terminal says it in its own side box.
+  const briefs = modal
+    ? visibleObjectives(def, run).filter((o) => !previewed.includes(o.id) && !(o.id in run.objectivesDone) && !!missionPreview(run, o)).length
+    : 0;
+  const waiting = [held ? `카드 ${held}장` : '', briefs ? `새 미션 브리핑 ${briefs}개` : ''].filter(Boolean).join(' · ');
+  const incidentHold = cardsWaitForIncident(run);
+  const heldNote =
+    screen !== 'playing' || busy || modal === 'terminal' || !waiting
+      ? null
+      : modal
+        ? `${waiting} 대기 중 · ${incidentHold && held ? '장애를 해결하고 ' : ''}이 창을 닫으면 펼쳐져요`
+        : incidentHold
+          ? `${waiting} 대기 중 · 장애를 해결하면 펼쳐져요`
+          : null;
 
   /** Run a HUD action and drop focus, so a later Enter/Space doesn't press this button again. */
   const press = (fn: () => void) => (e: MouseEvent<HTMLButtonElement>) => {
@@ -90,39 +109,21 @@ export function Hud() {
     fn();
   };
   /** Opens the window (on top of an open one: closing it goes back there), or closes it when it is the open one. */
-  const toggle = (type: 'dashboard' | 'hint' | 'concepts') => () => (modal === type ? store.closeModal() : store.openModal({ type }));
+  const toggle = (type: 'noc' | 'hint' | 'concepts') => () => (modal === type ? store.closeModal() : store.openModal({ type }));
 
   return (
     <>
-      <header className={`hud${def.survive ? ' hud--survive' : ''}`} aria-label="게임 상태">
+      <header className="hud" aria-label="게임 상태">
         <div className="hud-stage">
-          <span className="hud-stage-no">
-            <span className="hud-stage-word">Stage </span>
-            {run.stage}
-          </span>
+          <span className={`hud-stage-no${dday ? ' dday' : ''}`}>{def.label}</span>
           <span className="hud-stage-title">{def.title}</span>
         </div>
 
-        {!def.survive && (
-          <div className="hud-time" title="이번 스테이지에서 흐른 시간">
-            <span aria-hidden>⏱</span> {clock(t)}
-          </div>
-        )}
-
-        {remaining !== null && def.survive && (
-          <div
-            className={`hud-survive ${remaining === 0 ? (incidentsLeft ? 'fixleft' : 'done') : remaining <= 30 ? 'soon' : ''}`}
-            title="이 시간 동안 수강신청 서비스를 지켜내세요. 시간이 끝나도 남은 장애는 모두 고쳐야 해요."
-          >
-            <span className="hud-survive-label">
-              {remaining > 0 ? '버티기 남은 시간' : incidentsLeft ? `시간 통과! 남은 장애 ${incidentsLeft}개` : '버티기 성공!'}
-            </span>
-            <span className="hud-survive-time">{clock(remaining)}</span>
-            <span className="hud-survive-bar" aria-hidden>
-              <i style={{ width: `${(1 - remaining / def.survive) * 100}%` }} />
-            </span>
-          </div>
-        )}
+        <div className="hud-time" title={dday ? '수강신청 당일의 시각이에요. 10:00에 신청이 열려요.' : '게임 속 날짜와 시각이에요.'}>
+          {!dday && <span className="hud-date">{koDate(def.date)} · </span>}
+          {fmtClock(now, dday)}
+          {overtime && <span className="hud-overtime">야근 중</span>}
+        </div>
 
         <div className="hud-kpis">
           <Kpi
@@ -143,7 +144,7 @@ export function Hud() {
             value={Math.round(h.rps).toLocaleString('ko-KR')}
             unit="rps"
             tone="plain"
-            title="초당 요청 수(requests per second): 지금 몰려온 학생 수예요."
+            title="초당 요청 수(requests per second): 1초에 들어오는 학생 요청 수예요. 매크로·봇 요청은 세지 않아요."
           />
           <Kpi
             label="응답"
@@ -162,22 +163,24 @@ export function Hud() {
 
         <nav className="hud-buttons" aria-label="메뉴">
           <button
-            className={`btn hud-btn ${modal === 'dashboard' ? 'on' : ''}`}
-            onClick={press(toggle('dashboard'))}
-            title="관제 대시보드 열기 (Tab)"
-            aria-pressed={modal === 'dashboard'}
+            className={`btn hud-btn ${modal === 'noc' ? 'on' : ''}`}
+            onClick={press(toggle('noc'))}
+            title="관제 화면(NOC) 열기 (N 또는 Tab)"
+            aria-label="관제 화면"
+            aria-pressed={modal === 'noc'}
           >
-            <span aria-hidden>📊</span>
-            <span className="hud-btn-label">대시보드</span>
-            <kbd>Tab</kbd>
+            <PixelIcon name="monitor" />
+            <span className="hud-btn-label">관제</span>
+            <kbd>N</kbd>
           </button>
           <button
             className={`btn hud-btn ${modal === 'hint' ? 'on' : ''}`}
             onClick={press(toggle('hint'))}
             title="쿠사수에게 힌트 받기 (H)"
+            aria-label="쿠사수 무전기"
             aria-pressed={modal === 'hint'}
           >
-            <span aria-hidden>📻</span>
+            <PixelIcon name="radio" />
             <span className="hud-btn-label">쿠사수</span>
             <kbd>H</kbd>
           </button>
@@ -185,30 +188,38 @@ export function Hud() {
             className={`btn hud-btn ${modal === 'concepts' ? 'on' : ''}`}
             onClick={press(toggle('concepts'))}
             title="모은 개념 카드 보기 (C)"
+            aria-label="개념 도감"
             aria-pressed={modal === 'concepts'}
           >
-            <span aria-hidden>📖</span>
+            <PixelIcon name="book" />
             <span className="hud-btn-label">도감</span>
             <kbd>C</kbd>
           </button>
           <SoundToggle className="hud-btn hud-sound">
             <kbd>M</kbd>
           </SoundToggle>
-          <button className="btn hud-btn hud-speed" onClick={press(() => store.cycleMoveSpeed())} title="이동 속도" aria-label={`이동 속도 ${speed}x`}>
-            <span aria-hidden>🏃</span>
-            <span className="hud-speed-value">{speed}x</span>
-          </button>
-          <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="스테이지 선택 화면으로 나가기">
-            <span aria-hidden>🚪</span>
-            <span className="hud-btn-label">나가기</span>
-          </button>
+          {dayDone ? (
+            <button className="btn primary hud-btn hud-leave" onClick={press(() => store.leaveWork())} title="오늘 일을 마치고 일일 리포트 보기">
+              <span className="hud-btn-label">퇴근하기 ▶</span>
+            </button>
+          ) : (
+            <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="처음 화면으로 나가기" aria-label="나가기">
+              <PixelIcon name="door" />
+              <span className="hud-btn-label">나가기</span>
+            </button>
+          )}
         </nav>
       </header>
 
+      {heldNote && (
+        <p className="hud-held" role="status">
+          {heldNote}
+        </p>
+      )}
+
       {confirmExit && (
         <ModalFrame
-          title="스테이지에서 나갈까요?"
-          icon="🚪"
+          title="오늘 일을 그만두고 나갈까요?"
           size="narrow"
           className="modal-over"
           onClose={() => setConfirmExit(false)}
@@ -221,7 +232,7 @@ export function Hud() {
                 className="btn primary"
                 onClick={() => {
                   setConfirmExit(false);
-                  store.goSelect();
+                  store.goTitle();
                 }}
               >
                 나가기
@@ -229,7 +240,7 @@ export function Hud() {
             </>
           }
         >
-          <p className="hud-confirm-text">이번 스테이지 진행은 저장되지 않아요. 이미 받은 별과 개념 카드는 그대로 남아요.</p>
+          <p className="hud-confirm-text">오늘 진행은 저장되지 않아요. 이미 받은 별과 개념 카드는 그대로 남아요.</p>
         </ModalFrame>
       )}
     </>

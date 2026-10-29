@@ -1,7 +1,8 @@
-// Windows remember their state until the stage restarts: each place's terminal keeps its own session
-// (host after ssh, scrollback, ↑ history, half-typed line), and boards keep half-done work.
+// Windows remember their state until the day restarts: each place's terminal keeps its own session
+// (host after ssh, IOS mode, scrollback, ↑ history, half-typed line), and boards keep half-done work.
 // Typing and clicking go through the real UI (xterm, buttons); the app's store (imported through Vite,
-// like e2e/full.spec.ts) only starts stages, skips dialogue, runs the clock and uses map hotspots.
+// like e2e/ui.spec.ts) only starts days, skips dialogue, runs the clock, does the missions a test isn't about
+// and uses map hotspots.
 import { expect, test, type Page } from '@playwright/test';
 
 type GameStore = (typeof import('../src/store/game'))['gameStore'];
@@ -21,16 +22,17 @@ async function exposeStore(page: Page) {
   });
 }
 
-/** Starts a stage and skips its intro, like a player clicking through. */
-async function play(page: Page, stage: number) {
+/** Starts a day and skips its briefing (and the first missions' 미션 브리핑), like a player clicking through. */
+async function play(page: Page, day: number) {
   await page.evaluate((n) => {
     const store = (window as unknown as Win).__store;
     store.getState().play(n as 0);
     for (let i = 0; i < 50 && store.getState().dialogue; i++) store.getState().nextDialogue();
-  }, stage);
+    for (let i = 0; i < 20 && store.getState().concepts.length; i++) store.getState().dismissConcept();
+  }, day);
 }
 
-/** Concept cards pop up when an objective completes and take focus; click them away. */
+/** A finished mission pops up its concept card, which takes the focus and stops the clock: click it away. */
 async function dismissConcepts(page: Page) {
   await page.evaluate(() => {
     const store = (window as unknown as Win).__store;
@@ -38,7 +40,38 @@ async function dismissConcepts(page: Page) {
   });
 }
 
-/** Uses a map hotspot (desk, rack1, board…), as walking up to it and pressing Space does. */
+/** Runs the game clock (clicking concept cards away) until some incident is active. Returns its id. */
+const fire = (page: Page) =>
+  page.evaluate(() => {
+    const store = (window as unknown as Win).__store;
+    const active = () => store.getState().run?.scenarios.find((x) => x.state === 'active')?.id ?? null;
+    for (let i = 0; i < 300 && !active(); i++) {
+      for (let j = 0; j < 20 && store.getState().concepts.length; j++) store.getState().dismissConcept();
+      store.getState().tick();
+    }
+    return active();
+  });
+
+/**
+ * D-5's missions up to the port LEDs (tour, rack, PDU A/B, cables), as tests/autoplay.ts does them:
+ * after that the day's damaged-cable incident is on its way.
+ */
+const buildD5 = (page: Page) =>
+  page.evaluate(async () => {
+    const A = (await import(/* @vite-ignore */ '/src/sim/actions.ts' as string)) as typeof import('../src/sim/actions');
+    const T = (await import(/* @vite-ignore */ '/src/content/topology.ts' as string)) as typeof import('../src/content/topology');
+    const s = () => (window as unknown as Win).__store.getState();
+    const ids = ['web', 'web2', 'db'];
+    s().event('room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc');
+    s().act((w) => ids.forEach((id) => A.mount(w, id)), 'rack:mount');
+    s().act((w) => ids.forEach((id) => A.setFeeds(w, id, ['A', 'B'])));
+    s().act((w) => ids.forEach((id) => A.connectCable(w, `${id}:eth0`, `TOR-01:${T.SERVERS[id][5]}`)), 'cable:connect');
+    s().event('noc:device:TOR-01');
+    for (let i = 0; i < 20 && s().concepts.length; i++) s().dismissConcept();
+    return ids.every((id) => s().run!.world.devices[id].installed);
+  });
+
+/** Uses a map hotspot (desk, rack1, board…), as walking up to it and pressing E does. */
 const interact = (page: Page, spot: string) => page.evaluate((s) => (window as unknown as Win).__store.getState().interact(s as never), spot);
 
 const title = (page: Page) => page.locator('.modal-head h2');
@@ -70,24 +103,34 @@ async function closeWindow(page: Page) {
   await expect(page.locator('.modal-backdrop')).toHaveCount(0);
 }
 
-test('창 상태 기억: 장소별 터미널 세션, 설계 보드', async ({ page }) => {
+/** Errors from the page, minus the hint Worker that isn't running in tests. */
+function watchProblems(page: Page): string[] {
   const problems: string[] = [];
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error' && !/api\/hint|Failed to load resource/.test(m.text())) problems.push(`console: ${m.text()}`);
   });
+  return problems;
+}
+
+/** Opens a place's terminal (a rack console) the way its map spot does. */
+const openConsole = (page: Page, host: string) =>
+  page.evaluate((h) => (window as unknown as Win).__store.getState().openModal({ type: 'terminal', host: h }), host);
+
+test('창 상태 기억: 장소별 터미널 세션 (ssh, 스크롤, ↑ 기록, 쓰다 만 줄)', async ({ page }) => {
+  const problems = watchProblems(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await page.evaluate(() => localStorage.setItem('khu-dc-save-v1', JSON.stringify({ unlocked: 7, best: {}, cards: [] })));
+  await page.evaluate(() => localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best: {}, cards: [] })));
   await exposeStore(page);
 
-  // ---- Stage 3: the 관리 PC desk terminal remembers the ssh ----
-  await play(page, 3);
+  // ---- D-3: the 관리 PC desk terminal remembers the ssh (WEB-01 is in the DNS since D-4) ----
+  await play(page, 2);
   await interact(page, 'desk');
   await expect(title(page)).toHaveText(/터미널 — ops/);
   await expect.poll(() => inputRow(page)).toContain('ops@khu-dc:~$');
   await typeLine(page, 'ssh web');
-  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web 에 접속했어요');
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('WEB-01 에 접속했어요');
   await expect.poll(() => inputRow(page)).toContain('web@khu-dc:~$');
   await expect(title(page)).toHaveText(/터미널 — web/);
   // Half-typed line, left for later.
@@ -99,47 +142,36 @@ test('창 상태 기억: 장소별 터미널 세션, 설계 보드', async ({ pa
   await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('ops@khu-dc:~$ ssh web');
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostna');
-  // Clear the line (Ctrl+U) and start the server without ssh-ing again.
   await focusTerminal(page);
-  await page.keyboard.press('Control+U');
+  await page.keyboard.type('me', { delay: 15 });
   await page.keyboard.press('Enter');
-  await typeLine(page, 'server start');
-  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('수강신청 서버 시작!');
-  expect(await page.evaluate(() => !!(window as unknown as Win).__store.getState().run?.world.web?.running)).toBe(true);
-  await dismissConcepts(page);
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hostname');
 
   // ↑ walks back through this session's history.
   await focusTerminal(page);
   await page.keyboard.press('ArrowUp');
-  await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ server start');
+  await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostname');
   await page.keyboard.press('ArrowUp');
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ ssh web');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
 
-  // `hint` opens the radio on top of the terminal; closing it comes back to the same session (still on web).
+  // `hint` answers in the same session (still on web), no window on top; the prompt comes back as it was.
   await typeLine(page, 'hint');
-  await expect(title(page)).toHaveText(/쿠사수 무전기/);
-  await page.keyboard.press('Escape');
-  await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hint');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().hintPending)).toBe(false);
+  await expect.poll(() => rows(page).then((r) => r.some((l) => l.startsWith('쿠사수>')))).toBe(true);
+  await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
-  await closeWindow(page);
-  // …and it is still there the next time the desk terminal opens.
-  await interact(page, 'desk');
-  await expect(title(page)).toHaveText(/터미널 — web/);
-  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hint');
   await closeWindow(page);
 
   // ---- The web rack console is a session of its own ----
-  await interact(page, 'rack1');
-  await page.getByRole('button', { name: 'web', exact: true }).click();
+  await openConsole(page, 'web');
   await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('에 접속했어요.');
   const consoleText = (await rows(page)).join('\n');
   expect(consoleText).not.toContain('ssh web');
-  expect(consoleText).not.toContain('server start');
   await focusTerminal(page);
   await page.keyboard.press('ArrowUp');
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
@@ -147,16 +179,26 @@ test('창 상태 기억: 장소별 터미널 세션, 설계 보드', async ({ pa
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hostname');
   await closeWindow(page);
 
-  // Back at the desk: its own session is untouched by the console's.
+  // ---- A switch's console keeps its IOS mode while the window is closed ----
+  await openConsole(page, 'TOR-01');
+  await expect.poll(() => inputRow(page)).toBe('TOR-01>');
+  await typeLine(page, 'enable');
+  await expect.poll(() => inputRow(page)).toBe('TOR-01#');
+  await closeWindow(page);
+  await openConsole(page, 'TOR-01');
+  await expect.poll(() => inputRow(page)).toBe('TOR-01#');
+  await closeWindow(page);
+
+  // Back at the desk: its own session is untouched by the consoles'.
   await interact(page, 'desk');
   await expect(title(page)).toHaveText(/터미널 — web/);
   const deskText = (await rows(page)).join('\n');
   expect(deskText).toContain('ops@khu-dc:~$ ssh web');
-  expect(deskText).not.toContain('web@khu-dc:~$ hostname');
+  expect(deskText).not.toContain('TOR-01');
   await closeWindow(page);
 
-  // ---- Restarting the stage starts every session over ----
-  await play(page, 3);
+  // ---- Restarting the day starts every session over ----
+  await play(page, 2);
   await interact(page, 'desk');
   await expect(title(page)).toHaveText(/터미널 — ops/);
   await expect.poll(() => inputRow(page)).toBe('ops@khu-dc:~$');
@@ -167,23 +209,26 @@ test('창 상태 기억: 장소별 터미널 세션, 설계 보드', async ({ pa
   expect(await page.evaluate(() => Object.keys((window as unknown as Win).__store.getState().terminals))).toEqual([]);
   await closeWindow(page);
 
-  // ---- Stage 5: the Dockerfile board keeps the line order ----
-  await play(page, 5);
-  // The board opens once the new server's failed deploy has been seen. The failed deploy comes with the
-  // stage's first incident: run the game clock until it fires, then read it on srv-new's rack console.
-  await page.evaluate(() => {
-    const store = (window as unknown as Win).__store;
-    const fired = () => store.getState().run?.scenarios.find((x) => x.id === 's5-drift')?.state !== 'waiting';
-    for (let i = 0; i < 300 && !fired(); i++) store.getState().tick();
-  });
-  await dismissConcepts(page);
-  await interact(page, 'rack2');
+  expect(problems).toEqual([]);
+});
+
+test('창 상태 기억: 설계 보드 (Dockerfile)', async ({ page }) => {
+  const problems = watchProblems(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best: {}, cards: [] })));
+  await exposeStore(page);
+
+  // ---- D-2: the recipe card opens once APP-01's failed install has been read ----
+  await play(page, 3);
+  await openConsole(page, 'srv-new');
   await expect(title(page)).toHaveText(/터미널 — srv-new/);
   await typeLine(page, 'deploy log');
   await expect.poll(() => page.evaluate(() => 'log' in ((window as unknown as Win).__store.getState().run?.objectivesDone ?? {}))).toBe(true);
   await dismissConcepts(page);
   await closeWindow(page);
 
+  // The line order being worked on stays while the board is closed.
   const order = () => page.locator('.dfb-lines .dfb-code').allInnerTexts();
   await interact(page, 'board');
   await expect(page.locator('.dfb-lines .dfb-row')).toHaveCount(6);
@@ -199,54 +244,21 @@ test('창 상태 기억: 장소별 터미널 세션, 설계 보드', async ({ pa
   await closeWindow(page);
 
   // A restart shuffles a fresh card.
-  await play(page, 5);
+  await play(page, 3);
   expect(await page.evaluate(() => Object.keys((window as unknown as Win).__store.getState().windowState))).toEqual([]);
 
   expect(problems).toEqual([]);
 });
 
-test('창 상태 기억: 퀴즈, 랙, 설계 보드, 무전기 질문', async ({ page }) => {
-  const problems: string[] = [];
-  page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => {
-    if (m.type() === 'error' && !/api\/hint|Failed to load resource/.test(m.text())) problems.push(`console: ${m.text()}`);
-  });
+test('창 상태 기억: 랙, 퀴즈, 설계 보드, 무전기 질문', async ({ page }) => {
+  const problems = watchProblems(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await page.evaluate(() => localStorage.setItem('khu-dc-save-v1', JSON.stringify({ unlocked: 7, best: {}, cards: [] })));
+  await page.evaluate(() => localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best: {}, cards: [] })));
   await exposeStore(page);
 
-  /** Runs the game clock until `id` fires. */
-  const fire = (id: string) =>
-    page.evaluate((sid) => {
-      const store = (window as unknown as Win).__store;
-      const fired = () => store.getState().run?.scenarios.find((x) => x.id === sid)?.state !== 'waiting';
-      for (let i = 0; i < 300 && !fired(); i++) {
-        store.getState().tick();
-        for (let j = 0; j < 20 && store.getState().concepts.length; j++) store.getState().dismissConcept();
-      }
-      return fired();
-    }, id);
-
-  // ---- Stage 0 quiz: a wrong guess stays crossed out (with the nudge) ----
+  // ---- D-5 rack: a server stays in the U it was put in ----
   await play(page, 0);
-  await interact(page, 'board');
-  const answer = await page.evaluate(async () => {
-    const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
-    return C.getStage(0).quiz!.answer;
-  });
-  const wrongIdx = answer === 0 ? 1 : 0;
-  await page.locator('.qz-choice').nth(wrongIdx).click();
-  await expect(page.locator('.qz-choice.wrong')).toHaveCount(1);
-  await closeWindow(page);
-  await interact(page, 'board');
-  await expect(page.locator('.qz-choice.wrong')).toHaveCount(1);
-  await expect(page.locator('.qz-choice').nth(wrongIdx)).toBeDisabled();
-  await expect(page.locator('.qz-mentor.is-warn')).toBeVisible();
-  await closeWindow(page);
-
-  // ---- Stage 1 rack: a server stays in the U it was put in ----
-  await play(page, 1);
   const server = await page.evaluate(() => {
     const w = (window as unknown as Win).__store.getState().run!.world;
     const d = Object.values(w.devices).find((x) => x.kind === 'server' && x.rack && !x.installed)!;
@@ -263,14 +275,60 @@ test('창 상태 기억: 퀴즈, 랙, 설계 보드, 무전기 질문', async ({
   await expect(page.locator(`[data-drop="slot:${server.rack}:0"]`)).toContainText(server.label);
   await closeWindow(page);
 
-  // ---- Stage 4 decompose board: placed cards stay in their shop ----
-  await play(page, 4);
-  await page.evaluate(() => {
+  // ---- D-5 퇴근 퀴즈: the question, its choice order and the explanation stay; a wrong answer stays marked ----
+  await play(page, 0);
+  await page.evaluate(async () => {
+    const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
     const store = (window as unknown as Win).__store;
-    store.setState({ terminal: { host: 'ops', log: [] } });
-    store.getState().command('svc list');
+    const run = store.getState().run!;
+    // Every mission but the quiz done and no incident left: the quiz is up.
+    const done = Object.fromEntries(C.getStage(0).objectives.filter((o) => !o.finale).map((o) => [o.id, 0]));
+    store.setState({ run: { ...run, scenarios: [], objectivesDone: done } });
+    store.getState().event('e2e:ready');
   });
-  expect(await fire('s4-monolith')).toBe(true);
+  await dismissConcepts(page);
+  const right = () =>
+    page.evaluate(async () => {
+      const C = (await import(/* @vite-ignore */ '/src/content/stages/index.ts' as string)) as typeof import('../src/content/stages');
+      const q = Number(document.querySelector('.qz-q')!.getAttribute('data-q'));
+      return C.getStage(0).quiz!.pool[q].answer;
+    });
+  const shown = () => page.locator('.qz-choice').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-choice'))));
+  const progress = page.locator('.qz-progress');
+  await interact(page, 'board');
+  await expect(progress).toContainText('문제 1/3');
+  const first = await right();
+  await page.locator(`.qz-choice[data-choice="${first}"]`).click();
+  await expect(page.locator('.qz-mentor.is-ok')).toBeVisible();
+  await closeWindow(page);
+  // Reopened on the explanation of the question just answered: 다음 문제 goes on to 2/3.
+  await interact(page, 'board');
+  await expect(progress).toContainText('문제 1/3');
+  await expect(page.locator(`.qz-choice[data-choice="${first}"]`)).toHaveClass(/right/);
+  await expect(page.locator('.qz-mentor.is-ok')).toBeVisible();
+  await page.getByRole('button', { name: '다음 문제 ▶' }).click();
+  await expect(progress).toContainText('문제 2/3');
+  const order = await shown();
+  const q2 = await page.locator('.qz-q').getAttribute('data-q');
+  await closeWindow(page);
+  await interact(page, 'board');
+  await expect(progress).toContainText('문제 2/3');
+  expect(await page.locator('.qz-q').getAttribute('data-q')).toBe(q2);
+  expect(await shown()).toEqual(order);
+  // A wrong answer: ✕, the explanation and the restart button are still there after reopening.
+  const answer2 = await right();
+  const bad = order.find((c) => c !== answer2)!;
+  await page.locator(`.qz-choice[data-choice="${bad}"]`).click();
+  await expect(page.locator('.qz-choice.wrong')).toHaveCount(1);
+  await closeWindow(page);
+  await interact(page, 'board');
+  await expect(page.locator(`.qz-choice[data-choice="${bad}"]`)).toHaveClass(/wrong/);
+  await expect(page.locator('.qz-mentor.is-warn')).toBeVisible();
+  await expect(page.getByRole('button', { name: '처음부터 다시 ▶' })).toBeVisible();
+  await closeWindow(page);
+
+  // ---- D-3 decompose board: placed cards stay in their shop ----
+  await play(page, 2);
   await interact(page, 'board');
   const shop1 = page.getByRole('group', { name: '매장 1' });
   await page.locator('.dcb-pool .dcb-card', { hasText: '로그인' }).click();
@@ -281,8 +339,8 @@ test('창 상태 기억: 퀴즈, 랙, 설계 보드, 무전기 질문', async ({
   await expect(page.getByRole('group', { name: '매장 1' }).locator('.dcb-card', { hasText: '로그인' })).toBeVisible();
   await closeWindow(page);
 
-  // ---- Stage 6 desired-state card: the count and version being filled in stay ----
-  await play(page, 6);
+  // ---- D-1 desired-state card: the count and version being filled in stay ----
+  await play(page, 4);
   await interact(page, 'board');
   await page.getByRole('button', { name: '하나 늘리기' }).click();
   await page.getByRole('button', { name: '하나 늘리기' }).click();
@@ -294,92 +352,85 @@ test('창 상태 기억: 퀴즈, 랙, 설계 보드, 무전기 질문', async ({
   await expect(page.getByLabel('이미지 버전')).toHaveValue('enroll:v1');
   await closeWindow(page);
 
-  // ---- Hint radio: an unsent question stays in the box ----
+  // ---- Hint radio: an unsent question stays in the box (D-Day's first incident comes on the clock) ----
   await play(page, 5);
-  expect(await fire('s5-drift')).toBe(true);
+  expect(await fire(page)).not.toBeNull();
   await interact(page, 'mentor');
-  await page.getByLabel('쿠사수에게 질문').fill('도커가 뭐예요');
+  await page.getByLabel('쿠사수에게 질문').fill('L4가 뭐예요');
   await closeWindow(page);
   await interact(page, 'mentor');
-  await expect(page.getByLabel('쿠사수에게 질문')).toHaveValue('도커가 뭐예요');
+  await expect(page.getByLabel('쿠사수에게 질문')).toHaveValue('L4가 뭐예요');
   await closeWindow(page);
 
   expect(problems).toEqual([]);
 });
 
-test('창 상태 기억: 케이블 테스터, 항온항습기 수리, 다시 시작하면 지난 판의 늦은 결과는 버림', async ({ page }) => {
-  const problems: string[] = [];
-  page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => {
-    if (m.type() === 'error' && !/api\/hint|Failed to load resource/.test(m.text())) problems.push(`console: ${m.text()}`);
-  });
-  // A slow 사수 answer, so the stage can restart while one is on its way.
+test('창 상태 기억: 케이블 테스터, 다시 시작하면 지난 판의 늦은 결과는 버림', async ({ page }) => {
+  const problems = watchProblems(page);
+  // A slow 사수 answer, so the day can restart while one is on its way.
   await page.route('**/api/hint', async (route) => {
     await new Promise((r) => setTimeout(r, 1500));
     await route.fulfill({ status: 503, body: '' });
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await page.evaluate(() => localStorage.setItem('khu-dc-save-v1', JSON.stringify({ unlocked: 7, best: {}, cards: [] })));
+  await page.evaluate(() => localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best: {}, cards: [] })));
   await exposeStore(page);
 
-  /** Runs the game clock until `id` fires, clicking concept cards away. */
-  const fire = (id: string) =>
-    page.evaluate((sid) => {
-      const store = (window as unknown as Win).__store;
-      const fired = () => store.getState().run?.scenarios.find((x) => x.id === sid)?.state !== 'waiting';
-      for (let i = 0; i < 300 && !fired(); i++) {
-        store.getState().tick();
-        for (let j = 0; j < 20 && store.getState().concepts.length; j++) store.getState().dismissConcept();
-      }
-      return fired();
+  /** The server whose cable the D-5 incident damaged. */
+  const damaged = () =>
+    page.evaluate(() => {
+      const w = (window as unknown as Win).__store.getState().run!.world;
+      const c = Object.values(w.cables).find((x) => x.degraded)!;
+      const id = [c.a, c.b].map((ep) => ep.split(':')[0]).find((d) => w.devices[d]?.kind === 'server')!;
+      return { label: w.devices[id].label, cable: c.id };
+    });
+  const cableOf = (id: string) =>
+    page.evaluate((cid) => {
+      const c = (window as unknown as Win).__store.getState().run!.world.cables[cid];
+      return { broken: !!c?.broken, degraded: !!c?.degraded };
     }, id);
-  const n3 = () => page.locator('.cb-row', { hasText: '노드 n3' });
 
-  // ---- Stage 7 cable tester: a reading stays; a replacement cut short by closing still counts ----
-  await play(page, 7);
-  expect(await fire('s7-cable')).toBe(true);
+  // ---- D-5 cable tester: a reading stays; a replacement cut short by closing still counts ----
+  await play(page, 0);
+  expect(await buildD5(page)).toBe(true);
+  expect(await fire(page)).not.toBeNull();
+  const bad = await damaged();
+  const row = () => page.locator('.cb-row', { hasText: bad.label });
   await interact(page, 'switch');
-  await n3().getByRole('button', { name: /테스트/ }).click();
-  await expect(n3().locator('.cb-result.bad')).toBeVisible();
+  await row().getByRole('button', { name: /테스트/ }).click();
+  await expect(row().locator('.cb-result.warn')).toContainText('에러가 섞여요');
   await closeWindow(page);
   await interact(page, 'switch');
-  await expect(n3().locator('.cb-result.bad')).toBeVisible();
-  await n3().getByRole('button', { name: /교체/ }).click();
+  await expect(row().locator('.cb-result.warn')).toBeVisible();
+  await row().getByRole('button', { name: /교체/ }).click();
   await closeWindow(page);
-  expect(await page.evaluate(() => (window as unknown as Win).__store.getState().run!.world.cables.c_n3.broken)).toBe(false);
+  expect(await cableOf(bad.cable)).toEqual({ broken: false, degraded: false });
   await dismissConcepts(page);
   await interact(page, 'switch');
-  await expect(n3().locator('.cb-result')).toHaveCount(0);
+  await expect(row().locator('.cb-result')).toHaveCount(0);
   await expect(page.locator('.mg-task')).toContainText('완료');
   await closeWindow(page);
 
-  // ---- CRAC repair: the steps done so far stay done ----
-  expect(await fire('s7-cooling')).toBe(true);
-  await interact(page, 'crac');
-  await page.getByRole('button', { name: /전원 레버: 켜짐/ }).click();
-  await page.getByRole('button', { name: '막힌 필터 빼기' }).click();
-  await closeWindow(page);
-  await interact(page, 'crac');
-  await expect(page.getByRole('button', { name: /전원 레버: 차단됨/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: '막힌 필터 빼기' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '새 필터 끼우기' })).toBeVisible();
-  await closeWindow(page);
-
   // ---- Restart while the 사수's answer is on its way: it must not land in the new run ----
+  await play(page, 0);
+  expect(await buildD5(page)).toBe(true);
+  expect(await fire(page)).not.toBeNull();
   await interact(page, 'mentor');
   await page.getByRole('button', { name: /힌트 받기/ }).click();
   expect(await page.evaluate(() => (window as unknown as Win).__store.getState().hintPending)).toBe(true);
-  await play(page, 7);
+  await play(page, 0);
   await page.waitForTimeout(2000);
   expect(await page.evaluate(() => (window as unknown as Win).__store.getState().hints)).toEqual({});
   expect(await page.evaluate(() => (window as unknown as Win).__store.getState().hintPending)).toBe(false);
 
   // ---- …nor a window that the restart closed (a cable replacement still animating) ----
-  expect(await fire('s7-cable')).toBe(true);
+  expect(await buildD5(page)).toBe(true);
+  expect(await fire(page)).not.toBeNull();
+  const again = await damaged();
   await interact(page, 'switch');
-  await n3().getByRole('button', { name: /교체/ }).click();
-  await play(page, 7);
+  await page.locator('.cb-row', { hasText: again.label }).getByRole('button', { name: /교체/ }).click();
+  await play(page, 0);
   await page.waitForTimeout(300);
   const fresh = await page.evaluate(() => {
     const s = (window as unknown as Win).__store.getState();

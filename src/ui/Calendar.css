@@ -1,0 +1,96 @@
+/* 완료한 날 다시 하기 (the day select screen). Prefix: sel- */
+.sel-screen {
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px) 0 0 / 16px 16px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px) 0 0 / 16px 16px,
+    var(--bg);
+}
+
+.sel-head {
+  max-width: 1180px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.sel-back { flex-shrink: 0; }
+.sel-head-text { flex: 1; min-width: 220px; }
+.sel-head-text h1 { margin: 0; font-family: var(--pixel); font-weight: 400; font-size: 28px; text-shadow: 3px 3px 0 var(--outline); }
+.sel-head-text p { margin: 4px 0 0; color: var(--tan); font-size: 14px; }
+.sel-totals { display: flex; gap: 8px; font-family: var(--pixel); }
+.sel-totals span {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  font-size: 15px;
+}
+.sel-totals span:first-child { color: #ffd166; }
+
+.sel-grid {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.sel-grid li { display: flex; flex-direction: column; gap: 6px; }
+.sel-grid li .sel-card { flex: 1; }
+
+.sel-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-bottom-width: 5px;
+  cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s, background 0.12s;
+}
+.sel-card:not(:disabled):hover { transform: translateY(-3px); border-color: var(--tan); background: #2a2231; }
+.sel-card:not(:disabled):active { transform: translateY(1px); border-bottom-width: 3px; }
+.sel-card:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.sel-card.cleared { border-color: rgba(79, 209, 122, 0.55); }
+.sel-card.dday { background: linear-gradient(160deg, #3a1b20, var(--panel) 60%); }
+.sel-card.dday .sel-no { background: #ffd166; border-color: #b08a2a; color: #2a1410; }
+/* A day not cleared on this save: locked (이어서 하기 plays it) */
+.sel-card:disabled { border-style: dashed; border-bottom-width: 2px; opacity: 0.5; cursor: default; }
+
+.sel-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sel-no {
+  font-family: var(--pixel);
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--red);
+  border: 2px solid #8d1519;
+}
+.sel-date { flex: 1; font-family: var(--pixel); font-size: 13px; color: var(--tan); }
+
+.sel-stars { font-size: 20px; letter-spacing: 2px; color: #3a3040; text-shadow: 2px 2px 0 var(--outline); }
+.sel-stars .on { color: #ffd166; }
+
+.sel-title { margin: 2px 0 0; font-family: var(--pixel); font-weight: 400; font-size: 19px; line-height: 1.3; }
+.sel-subtitle { margin: 0; font-size: 13px; color: var(--muted); }
+.sel-topics { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.sel-topics .tag { font-size: 11px; }
+
+.sel-card-foot { margin-top: auto; padding-top: 8px; font-size: 13px; }
+.sel-best { color: var(--green); }
+.sel-locked { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-family: var(--pixel); }
+
+@media (max-width: 640px) {
+  .sel-screen { padding: 16px 16px 28px; }
+  .sel-head-text h1 { font-size: 22px; }
+  .sel-grid { grid-template-columns: 1fr; }
+}

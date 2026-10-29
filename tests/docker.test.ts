@@ -1,13 +1,29 @@
-// Stage 5 (Docker): the container model behaves like real Docker where the lessons depend on it —
+// D-2 (컨테이너 · 링크): the container model behaves like real Docker where the lessons depend on it —
 // ports have two sides, data lives in a container's writable layer or on a volume, restart keeps data,
-// one host port = one program — and the dashboard agrees with the incidents.
+// one host port = one program — and the links: two unbundled cables leave one blocked by STP, LACP makes
+// one 20G link, and a loop with STP off on both ends storms the VLAN. Ported from tests/v1/docker.test.ts.
 import { describe, expect, it } from 'vitest';
 import { getStage } from '../src/content/stages';
 import { writeDockerfile } from '../src/sim/actions';
 import { appDb, dbRows, ENROLL_DOCKERFILE } from '../src/sim/commands/docker';
-import { applyAction, applyCommand, isCleared, startStage, tickRun, type StageRun } from '../src/sim/engine';
+import { applyAction, applyCommand, scenarioOf, startStage, tickRun, type StageRun } from '../src/sim/engine';
+import {
+  campusDelivery,
+  lbView,
+  logicalLinks,
+  poState,
+  resolve,
+  stpView,
+  studentDelivery,
+  utilization,
+} from '../src/sim/network';
+import { reachesHost } from '../src/content/incidents/d4';
+import { poBundled, poWhole } from '../src/content/incidents/d2';
+import { initRuntime } from '../src/sim/scenario';
+import type { World } from '../src/sim/types';
+import { apply, AUTOPLAY, RED } from './autoplay';
 
-const RED = '\x1b[31m';
+const D2 = 3;
 // eslint-disable-next-line no-control-regex
 const plain = (lines: string[]) => lines.join('\n').replace(/\x1b\[[0-9;]*m/g, '');
 
@@ -19,35 +35,82 @@ function sh(run: StageRun, line: string, host: string) {
   return { run: r.run, text: plain(r.lines), failed: r.lines.some((l) => l.startsWith(RED)) };
 }
 
+function ios(run: StageRun, host: string, lines: string[]) {
+  let mode = { level: 'user' as const } as Parameters<typeof applyCommand>[3];
+  const out: string[] = [];
+  for (const line of lines) {
+    const r = applyCommand(run, line, host, mode);
+    run = r.run;
+    mode = r.mode;
+    out.push(...r.lines);
+  }
+  return { run, text: plain(out) };
+}
+
 function ticks(run: StageRun, n: number): StageRun {
   for (let i = 0; i < n; i++) run = tickRun(run).run;
   return run;
 }
 
-/** s5-drift has fired, the deploy log is read, the board is done and the image is built and pushed. */
-function readyToRun(): StageRun {
-  let run = startStage(5);
-  // The failed hand deploy (and its log) only exists once s5-drift has fired.
-  for (let i = 0; i < 60 && state(run, 's5-drift') !== 'active'; i++) run = tickRun(run).run;
-  expect(state(run, 's5-drift')).toBe('active');
-  run = sh(run, 'deploy log', 'srv-new').run;
-  run = applyAction(run, (w) => writeDockerfile(w, 'enroll'), ['board:dockerfile']).run;
-  run = sh(run, 'docker build -t enroll:1.0 .', 'ops').run;
-  run = sh(run, 'docker push enroll:1.0', 'ops').run;
+/** Do these missions the AUTOPLAY way. */
+function missions(...ids: string[]): StageRun {
+  let run = startStage(D2);
+  for (const id of ids) for (const st of AUTOPLAY[D2][id]) run = apply(run, st, null);
   return run;
 }
 
-/** Play until s5-volume has just fired (s5-drift solved with a correctly published container). */
-function atVolumeIncident(): StageRun {
-  let run = readyToRun();
-  run = sh(run, 'docker run -p 80:8000 enroll:1.0', 'srv-new').run;
-  for (let i = 0; i < 60 && state(run, 's5-volume') !== 'active'; i++) run = tickRun(run).run;
-  expect(state(run, 's5-volume')).toBe('active');
+/** Run only this incident from now on: it fires on the next tick. */
+function only(run: StageRun, id: string): StageRun {
+  run = { ...run, scenarios: initRuntime([{ id, trigger: { type: 'stageStart', delay: run.ctx.stageTime + 1, overlap: true } }]) };
+  for (let i = 0; i < 5 && run.scenarios[0].state === 'waiting'; i++) run = tickRun(run).run;
+  expect(run.scenarios[0].state, id).toBe('active');
   return run;
 }
+
+function solve(run: StageRun, id: string): StageRun {
+  const errors: string[] = [];
+  for (const st of scenarioOf(getStage(D2), id).solutionSteps) run = apply(run, st, errors);
+  expect(errors).toEqual([]);
+  return run;
+}
+
+/** The deploy log is read, the board is done and the image is built and pushed. */
+const readyToRun = () => missions('log', 'recipe', 'image');
+/** Every docker mission done: the app runs on APP-01, the DB is on a volume. */
+const dockerDone = () => missions('log', 'recipe', 'image', 'run', 'volume');
+
+const torLinks = (w: World) => logicalLinks(w).filter((l) => l.key.includes('TOR-01:Te') || l.key.includes('TOR-01:Po'));
+
+describe('D-2 starting world', () => {
+  it('has the second TOR-01 → CORE-01 cable, unbundled, so spanning tree blocks it', () => {
+    const run = startStage(D2);
+    const w = run.world;
+    expect(w.cables['tor1-up2']).toBeDefined();
+    expect(w.devices['TOR-01'].nd!.ifs.Po1).toBeUndefined();
+    expect(w.devices['CORE-01'].nd!.ifs.Po1).toBeUndefined();
+    expect(stpView(w, 10).blocked.has('TOR-01:Te1/1/2')).toBe(true);
+    // Both cables are up, but only one carries traffic.
+    expect(torLinks(w).filter((l) => l.key.startsWith('CORE-01') && l.up).map((l) => l.capMbps)).toEqual([10000, 10000]);
+    expect(w.devices['TOR-01'].nd!.dirty).toBe(false);
+  });
+
+  it('starts with no k8s, the L4 pointed at APP-01:80 (/health), and a DB without a volume', () => {
+    const w = startStage(D2).world;
+    expect(w.k8s).toBeUndefined();
+    expect(w.net!.lb!.members.map((m) => `${m.host}:${m.port}`)).toEqual(['srv-new:80']);
+    expect(w.net!.lb!.health).toEqual({ proto: 'http', port: 80, path: '/health' });
+    expect(appDb(w)!.volume).toBeNull();
+    expect(dbRows(w, appDb(w)!)).toBe(1520);
+  });
+
+  it('later days keep the bundle (only D-2 and earlier lose it)', () => {
+    for (const d of [4, 5] as const) expect(poState(startStage(d).world, 'TOR-01', 1).members.map((m) => m.flag)).toEqual(['P', 'P']);
+    expect(startStage(2).world.devices['TOR-01'].nd!.ifs.Po1).toBeUndefined();
+  });
+});
 
 describe('docker run: both sides of -p', () => {
-  it('-p 80:80 is not reachable (the app listens on 8000) and fires s5-port', () => {
+  it('-p 80:80 is not reachable (the app listens on 8000): the L4 sees it DOWN and d2-port fires', () => {
     let run = readyToRun();
     const r = sh(run, 'docker run -p 80:80 enroll:1.0', 'srv-new');
     expect(r.failed).toBe(false);
@@ -55,12 +118,13 @@ describe('docker run: both sides of -p', () => {
     expect(r.text).toContain('(바깥 80번 → 컨테이너 안 80번)');
     expect(r.text).not.toMatch(/주의|없어요/);
     run = ticks(r.run, 6);
-    expect(state(run, 's5-port')).toBe('active');
-    expect(run.health.availability).toBeLessThan(1);
-    const def = getStage(5).scenarios.find((s) => s.id === 's5-port')!;
-    for (const s of def.solutionSteps) if ('cmd' in s) run = sh(run, s.cmd, s.host).run;
-    run = ticks(run, 2);
-    expect(state(run, 's5-port')).toBe('resolved');
+    expect(lbView(run.world).members[0].healthy).toBe(false);
+    expect(sh(run, 'curl http://sugang/enroll', 'ops').text).toContain('503');
+    expect(state(run, 'd2-port:0')).toBe('active');
+    expect(run.objectivesDone).not.toHaveProperty('run');
+    run = ticks(solve(run, 'd2-port:0'), 2);
+    expect(state(run, 'd2-port:0')).toBe('resolved');
+    expect(run.objectivesDone).toHaveProperty('run');
   });
 
   it.each(['--publish 80:8000', '--publish=80:8000', '-p=80:8000', '-dp 80:8000', '-d -p 0.0.0.0:80:8000/tcp', '-p80:8000', '-itdp 80:8000', '-e DEBUG=1 -p 80:8000'])('accepts %s', (opt) => {
@@ -70,8 +134,9 @@ describe('docker run: both sides of -p', () => {
     expect(r.text).not.toContain('포트 연결 없이');
     run = ticks(r.run, 6);
     expect(run.world.docker!.containers.find((c) => c.host === 'srv-new')!.ports).toEqual([80, 8000]);
-    expect(state(run, 's5-port')).toBe('waiting');
-    expect(state(run, 's5-drift')).toBe('resolved');
+    expect(state(run, 'd2-port:0')).toBe('waiting');
+    expect(run.objectivesDone).toHaveProperty('run');
+    expect(sh(run, 'curl http://sugang/enroll', 'ops').text).toContain('수강신청 페이지');
   });
 
   it('rejects unknown options and docker options written after the image', () => {
@@ -83,26 +148,21 @@ describe('docker run: both sides of -p', () => {
     }
   });
 
-  it('s5-port follows the dashboard: a working published container resolves it even with a leftover unpublished one', () => {
+  it('a working published container resolves d2-port even with a leftover unpublished one', () => {
     let run = readyToRun();
-    // The colleague's memo: run without -p → students can't get in.
     run = ticks(sh(run, 'docker run enroll:1.0', 'srv-new').run, 3);
-    expect(state(run, 's5-port')).toBe('active');
-    expect(isGreen(run)).toBe(false);
-    // A second, correctly published container next to it lets students in.
+    expect(state(run, 'd2-port:0')).toBe('active');
     const r = sh(run, 'docker run -p 80:8000 --name e2 enroll:1.0', 'srv-new');
     expect(r.failed, r.text).toBe(false);
     run = ticks(r.run, 3);
-    expect(isGreen(run)).toBe(true);
-    expect(state(run, 's5-port')).toBe('resolved');
+    expect(state(run, 'd2-port:0')).toBe('resolved');
   });
 
-  it('a correct container next to a stray one never fires s5-port', () => {
+  it('a correct container next to a stray one never fires d2-port', () => {
     let run = readyToRun();
     run = sh(run, 'docker run -p 80:8000 enroll:1.0', 'srv-new').run;
     run = ticks(sh(run, 'docker run --name e2 enroll:1.0', 'srv-new').run, 3);
-    expect(state(run, 's5-port')).toBe('waiting');
-    expect(isGreen(run)).toBe(true);
+    expect(state(run, 'd2-port:0')).toBe('waiting');
   });
 
   it('refuses a second container on a host port that is already taken', () => {
@@ -112,16 +172,20 @@ describe('docker run: both sides of -p', () => {
     expect(r.failed).toBe(true);
     expect(r.text).toContain('port is already allocated');
     expect(r.run.world.docker!.containers.filter((c) => c.host === 'srv-new')).toHaveLength(1);
-    // srv-old's hand-installed app already holds port 80.
-    const old = sh(run, 'docker run -p 80:8000 enroll:1.0', 'srv-old');
-    expect(old.failed).toBe(true);
-    expect(old.text).toContain('port is already allocated');
+  });
+
+  it('the failed hand install is in APP-01’s deploy log, and its Python differs from WEB-01’s', () => {
+    const run = startStage(D2);
+    const log = sh(run, 'deploy log', 'srv-new');
+    expect(log.text).toContain('3.9.18');
+    expect(log.run.ctx.events).toContain('deploy_log_failed');
+    expect(sh(run, 'python --version', 'web').text).toContain('3.12');
   });
 });
 
 describe('docker data model', () => {
   it('restart and stop/start keep the writable layer; only removing the container loses it', () => {
-    let run = startStage(5);
+    let run = startStage(D2);
     const rows = (r: StageRun) => dbRows(r.world, appDb(r.world)!);
     let r = sh(run, 'docker restart db', 'srv-db');
     expect(r.text).toContain('데이터는 그대로');
@@ -133,14 +197,10 @@ describe('docker data model', () => {
     expect(sh(run, 'docker container ls -a', 'srv-db').text).toContain('Exited');
     run = sh(run, 'docker start db', 'srv-db').run;
     expect(rows(run)).toBe(1520);
-    expect(run.health.notes).toEqual([]);
-    // rm without -f refuses a running container
     r = sh(run, 'docker rm db', 'srv-db');
     expect(r.failed).toBe(true);
-    expect(r.run.world.docker!.containers).toHaveLength(1);
     r = sh(run, 'docker rm -f db', 'srv-db');
     expect(r.text).toContain('데이터도 컨테이너와 함께 지워졌어요');
-    // A fresh container without a volume starts empty: the old rows are not a global counter.
     r = sh(r.run, 'docker run -p 3306:3306 --name db mysql:8', 'srv-db');
     expect(r.failed).toBe(false);
     expect(rows(r.run)).toBe(0);
@@ -148,7 +208,7 @@ describe('docker data model', () => {
   });
 
   it('a volume keeps data when the container is removed and recreated', () => {
-    let run = startStage(5);
+    let run = startStage(D2);
     run = sh(run, 'docker rm -f db', 'srv-db').run;
     let r = sh(run, 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql mysql:8', 'srv-db');
     expect(r.text).toContain('백업을 볼륨 dbdata 에 복원');
@@ -160,74 +220,46 @@ describe('docker data model', () => {
     expect(sh(r.run, 'docker logs other', 'srv-db').text).toContain('volume:dbdata');
   });
 
+  it('the volume mission needs the data folder: a volume on another folder does not count', () => {
+    let run = missions('log', 'recipe', 'image', 'run');
+    run = sh(run, 'docker rm -f db', 'srv-db').run;
+    run = sh(run, 'docker run -p 3306:3306 -v dbdata:/tmp --name db mysql:8', 'srv-db').run;
+    expect(run.objectivesDone).not.toHaveProperty('volume');
+    run = sh(run, 'docker rm -f db', 'srv-db').run;
+    run = sh(run, 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8', 'srv-db').run;
+    expect(run.objectivesDone).toHaveProperty('volume');
+  });
+
   it('player-typed names never hit Object.prototype', () => {
-    const run = startStage(5);
+    const run = startStage(D2);
     let r = sh(run, 'docker rm -f db', 'srv-db');
     r = sh(r.run, 'docker run -p 3306:3306 -v constructor:/var/lib/mysql --name toString mysql:8', 'srv-db');
     expect(r.failed, r.text).toBe(false);
     expect(dbRows(r.run.world, appDb(r.run.world)!)).toBe(1520);
-    expect(sh(r.run, 'docker volume ls', 'srv-db').text).toContain('constructor');
     expect(sh(r.run, 'docker logs __proto__', 'srv-db').failed).toBe(true);
     expect(sh(r.run, 'docker volume create __proto__', 'srv-db').failed).toBe(true);
   });
 });
 
-describe('s5-volume', () => {
-  it('the update script recreates the DB container (new id, empty), not just restarts it', () => {
-    const before = startStage(5).world.docker!.containers[0].id;
-    const run = atVolumeIncident();
+describe('d2-volume: the update script recreates the DB without its volume', () => {
+  const atIncident = () => only(dockerDone(), 'd2-volume:0');
+
+  it('the new container is empty, the volume still holds the data', () => {
+    const run = atIncident();
     const db = appDb(run.world)!;
-    expect(db.id).not.toBe(before);
+    expect(db.volume).toBeNull();
     expect(dbRows(run.world, db)).toBe(0);
-    expect(run.health.notes).toContain('신청 내역 0건! 데이터 유실');
+    expect(run.world.docker!.hosts['srv-db'].volumes.dbdata).toBe(1520);
+    expect(run.health.notes).toContain('신청 내역이 0건으로 보여요 (DB가 비어 있어요)');
   });
 
-  it('is solved by a volumed MySQL on srv-db:3306 whatever its name', () => {
-    let run = atVolumeIncident();
-    run = sh(run, 'docker rm -f db', 'srv-db').run;
-    const r = sh(run, 'docker run -d -p 3306:3306 -v dbdata:/var/lib/mysql mysql:8', 'srv-db');
-    expect(r.failed).toBe(false);
-    run = ticks(r.run, 3);
-    expect(state(run, 's5-volume')).toBe('resolved');
-    expect(isGreen(run)).toBe(true);
-    expect(isCleared(run)).toBe(true);
-  });
-
-  it('a volumed DB next to the old one is refused (port taken), so the dashboard never turns green with the incident open', () => {
-    let run = atVolumeIncident();
-    const r = sh(run, 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql mysql:8', 'srv-db');
-    expect(r.failed).toBe(true);
-    expect(r.text).toContain('db 컨테이너가 이미 3306번을');
-    run = ticks(r.run, 3);
-    expect(state(run, 's5-volume')).toBe('active');
-    expect(isGreen(run)).toBe(false);
-  });
-
-  it('a volume on the wrong folder does not keep MySQL data', () => {
-    let run = atVolumeIncident();
-    run = sh(run, 'docker rm -f db', 'srv-db').run;
-    const r = sh(run, 'docker run -p 3306:3306 -v dbdata:/tmp --name db mysql:8', 'srv-db');
-    expect(r.text).toContain('(볼륨 dbdata → 컨테이너 안 /tmp)');
-    expect(r.text).not.toContain('복원');
-    run = ticks(r.run, 3);
-    expect(state(run, 's5-volume')).toBe('active');
-    // The DB log shows where MySQL really writes, next to where the volume is attached.
-    const logs = sh(run, 'docker logs db', 'srv-db').text;
-    expect(logs).toContain('data dir: /var/lib/mysql (컨테이너 안');
-    expect(logs).toContain('볼륨(dbdata)은 /tmp 에 붙어 있음');
-  });
-
-  it('a DB the app cannot reach (no -p, or another server) says where the app looks', () => {
-    let run = atVolumeIncident();
-    run = sh(run, 'docker rm -f db', 'srv-db').run;
-    let r = sh(run, 'docker run -v dbdata:/var/lib/mysql --name db mysql:8', 'srv-db');
-    expect(r.text).toContain('신청 앱은 srv-db 의 3306번 포트로 DB에 접속해요');
-    run = ticks(r.run, 2);
-    expect(run.health.notes.join()).toContain('DB 응답 없음 (신청 앱 → srv-db:3306)');
-    expect(state(run, 's5-volume')).toBe('active');
-    r = sh(run, 'docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name db mysql:8', 'srv-new');
-    expect(r.text).toContain('신청 앱은 srv-db 의 3306번 포트로');
-    expect(ticks(r.run, 2).scenarios.find((s) => s.id === 's5-volume')!.state).toBe('active');
+  it('restart does not fix it; reattaching the volume does', () => {
+    let run = atIncident();
+    run = ticks(sh(run, 'docker restart db', 'srv-db').run, 2);
+    expect(run.scenarios[0].state).toBe('active');
+    run = ticks(solve(run, 'd2-volume:0'), 2);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(dbRows(run.world, appDb(run.world)!)).toBe(1520);
   });
 
   it('dashboard green ⇔ incident resolved, over many player attempts', () => {
@@ -236,32 +268,177 @@ describe('s5-volume', () => {
       [['docker run -p 3306:3306 -v dbdata:/var/lib/mysql mysql:8', 'srv-db']],
       [['docker rm -f db', 'srv-db'], ['docker run -p 3306:3306 --name db mysql:8', 'srv-db']],
       [['docker rm -f db', 'srv-db'], ['docker run -p 3306:3306 -v dbdata:/tmp mysql:8', 'srv-db']],
-      [['docker stop db', 'srv-db'], ['docker run -p 3306:3306 -v v1:/var/lib/mysql mysql:8', 'srv-db'], ['docker start db', 'srv-db']],
-      [['docker rm -f db', 'srv-db'], ['docker run -p 3306:3306 -v v1:/var/lib/mysql --name x mysql:8', 'srv-db'], ['docker rm -f x', 'srv-db']],
-      [['docker rm -f db', 'srv-db'], ['docker run -p 3306:3306 -v ./data:/var/lib/mysql --name db mysql:8', 'srv-db']],
+      [['docker rm -f db', 'srv-db'], ['docker run -p 3306:3306 -v dbdata:/var/lib/mysql --name x mysql:8', 'srv-db']],
+      [['docker rm -f db', 'srv-db'], ['docker run -p 3306:3306 -v fresh:/var/lib/mysql --name db mysql:8', 'srv-db']],
     ];
     for (const steps of attempts) {
-      let run = atVolumeIncident();
+      let run = atIncident();
       for (const [line, host] of steps) {
-        run = sh(run, line, host).run;
-        run = ticks(run, 2);
-        const resolvedNow = state(run, 's5-volume') === 'resolved';
+        run = ticks(sh(run, line, host).run, 2);
+        const resolvedNow = run.scenarios[0].state === 'resolved';
         if (isGreen(run)) expect(resolvedNow, steps.map((s) => s[0]).join(' → ')).toBe(true);
       }
     }
   });
 });
 
+describe('d2-deploy: a bad release on APP-01', () => {
+  it('the container runs a new tag that answers 500; running the morning tag again fixes it', () => {
+    let run = only(dockerDone(), 'd2-deploy:0');
+    expect(sh(run, 'docker ps', 'srv-new').text).toContain('enroll:1.1');
+    expect(sh(run, 'docker logs enroll', 'srv-new').text).toContain('500 Internal Server Error');
+    expect(run.health.availability).toBeLessThan(0.5);
+    run = ticks(solve(run, 'd2-deploy:0'), 2);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(sh(run, 'docker logs enroll', 'srv-new').text).not.toContain('500');
+  });
+
+  it('never "breaks" with the tag that is already running', () => {
+    let run = readyToRun();
+    run = sh(run, 'docker build -t enroll:1.1 .', 'ops').run;
+    run = sh(run, 'docker push enroll:1.1', 'ops').run;
+    run = sh(run, 'docker run -p 80:8000 enroll:1.1', 'srv-new').run;
+    run = only(run, 'd2-deploy:0');
+    expect(run.world.docker!.containers.find((c) => c.host === 'srv-new')!.image).toBe('enroll:1.2');
+  });
+});
+
+describe('d2-uplink: the load test fills one 10G uplink; LACP makes it 20G', () => {
+  const atIncident = () => only(dockerDone(), 'd2-uplink:0');
+
+  it('one cable carries everything while the other is blocked, and pages get slow', () => {
+    const run = atIncident();
+    const w = run.world;
+    const busy = torLinks(w).filter((l) => utilization(w, l.key) > 1);
+    expect(busy.map((l) => l.key)).toEqual(['CORE-01:Te1/0/3~TOR-01:Te1/1/1']);
+    expect(studentDelivery(w).notes).toContain('수강신청 응답이 느려요');
+    expect(studentDelivery(w).ok).toBeLessThan(0.9);
+    expect(ios(run, 'TOR-01', ['enable', 'show spanning-tree vlan 10']).text).toMatch(/Te1\/1\/2\s+Altn BLK/);
+    // A 10G port can't send more than 10G: the rest waits or is dropped (txload is pinned at 255).
+    const te = ios(run, 'TOR-01', ['enable', 'show interfaces te1/1/1']).text;
+    expect(te).toContain('5 minute output rate 10000000000 bits/sec');
+    expect(te).toContain('txload 255/255');
+  });
+
+  it('bundling one side only does not help (members suspended, traffic detours via CORE-02)', () => {
+    let run = atIncident();
+    run = ios(run, 'TOR-01', ['enable', 'configure terminal', 'interface range te1/1/1 - 2', 'channel-group 1 mode active', 'end']).run;
+    run = ticks(run, 2);
+    expect(poState(run.world, 'TOR-01', 1).members.map((m) => m.flag)).toEqual(['s', 's']);
+    expect(run.scenarios[0].state).toBe('active');
+  });
+
+  it('bundling both ends forms Po1 at 20G and resolves it; the summary shows both members P', () => {
+    let run = ticks(solve(atIncident(), 'd2-uplink:0'), 2);
+    expect(run.scenarios[0].state).toBe('resolved');
+    const po = logicalLinks(run.world).find((l) => l.key === 'CORE-01:Po1~TOR-01:Po1')!;
+    expect(po.capMbps).toBe(20000);
+    expect(utilization(run.world, po.key)).toBeLessThan(0.9);
+    expect(ios(run, 'TOR-01', ['enable', 'show etherchannel summary']).text).toMatch(/Po1\(SU\)\s+LACP\s+Te1\/1\/1\(P\)\s+Te1\/1\/2\(P\)/);
+    // The bundle's width is the sum of its members, as the lesson says.
+    expect(ios(run, 'TOR-01', ['enable', 'show interfaces po1']).text).toContain('BW 20000000 Kbit/sec');
+    const logs = run.world.devices['TOR-01'].nd!.log.map((e) => e.tag);
+    expect(logs).toContain('EC-5-BUNDLE');
+  });
+
+  const bundle = (run: StageRun, tor: string, core: string, extra: string[] = []) => {
+    run = ios(run, 'TOR-01', ['enable', 'configure terminal', 'interface range te1/1/1 - 2', tor, 'end', ...extra]).run;
+    return ios(run, 'CORE-01', ['enable', 'configure terminal', 'interface range te1/0/3 - 4', core, 'end', ...extra]).run;
+  };
+
+  it('each end numbers its Po on its own: Po1 facing Po2 is a bundle, and the mission counts it', () => {
+    let run = bundle(atIncident(), 'channel-group 1 mode active', 'channel-group 2 mode active', ['write memory', 'show etherchannel summary']);
+    run = ticks(run, 2);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(poBundled(run.world)).toBe(true);
+    expect(poWhole(run.world)).toBe(true);
+    expect(run.objectivesDone).toHaveProperty('lacp');
+  });
+
+  it.each([
+    ['passive', 'passive'],
+    ['active', 'on'],
+    ['on', 'passive'],
+  ])('%s facing %s never bundles: the members are suspended', (a, b) => {
+    let run = bundle(atIncident(), `channel-group 1 mode ${a}`, `channel-group 1 mode ${b}`);
+    run = ticks(run, 2);
+    expect(poState(run.world, 'TOR-01', 1).members.map((m) => m.flag)).toEqual(['s', 's']);
+    expect(poState(run.world, 'CORE-01', 1).members.map((m) => m.flag)).toEqual(['s', 's']);
+    expect(poBundled(run.world)).toBe(false);
+    expect(run.scenarios[0].state).toBe('active');
+  });
+
+  it.each([
+    ['active', 'passive', 'LACP'],
+    ['on', 'on', '-'],
+  ])('%s facing %s bundles', (a, b, proto) => {
+    let run = bundle(atIncident(), `channel-group 1 mode ${a}`, `channel-group 1 mode ${b}`);
+    run = ticks(run, 2);
+    expect(poBundled(run.world)).toBe(true);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(ios(run, 'CORE-01', ['enable', 'show etherchannel summary']).text).toMatch(new RegExp(`Po1\\(SU\\)\\s+${proto === '-' ? '-' : 'LACP'}\\s+Te1/0/3\\(P\\)`));
+  });
+});
+
+describe('extras on D-2', () => {
+  it('never the cut uplink cable: no D-2/D-1 mini-game can replace an uplink cable', () => {
+    for (const d of [3, 4] as const) expect(getStage(d).scenarios.some((s) => s.id.startsWith('d3-uplink:'))).toBe(false);
+  });
+
+  it('the DB VLAN gateway is CORE-01 alone until D-2 (선배 adds CORE-02 for D-1), so shutting it is felt', () => {
+    expect(startStage(D2).world.devices['CORE-02'].nd!.svis[20]).toBeUndefined();
+    expect(startStage(4).world.devices['CORE-02'].nd!.svis[20]?.hsrp).toBeDefined();
+    let run = only(dockerDone(), 'd4-svi:1');
+    run = ticks(run, 2);
+    expect(reachesHost(run.world, 'web', 'db')).toBe(false);
+    expect(run.health.availability).toBeLessThan(1);
+    run = ticks(solve(run, 'd4-svi:1'), 2);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(isGreen(run)).toBe(true);
+  });
+});
+
+describe('d2-storm: a loop with STP off on both ends', () => {
+  const atIncident = (v = 0) => only(dockerDone(), `d2-storm:${v}`);
+
+  it('storms VLAN 50: names and new campus addresses fail, links fill up, MAC flaps in the log', () => {
+    let run = atIncident();
+    run = ticks(run, 3);
+    const w = run.world;
+    expect(w.net!.storm).toEqual([50]);
+    expect(resolve(w, 'sugang', 'ops').ip).toBeNull();
+    expect(campusDelivery(w).ok).toBeLessThan(0.5);
+    expect(w.devices['TOR-01'].nd!.log.some((e) => e.tag === 'SW_MATM-4-MACFLAP_NOTIF')).toBe(true);
+    expect(ios(run, 'TOR-01', ['enable', 'show spanning-tree vlan 50']).text).toContain('does not exist');
+  });
+
+  it.each([['TOR-01'], ['TOR-02']])('turning STP back on for VLAN 50 on %s alone ends it', (tor) => {
+    let run = atIncident(1);
+    run = ios(run, tor, ['enable', 'configure terminal', 'spanning-tree vlan 50', 'end']).run;
+    run = ticks(run, 2);
+    expect(run.world.net!.storm).toEqual([]);
+    expect(run.scenarios[0].state).toBe('resolved');
+    expect(resolve(run.world, 'sugang', 'ops').ip).not.toBeNull();
+  });
+
+  it('only cutting the loop (shutting the stray port) stops the storm but STP is still off: not resolved yet', () => {
+    let run = atIncident();
+    run = ios(run, 'TOR-01', ['enable', 'configure terminal', 'interface gi1/0/12', 'shutdown', 'end']).run;
+    run = ticks(run, 2);
+    expect(run.world.net!.storm).toEqual([]);
+    expect(run.scenarios[0].state).toBe('active');
+    run = ticks(solve(run, 'd2-storm:0'), 2);
+    expect(run.scenarios[0].state).toBe('resolved');
+  });
+});
+
 describe('docker build', () => {
   it('prints the same Dockerfile as the design board, WORKDIR and EXPOSE included', () => {
-    let run = startStage(5);
+    let run = startStage(D2);
     run = applyAction(run, (w) => writeDockerfile(w, 'enroll')).run;
     const r = sh(run, 'docker build -t enroll:1.0 .', 'ops');
     expect(r.failed).toBe(false);
     for (const [i, line] of ENROLL_DOCKERFILE.entries()) expect(r.text).toContain(`Step ${i + 1}/${ENROLL_DOCKERFILE.length} : ${line}`);
-    expect(ENROLL_DOCKERFILE).toContain('WORKDIR /app');
-    expect(ENROLL_DOCKERFILE).toContain('EXPOSE 8000');
-    // The design board has one card per instruction, in this order (DockerfileBoard.tsx CARDS).
     expect(ENROLL_DOCKERFILE.map((l) => l.split(' ')[0])).toEqual(['FROM', 'WORKDIR', 'COPY', 'RUN', 'EXPOSE', 'CMD']);
   });
 
@@ -271,22 +448,21 @@ describe('docker build', () => {
     expect(r.failed).toBe(true);
     expect(r.text).toContain('관리 PC');
     expect(sh(r.run, 'docker run -p 80:8000 enroll:2.0', 'srv-new').failed).toBe(true);
-    // -t takes its value attached too
     run = sh(run, 'docker build -tenroll:3.0 .', 'ops').run;
     expect(run.world.docker!.built).toContain('enroll:3.0');
   });
 
   it('names the finished recipe when the image name does not match it', () => {
-    let run = startStage(5);
+    let run = startStage(D2);
     run = applyAction(run, (w) => writeDockerfile(w, 'enroll')).run;
     const r = sh(run, 'docker build -t khu-enroll:1.0 .', 'ops');
     expect(r.failed).toBe(true);
     expect(r.text).toContain('완성한 레시피: enroll');
-    expect(sh(startStage(5), 'docker build -t enroll:1.0 .', 'ops').text).toContain('설계 보드');
+    expect(sh(startStage(D2), 'docker build -t enroll:1.0 .', 'ops').text).toContain('설계 보드');
   });
 });
 
-describe('container names and ids', () => {
+describe('container names, ids and hosts', () => {
   it('an exact name wins over an id prefix, and an ambiguous id prefix matches nothing', () => {
     let run = readyToRun();
     run = sh(run, 'docker run -p 80:8000 enroll:1.0', 'srv-new').run;
@@ -300,25 +476,34 @@ describe('container names and ids', () => {
     expect(sh(run, `docker logs ${ids[0].slice(0, 10)}`, 'srv-new').text).toContain('Running on');
   });
 
-  it('docker ps keeps its columns aligned (Hangul is two cells wide)', () => {
-    let run = readyToRun();
-    run = sh(run, 'docker run -p 80:8000 enroll:1.0', 'srv-new').run;
-    run = sh(run, 'docker run --name e2 enroll:1.0', 'srv-new').run;
-    const cells = (s: string) => [...s].reduce((n, ch) => n + (/[가-힣]/.test(ch) ? 2 : 1), 0);
-    for (const host of ['srv-new', 'srv-db']) {
-      const lines = sh(run, 'docker ps', host).text.split('\n');
-      const nameCol = cells(lines[0].slice(0, lines[0].indexOf('NAME')));
-      for (const l of lines.slice(1)) expect(cells(l.slice(0, l.lastIndexOf(' ') + 1)), l).toBe(nameCol);
-    }
+  it('container commands on the admin PC point to a server; servers without Docker say so', () => {
+    const run = startStage(D2);
+    for (const line of ['docker logs db', 'docker rm -f db', 'docker stop db']) expect(sh(run, line, 'ops').text, line).toContain('서버에 ssh 로 접속');
+    expect(sh(run, 'docker ps', 'ops').text).toContain('관리 PC에는 컨테이너가 없어요');
+    expect(sh(run, 'docker ps', 'web').text).toContain('Docker가 설치돼 있지 않아요');
+  });
+
+  it('docker is a D-2 tool: the next day has no docker command', () => {
+    expect(sh(startStage(4), 'docker ps', 'ops').text).toContain('오늘은 쓰지 않는');
   });
 });
 
-describe('container commands on the admin PC', () => {
-  it('point the player to a server instead of "no such container"', () => {
-    const run = startStage(5);
-    for (const line of ['docker logs db', 'docker rm -f db', 'docker stop db']) {
-      expect(sh(run, line, 'ops').text, line).toContain('서버에 ssh 로 접속');
-    }
-    expect(sh(run, 'docker ps', 'ops').text).toContain('관리 PC에는 컨테이너가 없어요');
+describe('the day’s fixed incidents', () => {
+  it('the load test starts after the docker missions, the storm after the bundle is saved', () => {
+    let run = dockerDone();
+    for (let i = 0; i < 40 && state(run, 'd2-uplink:0') !== 'active'; i++) run = tickRun(run).run;
+    expect(state(run, 'd2-uplink:0')).toBe('active');
+    expect(run.world.traffic.rps).toBe(8000);
+    run = ticks(solve(run, 'd2-uplink:0'), 2);
+    expect(state(run, 'd2-uplink:0')).toBe('resolved');
+    const storm = run.scenarios.find((s) => s.id.startsWith('d2-storm'))!.id;
+    run = ticks(run, 30);
+    expect(state(run, storm), 'waits for the lacp mission').toBe('waiting');
+    for (const st of AUTOPLAY[D2].lacp) run = apply(run, st, null);
+    expect(run.objectivesDone).toHaveProperty('lacp');
+    for (let i = 0; i < 40 && state(run, storm) !== 'active'; i++) run = tickRun(run).run;
+    run = ticks(solve(run, storm), 2);
+    expect(state(run, storm)).toBe('resolved');
+    expect(isGreen(run)).toBe(true);
   });
 });

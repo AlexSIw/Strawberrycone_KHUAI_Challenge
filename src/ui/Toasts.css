@@ -1,4 +1,4 @@
-/* Top-right toast stack (z 20). Prefix: toast- */
+/* Top-right toast stack (z 20; over an open window: top left, z 36). Prefix: toast- */
 .toast-stack {
   position: absolute;
   top: 66px;
@@ -37,7 +37,8 @@
 .toast-item.leaving { animation: toast-out 0.26s ease-in forwards; }
 .toast-item:focus-visible { outline: 3px solid var(--tan); outline-offset: 2px; }
 
-.toast-kind { font-family: var(--pixel); font-size: 11px; letter-spacing: 0.04em; }
+/* Kind label; an alert also shows a phone or siren icon, so a call and an NMS alarm tell apart at a glance */
+.toast-kind { display: flex; align-items: center; gap: 6px; font-family: var(--pixel); font-size: 11px; letter-spacing: 0.04em; }
 .toast-text { font-size: 14px; line-height: 1.45; }
 
 .toast-timer {
@@ -80,11 +81,35 @@
   40%, 80% { transform: translateX(4px); }
 }
 
+/*
+ * A window is open: alerts go over it (above the window layer, z 30) at the top left, where the window has
+ * only its title (its ✕ and the HUD buttons are on the right).
+ */
+.toast-stack.over-window {
+  z-index: 36;
+  top: 64px;
+  left: 12px;
+  right: auto;
+  width: min(330px, calc(100% - 24px));
+}
+.toast-stack.over-window .toast-under { display: none; }
+.toast-stack.over-window .toast-item { animation-name: toast-in-left; }
+.toast-stack.over-window .toast-alert { animation: toast-in-left 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2), toast-shake 0.4s 0.28s; }
+.toast-stack.over-window .toast-item.leaving { animation: toast-out-left 0.26s ease-in forwards; }
+@keyframes toast-in-left {
+  from { transform: translateX(-110%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes toast-out-left {
+  to { transform: translateX(-110%); opacity: 0; }
+}
+
 /* Small screens: keep the collapsed objective header visible */
 @media (max-width: 760px) {
   .toast-stack { top: 112px; right: 8px; width: calc(100% - 16px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .toast-item, .toast-item.leaving { animation-duration: 0.01ms; }
+  .toast-item, .toast-item.leaving,
+  .toast-stack.over-window .toast-item, .toast-stack.over-window .toast-alert, .toast-stack.over-window .toast-item.leaving { animation-duration: 0.01ms; }
 }

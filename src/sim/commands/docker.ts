@@ -13,6 +13,8 @@ export const WEB_PORT = 80;
 export const MYSQL_DATA_DIR = '/var/lib/mysql';
 /** The enroll app is configured to reach its database at this server's published MySQL port. */
 export const DB_ENDPOINT = { host: 'srv-db', port: 3306 } as const;
+/** `w.flags` key naming an image release with a bug (D-2's bad deploy): its app answers every request with a 500. */
+export const BAD_IMAGE_FLAG = 'docker:badImage';
 
 /** The enroll recipe. The design board's card and the `docker build` output both print these lines. */
 export const ENROLL_DOCKERFILE: readonly string[] = [
@@ -218,8 +220,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker build',
     aliases: ['docker image build'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker build -t <이미지:태그> .',
     summary: 'Dockerfile(레시피 카드)로 이미지(밀키트 원본) 만들기',
     run(raw, { w, host }) {
@@ -249,6 +251,7 @@ export const dockerCommands: Command[] = [
         lines: [
           ...recipe.map((l, i) => dim(`Step ${i + 1}/${recipe.length} : ${l}`)),
           green(`Successfully tagged ${img}`),
+          dim('(Step = 레시피(Dockerfile) 한 줄씩 차례로 실행 · Successfully tagged = 이 이름표로 이미지를 다 만들었어요)'),
           ...(hasContext ? [] : [dim('(실제 docker 에서는 끝에 빌드할 폴더를 꼭 적어요. 지금 폴더면 "." )')]),
         ],
         events: [`docker_build:${name}`],
@@ -258,8 +261,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker push',
     aliases: ['docker image push'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker push <이미지:태그>',
     summary: '이미지를 레지스트리(마트 냉동고)에 올리기',
     run(args, { w, host }) {
@@ -275,8 +278,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker pull',
     aliases: ['docker image pull'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker pull <이미지:태그>',
     summary: '레지스트리에서 이미지 받아오기',
     run(args, { w, host }) {
@@ -293,22 +296,25 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker images',
     aliases: ['docker image ls', 'docker image list'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker images',
     summary: '이 장비에 있는 이미지 목록',
     run(_a, { w, host }) {
       const bad = dockerHost(w, host);
       if (bad) return bad;
       const list = localImages(w, host);
-      return out(bold('REPOSITORY:TAG'), ...(list.length ? list.map((i) => `  ${i}`) : [dim('  (없음)')]));
+      return out(
+        bold('REPOSITORY:TAG'),
+        ...(list.length ? [...list.map((i) => `  ${i}`), dim('(이미지 = 컨테이너를 찍어 내는 원본 · 이름:태그 에서 태그는 버전 이름표)')] : [dim('  (없음)')]),
+      );
     },
   },
   {
     name: 'docker run',
     aliases: ['docker container run'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker run [-p 바깥포트:안쪽포트] [-v 볼륨:/폴더] [--name 이름] <이미지>',
     summary: '이미지로 컨테이너(한 끼) 실행',
     run(args, { w, host }) {
@@ -355,8 +361,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker ps',
     aliases: ['docker container ls', 'docker container list', 'docker container ps'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker ps [-a]',
     summary: '실행 중인 컨테이너 보기 (-a: 멈춘 것까지)',
     run(args, { w, host }) {
@@ -370,14 +376,15 @@ export const dockerCommands: Command[] = [
         rows.push(`${c.id}   ${pad(c.image, 15)}${c.running ? green(pad('Up', 10)) : red(pad('Exited', 10))}${ports}${pad(c.volume ?? '-', 11)}${c.name}`);
       }
       if (!list.length) rows.push(dim(host === 'ops' ? '  (없음 · 관리 PC에는 컨테이너가 없어요. 서버에 ssh 로 접속해서 보세요)' : '  (없음)'));
+      else rows.push(dim('(PORTS 의 a->b = 서버의 a번 문 → 컨테이너 안 b번 문 · STATUS: Up 실행 중, Exited 멈춤 · VOLUME = 붙여 둔 볼륨, - 는 없음)'));
       return { lines: rows, events: ['docker_ps'] };
     },
   },
   {
     name: 'docker rm',
     aliases: ['docker container rm'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker rm -f <이름>',
     summary: '컨테이너 지우기 (-f: 실행 중이어도 강제로)',
     run(raw, { w, host }) {
@@ -407,8 +414,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker stop',
     aliases: ['docker container stop'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker stop <이름>',
     summary: '컨테이너 멈추기 (지우지는 않음)',
     run(args, { w, host }) {
@@ -424,8 +431,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker start',
     aliases: ['docker container start'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker start <이름>',
     summary: '멈춘 컨테이너 다시 켜기',
     run(args, { w, host }) {
@@ -443,8 +450,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker restart',
     aliases: ['docker container restart'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker restart <이름>',
     summary: '컨테이너 재시작 (같은 컨테이너를 껐다 켜기)',
     run(args, { w, host }) {
@@ -464,8 +471,8 @@ export const dockerCommands: Command[] = [
   {
     name: 'docker logs',
     aliases: ['docker container logs'],
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker logs <이름>',
     summary: '컨테이너 로그 보기',
     run(args, { w, host }) {
@@ -491,6 +498,9 @@ export const dockerCommands: Command[] = [
           dim(' * 수강신청 앱 준비 완료'),
           db ? dim(` * DB ${DB_ENDPOINT.host}:${DB_ENDPOINT.port} 연결됨`) : red(` * DB ${DB_ENDPOINT.host}:${DB_ENDPOINT.port} 연결 실패 (응답 없음)`),
         );
+        if (own(w.flags, BAD_IMAGE_FLAG) === c.image) {
+          lines.push(red(`ERROR TypeError in /enroll (${c.image}) — 500 Internal Server Error (앱이 요청을 처리하다 오류로 멈췄어요)`));
+        }
       }
       if (!c.running) lines.push(dim('(멈춘 컨테이너예요 · docker start 로 다시 켜요)'));
       return out(...lines);
@@ -498,8 +508,8 @@ export const dockerCommands: Command[] = [
   },
   {
     name: 'docker volume',
-    maxStage: 5,
-    minStage: 5,
+    maxStage: 3,
+    minStage: 3,
     usage: 'docker volume create <이름> | docker volume ls',
     summary: '볼륨(식당 전용 사물함) 만들기·보기',
     run(args, { w, host }) {
@@ -522,9 +532,9 @@ export const dockerCommands: Command[] = [
   },
   {
     name: 'python --version',
-    maxStage: 5,
+    maxStage: 3,
     aliases: ['python3 --version', 'python -V'],
-    minStage: 5,
+    minStage: 3,
     usage: 'python --version',
     summary: '이 서버에 설치된 Python(앱을 만든 프로그래밍 언어) 버전',
     run(_a, { w, host }) {
@@ -534,9 +544,9 @@ export const dockerCommands: Command[] = [
   },
   {
     name: 'deploy log',
-    maxStage: 5,
+    maxStage: 3,
     aliases: ['cat deploy.log'],
-    minStage: 5,
+    minStage: 3,
     usage: 'deploy log',
     summary: '손으로 한 배포(앱 설치·실행) 기록 보기',
     run(_a, { w, host }) {
@@ -548,8 +558,10 @@ export const dockerCommands: Command[] = [
         lines: [
           `$ pip install -r requirements.txt`,
           red('ERROR: Package \'enroll-app\' requires a different Python: 3.9.18 not in \'>=3.11\''),
+          dim('(앱에 필요한 부품 설치가 거절됐어요: 이 서버의 Python은 3.9인데, 앱은 3.11 이상이 필요해요)'),
           `$ python app.py`,
           red('ModuleNotFoundError: No module named \'fastapi\''),
+          dim('(부품(fastapi)이 안 깔려서 앱이 켜지지 못했어요)'),
           yellow('→ 배포 실패: 이 서버 환경이 기존 서버와 달라요.'),
         ],
       };

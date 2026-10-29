@@ -12,19 +12,18 @@ import './DockerfileBoard.css';
 interface Line {
   id: 'from' | 'workdir' | 'copy' | 'run' | 'expose' | 'cmd';
   code: string;
-  icon: string;
   tag: string;
   detail: string;
 }
 
 /** Card text for each recipe line. The code comes from ENROLL_DOCKERFILE (which `docker build` prints), matched by instruction. */
 const CARDS: Omit<Line, 'code'>[] = [
-  { id: 'from', icon: '🥕', tag: '재료 준비', detail: '파이썬 3.12가 들어 있는 기본 이미지에서 시작해요. 서버에 뭐가 깔려 있든 상관없어져요.' },
-  { id: 'workdir', icon: '🍳', tag: '작업대', detail: '컨테이너 안의 /app 폴더를 작업대로 정해요. 다음 줄부터는 여기서 일해요.' },
-  { id: 'copy', icon: '📦', tag: '재료 넣기', detail: '내 코드(지금 폴더 ".")를 컨테이너 안 /app 으로 복사해요.' },
-  { id: 'run', icon: '🔪', tag: '손질', detail: 'requirements.txt에 적힌 라이브러리를 설치해요. 이미지를 만들 때 한 번 실행돼요.' },
-  { id: 'expose', icon: '🏷️', tag: '창구 번호 메모', detail: `"이 앱은 안쪽 ${APP_PORT.enroll}번 창구에서 손님을 받아요"라고 적어두는 메모예요.` },
-  { id: 'cmd', icon: '🍽️', tag: '완성 후 실행', detail: '컨테이너가 켜질 때 실행할 명령이에요. 요리가 다 된 뒤 손님에게 내기!' },
+  { id: 'from', tag: '재료 준비', detail: '파이썬 3.12가 들어 있는 기본 이미지에서 시작해요. 서버에 뭐가 깔려 있든 상관없어져요.' },
+  { id: 'workdir', tag: '작업대', detail: '컨테이너 안의 /app 폴더를 작업대로 정해요. 다음 줄부터는 여기서 일해요.' },
+  { id: 'copy', tag: '재료 넣기', detail: '내 코드(지금 폴더 ".")를 컨테이너 안 /app 으로 복사해요.' },
+  { id: 'run', tag: '손질', detail: 'requirements.txt에 적힌 라이브러리를 설치해요. 이미지를 만들 때 한 번 실행돼요.' },
+  { id: 'expose', tag: '창구 번호 메모', detail: `"이 앱은 안쪽 ${APP_PORT.enroll}번 창구에서 손님을 받아요"라고 적어두는 메모예요.` },
+  { id: 'cmd', tag: '완성 후 실행', detail: '컨테이너가 켜질 때 실행할 명령이에요. 요리가 다 된 뒤 손님에게 내기!' },
 ];
 
 /** Each card shows the recipe line that starts with its instruction (FROM, WORKDIR, …). */
@@ -77,7 +76,7 @@ export function DockerfileBoard() {
   if (done) return <Finished celebrate={justDone} />;
   if (!problemSeen) {
     return (
-      <ModalFrame title="설계 보드 · 레시피 카드" icon="📋" size="narrow">
+      <ModalFrame title="설계 보드 · 레시피 카드" size="narrow">
         <p style={{ lineHeight: 1.7, margin: 0 }}>새 서버(srv-new)에 신청 앱을 설치하는 중이에요.</p>
         <p className="muted">
           새 서버 배포 결과부터 확인해봐요: 관리 PC 터미널에서 <code>ssh srv-new</code> → <code>deploy log</code>
@@ -115,7 +114,6 @@ function Recipe({ onSolved }: { onSolved: () => void }) {
   return (
     <ModalFrame
       title="설계 보드 · 레시피 카드 (Dockerfile)"
-      icon="📋"
       size="wide"
       footer={
         <>
@@ -131,11 +129,11 @@ function Recipe({ onSolved }: { onSolved: () => void }) {
       <p className="dfb-lead">
         <b>Dockerfile</b> = 앱을 밀키트(이미지)로 포장하는 <b>레시피 카드</b>예요. 위에서부터 한 줄씩 차례로 실행돼요.
       </p>
-      <p className="dfb-todo">👉 줄을 끌어서(또는 ↑↓ 버튼으로) 요리 순서대로 맞춰주세요. 줄에 마우스를 올리면 설명이 나와요.</p>
+      <p className="dfb-todo">줄을 끌어서(또는 ↑↓ 버튼으로) 요리 순서대로 맞춰주세요. 줄에 마우스를 올리면 설명이 나와요.</p>
 
       <div className="dfb-card">
         <div className="dfb-card-head">
-          <span>📄 Dockerfile</span>
+          <span>Dockerfile</span>
           <span className="muted">enroll (수강신청)</span>
         </div>
         <ol className="dfb-lines">
@@ -174,9 +172,7 @@ function Recipe({ onSolved }: { onSolved: () => void }) {
                 </span>
                 <span className="dfb-num">{i + 1}</span>
                 <code className="dfb-code">{l.code}</code>
-                <span className="dfb-tag">
-                  {l.icon} {l.tag}
-                </span>
+                <span className="dfb-tag">{l.tag}</span>
                 <span className="dfb-arrows">
                   <button className="btn" disabled={i === 0} onClick={() => moveTo(id, i - 1)} aria-label={`${l.code} 위로`}>
                     ↑
@@ -194,7 +190,7 @@ function Recipe({ onSolved }: { onSolved: () => void }) {
 
       {problem && (
         <div className="dfb-mentor is-bad">
-          <Portrait who="mentor" size={44} />
+          <Portrait who="mentor" size={32} />
           <p>{problem.msg}</p>
         </div>
       )}
@@ -204,9 +200,9 @@ function Recipe({ onSolved }: { onSolved: () => void }) {
 
 function Finished({ celebrate }: { celebrate: boolean }) {
   return (
-    <ModalFrame title="설계 보드 · 레시피 카드 (Dockerfile)" icon="📋" size="wide">
+    <ModalFrame title="설계 보드 · 레시피 카드 (Dockerfile)" size="wide">
       <div className="dfb-mentor">
-        <Portrait who="mentor" size={44} />
+        <Portrait who="mentor" size={32} />
         <p>
           {celebrate
             ? '완벽해! 레시피 카드 완성. 이걸로 어느 서버에서나 똑같은 밀키트(이미지)를 만들 수 있어.'
@@ -216,7 +212,7 @@ function Finished({ celebrate }: { celebrate: boolean }) {
       <div className="dfb-done">
         <div className="dfb-card done">
           <div className="dfb-card-head">
-            <span>📄 Dockerfile ✅</span>
+            <span>Dockerfile ✓</span>
             <span className="muted">enroll (수강신청)</span>
           </div>
           <ol className="dfb-lines">
@@ -224,15 +220,13 @@ function Finished({ celebrate }: { celebrate: boolean }) {
               <li key={l.id} className="dfb-row static">
                 <span className="dfb-num">{i + 1}</span>
                 <code className="dfb-code">{l.code}</code>
-                <span className="dfb-tag">
-                  {l.icon} {l.tag}
-                </span>
+                <span className="dfb-tag">{l.tag}</span>
               </li>
             ))}
           </ol>
         </div>
         <div className="dfb-memo" role="note">
-          <div className="dfb-memo-title">📌 동료 메모</div>
+          <div className="dfb-memo-title">동료 메모</div>
           <ul>
             {MEMO.map((m) => (
               <li key={m.n}>
@@ -245,7 +239,7 @@ function Finished({ celebrate }: { celebrate: boolean }) {
           </ul>
         </div>
       </div>
-      <p className="dfb-todo">👉 관리 PC 터미널에서 메모 순서대로 입력해보세요.</p>
+      <p className="dfb-todo">관리 PC 터미널에서 메모 순서대로 입력해보세요.</p>
     </ModalFrame>
   );
 }

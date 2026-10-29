@@ -1,4 +1,3 @@
-import { cableAt } from './network';
 import type { Deployment, K8sState, Pod, World } from './types';
 import { own } from './util';
 
@@ -19,7 +18,7 @@ export function readyPods(k: K8sState, app: string): Pod[] {
 export const unscheduled = (p: Pod): boolean => p.node === '';
 
 function pickNode(k: K8sState): string | null {
-  const ready = Object.entries(k.nodes).filter(([, n]) => n.ready).map(([id]) => id);
+  const ready = Object.entries(k.nodes).filter(([, n]) => n.ready && !n.cordoned).map(([id]) => id);
   let best: string | null = null;
   let bestCount = Infinity;
   for (const id of ready) {
@@ -125,18 +124,41 @@ function rollStep(k: K8sState, app: string, dep: Deployment): void {
   else remove(k, [old[0]]); // no room for an extra pod: free a slot instead, the refill below takes it
 }
 
-/** Node health: its rack uplink cable must work and the rack must not be overheating. */
-export function updateNodes(w: World): void {
+/**
+ * Node health: the node must be online and its rack must not be overheating. `isOnline` comes from the
+ * network model (step passes `nodeOnline`: powered, NIC up at the TOR, reaches its gateway); without it
+ * only the node's uplink cable is checked. k8s never imports the network module.
+ */
+export function updateNodes(w: World, isOnline?: (node: string) => boolean): void {
   const k = w.k8s;
   if (!k) return;
   // The cluster keeps the world clock (runs once per step, right before reconcile) so pods know their AGE.
   k.clock = w.t;
-  for (const n of Object.values(k.nodes)) {
+  for (const [id, n] of Object.entries(k.nodes)) {
     const temp = w.cooling?.temps[n.rack] ?? 24;
-    const uplinkOk = n.uplink ? !(cableAt(w, n.uplink)?.broken ?? false) : true;
-    if (n.ready && (temp >= 45 || !uplinkOk)) n.ready = false;
-    else if (!n.ready && temp < 35 && uplinkOk) n.ready = true;
+    const online = isOnline ? isOnline(id) : !n.uplink || !Object.values(w.cables).find((c) => c.a === n.uplink || c.b === n.uplink)?.broken;
+    if (n.ready && (temp >= 45 || !online)) n.ready = false;
+    else if (!n.ready && temp < 35 && online) n.ready = true;
   }
+}
+
+/** `kubectl cordon`: no new pods land on the node; the ones running there stay. */
+export function cordon(k: K8sState, node: string, on = true): boolean {
+  const n = own(k.nodes, node);
+  if (!n) return false;
+  n.cordoned = on;
+  return true;
+}
+
+/**
+ * `kubectl drain`: cordon, then evict every pod on the node. Their Deployments create replacements,
+ * which the scheduler places on other nodes (Pending if there is no room). Returns the evicted pods.
+ */
+export function drain(k: K8sState, node: string): Pod[] | null {
+  if (!cordon(k, node)) return null;
+  const gone = k.pods.filter((p) => p.node === node);
+  remove(k, gone);
+  return gone;
 }
 
 /** One reconcile pass: make the actual pods match each deployment's desired state. */

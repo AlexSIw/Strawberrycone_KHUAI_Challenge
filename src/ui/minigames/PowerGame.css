@@ -158,6 +158,16 @@
 .pw-table tr.off td { background: #201a26; }
 .pw-dev { font-family: var(--pixel); font-size: 14px; white-space: nowrap; }
 .pw-id { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+/* What the device is: labels are often bare IDs (TOR-01) */
+.pw-kind {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+}
 .pw-feeds { font-family: var(--pixel); font-size: 13px; }
 
 .pw-plug {
@@ -204,4 +214,10 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pw-line.live, .pw-big.bad, .pw-battery.draining .pw-battery-cells i:nth-child(4) { animation: none; }
+}
+
+/* v2: just the two PDU lines, side by side */
+.pw-feeds-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+@media (max-width: 640px) {
+  .pw-feeds-row { grid-template-columns: 1fr; }
 }

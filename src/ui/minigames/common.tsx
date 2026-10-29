@@ -9,6 +9,8 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { getStage } from '../../content/stages';
+import type { StageDef } from '../../content/types';
 import type { World } from '../../sim/types';
 import { gameStore, useGame } from '../../store/game';
 import { ModalFrame } from '../ModalFrame';
@@ -19,11 +21,19 @@ export function useWorld(): World | undefined {
   return useGame((s) => s.run?.world);
 }
 
-/** "rack1" → "랙 1" */
+/** Today's day definition (mapSwitch / mapDevices for the mini-games). */
+export function useDay(): StageDef | undefined {
+  const stage = useGame((s) => s.run?.stage);
+  return stage === undefined ? undefined : getStage(stage);
+}
+
+/** "rack1" → "랙 1", "net1" → "네트워크실 1번 랙" */
 export function rackName(rack: string | undefined): string {
   if (!rack) return '랙 밖';
   const m = /^rack(\d+)$/.exec(rack);
-  return m ? `랙 ${m[1]}` : rack;
+  if (m) return `랙 ${m[1]}`;
+  const net = /^net(\d+)$/.exec(rack);
+  return net ? `네트워크실 ${net[1]}번 랙` : rack;
 }
 
 export function prefersReducedMotion(): boolean {
@@ -113,6 +123,11 @@ export function MiniGameFrame({ onEscape, ...props }: FrameProps) {
 /** Footer: the "완료!" stamp (always visible, even when the window scrolls) + the close button. */
 export function GameFooter({ done, children }: { done: boolean; children?: ReactNode }) {
   const close = () => gameStore.getState().closeModal();
+  // Done: the close button takes focus, so Enter (or Esc) closes the window right away.
+  const btn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (done) btn.current?.focus({ preventScroll: true });
+  }, [done]);
   return (
     <>
       {done ? (
@@ -123,7 +138,7 @@ export function GameFooter({ done, children }: { done: boolean; children?: React
       ) : (
         children && <div className="mg-foot-info">{children}</div>
       )}
-      <button type="button" className={`btn${done ? ' primary' : ''}`} onClick={close}>
+      <button ref={btn} type="button" className={`btn${done ? ' primary' : ''}`} onClick={close}>
         {done ? '좋아요, 닫기' : '닫기'}
       </button>
     </>
@@ -135,7 +150,7 @@ export function TaskBar({ done, children }: { done?: boolean; children: ReactNod
   return (
     <div className={`mg-task${done ? ' done' : ''}`} role="status" aria-live="polite">
       <span className="mg-task-icon" aria-hidden>
-        {done ? '✅' : '👉'}
+        {done ? '✓' : '▶'}
       </span>
       <span className="mg-task-text">{children}</span>
     </div>
@@ -167,7 +182,8 @@ export function NoteLine({ note, idle }: { note: Note | null; idle?: ReactNode }
   );
 }
 
-export type LedState = 'off' | 'on' | 'blink' | 'bad' | 'warn';
+/** crc = green and amber in turns (a link that is up but drops damaged frames) */
+export type LedState = 'off' | 'on' | 'blink' | 'bad' | 'warn' | 'crc';
 
 export function Led({ state, title, size = 10 }: { state: LedState; title?: string; size?: number }) {
   return <span className={`mg-led ${state}`} style={{ width: size, height: size }} title={title} aria-hidden />;

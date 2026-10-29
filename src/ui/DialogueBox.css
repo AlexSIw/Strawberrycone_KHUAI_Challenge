@@ -101,6 +101,7 @@
 
 @media (max-width: 640px) {
   .dlg-box { gap: 10px; padding: 12px; }
-  .dlg-portrait { transform: scale(0.7); transform-origin: top center; margin: -6px -14px -28px; }
+  /* 2x instead of 3x, so the art pixels stay whole */
+  .dlg-portrait .portrait { width: 64px; height: 64px; }
   .dlg-text { font-size: 16px; }
 }

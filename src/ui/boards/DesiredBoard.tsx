@@ -27,8 +27,8 @@ export function DesiredBoard() {
   const dep = k8s?.deployments[APP];
   if (!k8s || !dep) {
     return (
-      <ModalFrame title="설계 보드" icon="📋" size="narrow">
-        <p className="muted">이 단계에서는 원하는 상태 카드를 쓰지 않아요.</p>
+      <ModalFrame title="설계 보드" size="narrow">
+        <p className="muted">오늘은 원하는 상태 카드를 쓰지 않아요.</p>
       </ModalFrame>
     );
   }
@@ -58,7 +58,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
     const img = image;
     gameStore.getState().act((w) => applyDesired(w, APP, n, img), 'board:desired');
     setDraft(null);
-    setMsg({ tone: 'ok', text: '적용 완료! 쿠버네티스가 pod 개수를 맞추는 중이에요. 관리 PC 터미널에서 pods 로 확인해보세요.' });
+    setMsg({ tone: 'ok', text: '적용 완료! 쿠버네티스가 pod 개수를 맞추는 중이야. 관리 PC 터미널에서 pods 로 확인해봐.' });
   };
 
   const applyCount = () => {
@@ -67,7 +67,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
     // Only the count changes here: no image, so a version that is deployed or still rolling out stays as it is.
     gameStore.getState().act((w) => applyDesired(w, APP, n), 'board:desired');
     setDraft(null);
-    setMsg({ tone: 'ok', text: `원하는 개수를 ${n}개로 바꿨어요. 쿠버네티스가 알아서 맞춰요.` });
+    setMsg({ tone: 'ok', text: `원하는 개수를 ${n}개로 바꿨네. 나머지는 쿠버네티스가 알아서 맞춰.` });
   };
 
   const ready = !!image && replicas >= 2;
@@ -83,7 +83,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
 
   const footer = (
     <>
-      <span className="dsb-foot-todo">👉 {todo}</span>
+      <span className="dsb-foot-todo">{todo}</span>
       {applied ? (
         <button className="btn primary" disabled={draft === null || draft === dep.replicas || replicas < 2} onClick={applyCount}>
           개수 바꾸기
@@ -97,7 +97,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
   );
 
   return (
-    <ModalFrame title="설계 보드 · 원하는 상태 카드" icon="📋" size="wide" footer={footer}>
+    <ModalFrame title="설계 보드 · 원하는 상태 카드" size="wide" footer={footer}>
       <p className="dsb-lead">
         몇 개를 띄울지, 어떤 버전인지 적으면 <b>쿠버네티스</b>가 알아서 맞춰요. <span className="muted">(원하는 상태 = desired state)</span>
       </p>
@@ -105,7 +105,7 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
       <div className="dsb-layout">
         <div className="dsb-yaml" aria-label="원하는 상태 카드">
           <div className="dsb-yaml-head">
-            <span>📝 enroll-deployment.yaml</span>
+            <span>enroll-deployment.yaml</span>
             {applied && <span className="dsb-applied">적용됨</span>}
           </div>
           <div className="dsb-yaml-body">
@@ -164,18 +164,18 @@ function Board({ k8s, applied }: { k8s: K8sState; applied: boolean }) {
               }
             />
           </div>
-          {replicas === 1 && <p className="dsb-inline warn">⚠️ {ONE_MSG}</p>}
+          {replicas === 1 && <p className="dsb-inline warn">{ONE_MSG}</p>}
         </div>
 
         <div className="dsb-side">
           {msg ? (
             <div className={`dsb-mentor is-${msg.tone}`}>
-              <Portrait who={msg.tone === 'ok' ? 'mentor' : 'system'} size={44} />
+              <Portrait who={msg.tone === 'ok' ? 'mentor' : 'system'} size={32} />
               <p>{msg.text}</p>
             </div>
           ) : (
             <div className="dsb-mentor">
-              <Portrait who="mentor" size={44} />
+              <Portrait who="mentor" size={32} />
               <p>
                 {applied
                   ? '네가 적은 숫자가 "약속"이야. 아래 표에서 실제 pod 수가 그 숫자와 맞는지 가끔 확인해봐.'

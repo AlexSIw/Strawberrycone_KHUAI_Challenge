@@ -1,12 +1,30 @@
-import { APP_PORT, endpointReaches, parseEndpoint, podAge, podsOf, readyPods, rollback, setImage, unscheduled } from '../k8s';
+import { APP_PORT, cordon, drain, endpointReaches, parseEndpoint, podAge, podsOf, readyPods, rollback, setImage, unscheduled } from '../k8s';
 import type { Command, CmdResult } from './types';
 import { bold, dim, err, green, ok, out, red, yellow } from './types';
-import type { Deployment, World } from '../types';
+import { LAST_DAY, type Deployment, type World } from '../types';
 import { own } from '../util';
 
 function cluster(w: World): CmdResult | null {
   return w.k8s ? null : err('이 데이터센터에는 아직 쿠버네티스가 없어요.');
 }
+
+/** What an enroll pod's log says about its DB-01 connections, or null when they are fine. */
+function dbTrouble(w: World): string | null {
+  const k = w.k8s;
+  const max = w.db?.maxConn;
+  if (!k || max === undefined) return null;
+  const raw = k.deployments.enroll?.env.DB_POOL;
+  const n = Number(raw);
+  if (raw === undefined || !Number.isInteger(n) || n < 1) {
+    return `ERROR DB-01 연결 실패: DB_POOL 값을 읽지 못했어요 ('${raw ?? ''}') — 1 이상의 정수여야 DB 연결을 열 수 있어요`;
+  }
+  const want = readyPods(k, 'enroll').length * n;
+  if (want <= max) return null;
+  return `ERROR DB-01 연결 실패: too many connections (${max}/${max}) — 이 pod도 연결 ${n}개를 미리 잡으려 해요 (pod 전체 ${want}개 > 한도 ${max})`;
+}
+
+/** `scale` never asks for more pods than this per app. */
+const MAX_REPLICAS = 16;
 
 /** Accepts "enroll", "deploy/enroll", "deployment/enroll". */
 const appName = (s: string | undefined) => (s ?? '').replace(/^(deploy|deployment|deployments)(\.apps)?\//, '');
@@ -37,13 +55,16 @@ function positional(args: string[]): string[] {
 /** The deployment a player named, looked up safely ("constructor" is just an unknown name). */
 const deploymentOf = (w: World, name: string): Deployment | undefined => own(w.k8s?.deployments, name);
 
+/** Accepts "n1" and "node/n1". */
+const nodeName = (s: string | undefined) => (s ?? '').replace(/^(node|nodes|no)\//, '');
+
 const isIp = (s: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s);
 
 export const k8sCommands: Command[] = [
   {
     name: 'get pods',
     aliases: ['pods', 'get po', 'get pod'],
-    minStage: 6,
+    minStage: 4,
     usage: 'pods',
     summary: 'pod(가장 작은 실행 단위) 목록',
     run(_a, { w }) {
@@ -63,33 +84,48 @@ export const k8sCommands: Command[] = [
         const full = Object.entries(k.nodes).filter(([id, n]) => n.ready && k.pods.filter((p) => p.node === id).length >= k.maxPodsPerNode).length;
         rows.push(dim(`NODE <none> = 아직 들어갈 노드가 없어 기다리는 pod (0/${nodes.length} nodes are available: NotReady(일할 수 없음) ${notReady}대, 자리 꽉 참 ${full}대)`));
       }
+      if (k.pods.length) {
+        rows.push(
+          dim('(STATUS: Running 정상 동작 · Pending 아직 준비 중(잠시 뒤 다시 확인) · CrashLoopBackOff 켜지자마자 죽기를 반복 · RESTARTS = 죽어서 다시 띄운 횟수)'),
+          dim('(AGE = 뜬 지 지난 시간 · NODE = 이 pod가 도는 서버(노드) · VERSION = 앱 버전 · IP = 이 pod의 주소)'),
+        );
+      }
       return { lines: rows, events: ['k8s_get_pods'] };
     },
   },
   {
     name: 'get nodes',
     aliases: ['nodes', 'get node', 'get no'],
-    minStage: 6,
+    minStage: 4,
     usage: 'nodes',
     summary: '노드(일하는 서버) 상태',
     run(_a, { w }) {
       const bad = cluster(w);
       if (bad) return bad;
-      const rows = [bold('NAME  STATUS     RACK    TEMP   PODS')];
-      for (const [id, n] of Object.entries(w.k8s!.nodes)) {
+      const nodes = Object.entries(w.k8s!.nodes);
+      const status = (n: (typeof nodes)[number][1]) => (n.ready ? 'Ready' : 'NotReady') + (n.cordoned ? ',SchedulingDisabled' : '');
+      // The STATUS column is as wide as its longest value ("NotReady,SchedulingDisabled" while draining).
+      const width = Math.max(10, ...nodes.map(([, n]) => status(n).length + 1));
+      const rows = [bold(`NAME  ${'STATUS'.padEnd(width)} RACK    TEMP   PODS`)];
+      for (const [id, n] of nodes) {
         const temp = w.cooling?.temps[n.rack] ?? 24;
         // Pad before colouring: colour codes would otherwise count toward the width and shift PODS.
         const label = `${temp.toFixed(0)}°C`.padEnd(6);
         const t = temp >= 40 ? red(label) : temp >= 32 ? yellow(label) : label;
-        rows.push(`${id.padEnd(6)}${n.ready ? green('Ready'.padEnd(10)) : red('NotReady'.padEnd(10))} ${n.rack.padEnd(7)} ${t} ${w.k8s!.pods.filter((p) => p.node === id).length}`);
+        const st = status(n).padEnd(width);
+        rows.push(`${id.padEnd(6)}${n.ready && !n.cordoned ? green(st) : n.ready ? yellow(st) : red(st)} ${n.rack.padEnd(7)} ${t} ${w.k8s!.pods.filter((p) => p.node === id).length}`);
       }
+      rows.push(
+        dim('(STATUS: Ready 일할 수 있음 · NotReady 일할 수 없음 · SchedulingDisabled "점검 중" 팻말이 걸려 새 pod를 안 받음)'),
+        dim('(RACK = 이 노드가 들어 있는 랙 · TEMP = 그 랙의 온도 · PODS = 이 노드에서 도는 pod 수)'),
+      );
       return { lines: rows, events: ['k8s_get_nodes'] };
     },
   },
   {
     name: 'get deploy',
     aliases: ['deploys', 'get deployments', 'get deployment'],
-    minStage: 6,
+    minStage: 4,
     usage: 'deploys',
     summary: '원하는 상태(Deployment) 목록',
     run(_a, { w }) {
@@ -102,13 +138,14 @@ export const k8sCommands: Command[] = [
         const r = ready < d.replicas ? yellow(`${ready}/${d.replicas}`.padEnd(8)) : green(`${ready}/${d.replicas}`.padEnd(8));
         rows.push(`${name.padEnd(10)}${r}${String(upToDate).padEnd(12)}${d.rolling ? yellow(`${d.image} → ${d.rolling.target}`) : d.image}`);
       }
+      rows.push(dim('(READY = 준비된 pod 수 / 원하는 수 · UP-TO-DATE = 지금 버전으로 바뀐 pod 수 · IMAGE 의 a → b 는 a 버전에서 b 버전으로 바꾸는 중)'));
       return { lines: rows, events: ['k8s_get_deploy'] };
     },
   },
   {
     name: 'get svc',
     aliases: ['svcs', 'get services', 'get service'],
-    minStage: 6,
+    minStage: 4,
     usage: 'svcs',
     summary: 'Service(바뀌지 않는 대표 번호) 목록',
     run(_a, { w }) {
@@ -122,8 +159,56 @@ export const k8sCommands: Command[] = [
     },
   },
   {
+    name: 'cordon',
+    minStage: 4,
+    usage: 'cordon <노드>',
+    summary: '노드에 새 pod를 더 보내지 않기 (있던 pod는 그대로)',
+    run(args, { w }) {
+      const bad = cluster(w);
+      if (bad) return bad;
+      const node = nodeName(positional(args)[0]);
+      if (!node || !own(w.k8s!.nodes, node)) return err('사용법: cordon <노드>  (nodes 로 이름 확인)');
+      if (w.k8s!.nodes[node].cordoned) return out(dim(`node/${node} already cordoned`));
+      cordon(w.k8s!, node);
+      return { lines: [`node/${node} cordoned`, dim('(이제 이 노드에는 새 pod가 안 들어가요. 있던 pod는 그대로 일해요)')], events: [`k8s_cordon:${node}`] };
+    },
+  },
+  {
+    name: 'uncordon',
+    minStage: 4,
+    usage: 'uncordon <노드>',
+    summary: '노드를 다시 pod 받을 수 있게 열기',
+    run(args, { w }) {
+      const bad = cluster(w);
+      if (bad) return bad;
+      const node = nodeName(positional(args)[0]);
+      if (!node || !own(w.k8s!.nodes, node)) return err('사용법: uncordon <노드>  (nodes 로 이름 확인)');
+      if (!w.k8s!.nodes[node].cordoned) return out(dim(`node/${node} already uncordoned`));
+      cordon(w.k8s!, node, false);
+      return { lines: [`node/${node} uncordoned`, dim('(이 노드도 다시 새 pod를 받아요)')], events: [`k8s_uncordon:${node}`] };
+    },
+  },
+  {
+    name: 'drain',
+    minStage: 4,
+    usage: 'drain <노드>',
+    summary: '노드를 비우기: 새 pod 막고, 있던 pod를 다른 노드로 옮기기',
+    run(args, { w }) {
+      const bad = cluster(w);
+      if (bad) return bad;
+      const node = nodeName(positional(args)[0]);
+      if (!node || !own(w.k8s!.nodes, node)) return err('사용법: drain <노드>  (nodes 로 이름 확인)');
+      const lines = [w.k8s!.nodes[node].cordoned ? `node/${node} already cordoned` : `node/${node} cordoned`];
+      const gone = drain(w.k8s!, node) ?? [];
+      for (const p of gone) lines.push(`evicting pod default/${p.name}`);
+      for (const p of gone) lines.push(`pod/${p.name} evicted`);
+      lines.push(`node/${node} drained`, dim('(pod들은 다른 노드에서 새로 떠요. 점검이 끝나면 uncordon 으로 다시 열어요)'));
+      return { lines, events: [`k8s_cordon:${node}`, `k8s_drain:${node}`] };
+    },
+  },
+  {
     name: 'scale',
-    minStage: 6,
+    minStage: 4,
     usage: 'scale <앱> <개수>',
     summary: '원하는 pod 개수 바꾸기',
     run(args, { w }) {
@@ -136,13 +221,15 @@ export const k8sCommands: Command[] = [
       const n = parseInt(nStr ?? '', 10);
       const dep = deploymentOf(w, name);
       if (!dep || Number.isNaN(n)) return err('사용법: scale <앱> <개수>  (예: scale login 3)');
-      dep.replicas = Math.max(0, Math.min(16, n));
-      return { lines: [green(`${name} 원하는 개수 → ${dep.replicas}. 쿠버네티스가 알아서 맞춰요.`)], events: [`k8s_scale:${name}`] };
+      dep.replicas = Math.max(0, Math.min(MAX_REPLICAS, n));
+      const lines = [green(`${name} 원하는 개수 → ${dep.replicas}. 쿠버네티스가 알아서 맞춰요.`)];
+      if (n > MAX_REPLICAS) lines.push(dim(`(앱 하나당 최대 ${MAX_REPLICAS}개까지라서 ${MAX_REPLICAS}개로 맞췄어요)`));
+      return { lines, events: [`k8s_scale:${name}`] };
     },
   },
   {
     name: 'rollout status',
-    minStage: 6,
+    minStage: 4,
     usage: 'rollout status <앱>',
     summary: '배포(새 버전 올리기) 진행 상황',
     run(args, { w }) {
@@ -156,7 +243,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'rollout history',
-    minStage: 6,
+    minStage: 4,
     usage: 'rollout history <앱>',
     summary: '이전 버전 기록',
     run(args, { w }) {
@@ -167,7 +254,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'rollout undo',
-    minStage: 6,
+    minStage: 4,
     usage: 'rollout undo <앱>',
     summary: '이전 버전으로 되돌리기',
     run(args, { w }) {
@@ -180,7 +267,7 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'set image',
-    minStage: 6,
+    minStage: 4,
     usage: 'set image <앱> <앱:태그>',
     summary: '다른 버전 배포 (하나씩 차례로 교체하는 rolling update)',
     run(args, { w }) {
@@ -204,10 +291,10 @@ export const k8sCommands: Command[] = [
   },
   {
     name: 'logs',
-    minStage: 6,
+    minStage: 4,
     usage: 'logs <pod 이름>',
     summary: 'pod 로그(앱이 남긴 기록) 보기',
-    run(args, { w }) {
+    run(args, { w, stage }) {
       const bad = cluster(w);
       if (bad) return bad;
       const k = w.k8s!;
@@ -249,6 +336,13 @@ export const k8sCommands: Command[] = [
           failed = true;
           lines.push(red(`ERROR TypeError in /enroll (${p.version}) — 500 Internal Server Error (앱이 요청을 처리하다 오류로 멈췄어요)`));
         }
+        // D-Day: every Running enroll pod opens its DB_POOL connections to DB-01 (the same model as the
+        // day's health and the dday-db incident: a pool that isn't a number ≥ 1, or pods × pool > the limit).
+        const db = stage === LAST_DAY ? dbTrouble(w) : null;
+        if (db) {
+          failed = true;
+          lines.push(red(db), dim(`DB_POOL=${k.deployments.enroll.env.DB_POOL ?? '(없음)'}`));
+        }
         if (!failed) lines.push(green('GET /enroll 200'), green('POST /enroll 201'));
       } else lines.push(green('GET / 200'));
       return { lines, events: [`k8s_logs:${p.app}`] };
@@ -257,7 +351,7 @@ export const k8sCommands: Command[] = [
   {
     name: 'env',
     aliases: ['set env'],
-    minStage: 6,
+    minStage: 4,
     usage: 'env <앱> | env set <앱> KEY=VALUE',
     summary: '앱 환경변수(설정) 보기·바꾸기',
     run(args, { w }) {
@@ -277,7 +371,17 @@ export const k8sCommands: Command[] = [
       }
       if (!dep) return err('사용법: env <앱>');
       const entries = Object.entries(dep.env);
-      return out(...(entries.length ? entries.map(([k, v]) => `${k}=${v}`) : [dim('(없음)')]));
+      if (!entries.length) return out(dim('(없음)'));
+      // What the settings are, never what they should be (no target value: the D-Day DB incident is a puzzle).
+      const meaning: Record<string, string> = {
+        DB_POOL: '(DB_POOL = pod 하나가 DB-01과 미리 열어 두는 연결 수)',
+        COURSE_URL: '(COURSE_URL = 신청 앱이 과목조회(course) 서비스를 부르는 주소)',
+      };
+      return out(
+        ...entries.map(([k, v]) => `${k}=${v}`),
+        dim('(KEY=VALUE 한 줄 = 앱이 켜질 때 읽는 설정값 하나 · 바꾸려면 env set <앱> KEY=VALUE)'),
+        ...entries.filter(([k]) => k in meaning).map(([k]) => dim(meaning[k])),
+      );
     },
   },
 ];

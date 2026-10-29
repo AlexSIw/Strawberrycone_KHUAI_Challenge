@@ -210,6 +210,16 @@
   font-size: 13px;
   margin-bottom: 6px;
 }
+/* What the device is: labels are often bare IDs (TOR-01) */
+.dash-kind {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+}
 .dash-ports {
   display: flex;
   flex-wrap: wrap;

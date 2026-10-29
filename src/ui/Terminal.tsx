@@ -1,13 +1,21 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
 import { useEffect, useRef } from 'react';
+import { MENTOR_INDENT, MENTOR_TAG } from '../ai/answer';
+import { escapeRe } from '../ai/leak';
 import { getStage } from '../content/stages';
-import { available, promptFor } from '../sim/commands';
+import { available, osOf, promptFor } from '../sim/commands';
+import type { HostOs } from '../sim/commands/types';
+import { SEV_LABEL } from '../sim/alarms';
 import { activeScenarios, type StageRun } from '../sim/engine';
-import type { StageId } from '../sim/types';
-import { gameStore, useGame } from '../store/game';
+import { iosCheatSheet, iosComplete, iosHelp, MODE_LEGEND } from '../sim/ios';
+import type { IosMode, StageId } from '../sim/types';
+import { cardsWaitForIncident, gameStore, useGame } from '../store/game';
 import { ModalFrame } from './ModalFrame';
-import { lockedText, objectiveStatus, waitingText, type ObjectiveStatus } from './objectiveStatus';
+import { unsavedGear } from './noc/facility';
+import { ObjectiveGuide, useTightScreen } from './ObjectivePanel';
+import { iosModeText, lockedText, objectiveStatus, termGuided, waitingText, type ObjectiveStatus } from './objectiveStatus';
+import { PixelIcon } from './PixelIcon';
 import './Terminal.css';
 
 // Dark palette that matches theme.css (warm ops-room colors).
@@ -64,6 +72,56 @@ function cellWidth(s: string): number {
 }
 
 const crlf = (s: string) => s.replace(/\r?\n/g, '\r\n');
+
+// eslint-disable-next-line no-control-regex
+const DIM_LINE = /^\x1b\[90m([^\x1b\n]*)\x1b\[0m$/;
+
+/** One of 쿠사수's lines (answer.ts terminalLines): its lead (the name, or the indent under it), then the text. */
+const MENTOR_LINE = new RegExp(`^(${escapeRe(MENTOR_TAG)}|${escapeRe(MENTOR_INDENT)})(.*)$`);
+
+/** `text` broken at spaces into rows of at most `max` cells (`cont` leads each row after the first); a word longer than a row is cut by cells. */
+function wrapWords(text: string, max: number, cont = ''): string[] {
+  const rows: string[] = [];
+  let cur = '';
+  for (const word of text.split(' ')) {
+    const next = cur ? `${cur} ${word}` : word;
+    if (cur.trim() && cellWidth(next) > max) {
+      rows.push(cur);
+      cur = `${cont}${word}`;
+    } else cur = next;
+  }
+  if (cur) rows.push(cur);
+  return rows.flatMap((r) => {
+    if (cellWidth(r) <= max) return [r];
+    const parts: string[] = [];
+    let part = '';
+    for (const ch of r) {
+      if (cellWidth(part + ch) > max) {
+        parts.push(part);
+        part = '';
+      }
+      part += ch;
+    }
+    return part ? [...parts, part] : parts;
+  });
+}
+
+/**
+ * A line wider than the terminal, broken at spaces into lines that fit (xterm itself would cut it mid-word:
+ * 'Pr|i', 'Session|s'): a dim Korean gloss (continuation lines indented one cell), or one of 쿠사수's lines
+ * (continuation lines under its text). Other lines (output, tables) are left as they are.
+ */
+function softWrap(line: string, cols: number): string[] {
+  const mentor = MENTOR_LINE.exec(line);
+  if (mentor) {
+    const max = cols - 1 - cellWidth(mentor[1]);
+    if (max < 12 || cellWidth(mentor[2]) <= max) return [line];
+    return wrapWords(mentor[2], max).map((r, i) => (i === 0 ? mentor[1] : MENTOR_INDENT) + r);
+  }
+  const m = DIM_LINE.exec(line);
+  if (!m || cols < 20 || cellWidth(m[1]) <= cols - 1) return [line];
+  return wrapWords(m[1], cols - 1, ' ').map((r) => DIM(r));
+}
 /** Home + erase screen + erase scrollback, sent through the write queue so it lands after earlier output. */
 const CLEAR_ALL = '\x1b[H\x1b[2J\x1b[3J';
 
@@ -84,6 +142,27 @@ function usageStub(usage: string): string {
 
 const currentStage = (): StageId => gameStore.getState().run?.stage ?? 0;
 
+/** The CLI the active session's host speaks ('linux' before a run exists). */
+function currentOs(): HostOs {
+  const s = gameStore.getState();
+  return s.run ? osOf(s.run.world, s.terminal.host) : 'linux';
+}
+
+/** The IOS mode while the active session is on network gear (a session without one is at `>`), else null. */
+function currentIos(): IosMode | null {
+  const s = gameStore.getState();
+  return s.run && osOf(s.run.world, s.terminal.host) === 'ios' ? (s.terminal.mode ?? { level: 'user' }) : null;
+}
+
+/** Config levels, where Ctrl+Z means `end`. */
+const CONFIG_LEVELS = new Set(['config', 'config-if', 'config-vlan']);
+
+/** Shell prompt, or the IOS prompt ('CORE-01(config-if)# ') on network gear. */
+function currentPrompt(): string {
+  const s = gameStore.getState();
+  return promptFor(s.terminal.host, currentIos(), s.run?.world);
+}
+
 /** Commands whose last argument is a device / DNS name. */
 const NAME_ARG_COMMANDS = ['ssh', 'ping'];
 
@@ -91,6 +170,8 @@ interface LineEditor {
   /** Replace the line being typed (used by the help list, and to draw the prompt with the saved line on open) */
   setLine(text: string): void;
   handleData(data: string): void;
+  /** Lines that came after the prompt was back (쿠사수's answer to `hint`), above it; already in the store's log */
+  printAbove(lines: string[]): void;
 }
 
 /**
@@ -103,7 +184,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
   const store = () => gameStore.getState();
   let chars: string[] = [];
   let cur = 0;
-  let prompt = promptFor(store().terminal.host);
+  let prompt = currentPrompt();
   /** Rows between the prompt's first row and the row the cursor sits on */
   let row = 0;
   /** Commands entered in this session earlier (also on previous visits), without repeats in a row */
@@ -172,7 +253,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     chars = [];
     cur = 0;
     row = 0;
-    prompt = promptFor(store().terminal.host);
+    prompt = currentPrompt();
     term.write(prompt);
   };
 
@@ -180,21 +261,28 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
   const print = (lines: string[]) => {
     if (!lines.length) return;
     store().appendTerminal(lines);
-    term.write(lines.map((l) => crlf(l) + '\r\n').join(''));
+    term.write(lines.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
   };
 
-  /** Returns false when the terminal went away (e.g. `hint` opened the radio). */
+  /** Returns false when the terminal went away. */
   const enter = (): boolean => {
     toEnd();
     const line = chars.join('');
     term.write('\r\n');
     store().appendTerminal([prompt + line]);
+    return run(line, line, true);
+  };
+
+  /**
+   * Runs `line` on this session's host and prints what it says. `typed` is what was on the input line
+   * (for the 한글 tip). Returns false when the terminal went away.
+   */
+  const run = (line: string, typed: string, record: boolean): boolean => {
     store().setTerminalDraft('');
     stash = '';
-    const trimmed = line.trim();
-    // Runs on this session's host and adds the line to its history.
-    // (`hint` opens the radio in its place through openModal, so "open:mentor" is recorded.)
-    const res = store().command(line);
+    const trimmed = typed.trim();
+    // Runs on this session's host and adds the line to its history. (`hint` answers later: printAbove.)
+    const res = store().command(line, record);
     hIndex = history().length;
     // Typing in 한글 mode turns "help" into "ㅗ디ㅔ": tell beginners how to switch.
     const lines = HANGUL_RE.test(trimmed.split(/\s+/)[0] ?? '')
@@ -211,7 +299,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     }
     print(lines);
     newPrompt();
-    // A command may have opened another window (the hint radio); stop handling pasted lines then.
+    // A command may have opened another window; stop handling pasted lines then.
     return store().modal?.type === 'terminal';
   };
 
@@ -221,6 +309,37 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     store().appendTerminal([prompt + chars.join('') + '^C']);
     hIndex = history().length;
     newPrompt();
+  };
+
+  const printAbove = (lines: string[]) => {
+    if (!lines.length) return;
+    const up = row > 0 ? `\x1b[${row}A` : '';
+    term.write(up + '\r\x1b[J' + lines.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
+    row = 0;
+    render();
+  };
+
+  /** IOS: `?` lists what can come next for the line so far, then the prompt comes back with the line as it was. */
+  const iosQuestion = (mode: IosMode) => {
+    const s = store();
+    if (!s.run) return;
+    toEnd();
+    const line = chars.join('');
+    term.write('?\r\n');
+    const help = iosHelp(s.run.world, s.terminal.host, mode, line);
+    store().appendTerminal([prompt + line + '?', ...help]);
+    if (help.length) term.write(help.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
+    row = 0;
+    render();
+  };
+
+  /** IOS: Ctrl+Z leaves config mode (`end`), from anywhere in it. Does nothing outside config, as on a real switch. */
+  const iosCtrlZ = (mode: IosMode): boolean => {
+    if (!CONFIG_LEVELS.has(mode.level)) return true;
+    toEnd();
+    term.write('^Z\r\n');
+    store().appendTerminal([prompt + chars.join('') + '^Z']);
+    return run('end', '', false);
   };
 
   const clearScreen = () => {
@@ -242,13 +361,20 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
 
   const complete = () => {
     const text = chars.join('');
+    const ios = currentIos();
+    if (ios) {
+      const s = store();
+      const next = s.run ? iosComplete(s.run.world, s.terminal.host, ios, text) : null;
+      if (next !== null && next !== text) setLine(next);
+      return;
+    }
     const m = /^(\s*(?:sudo\s+)?(?:(?:kubectl|k)\s+)?)(.*)$/s.exec(text);
     const lead = m?.[1] ?? '';
     const rest = (m?.[2] ?? '').replace(/\s+/g, ' ');
     // One candidate per command: its real name when that matches, otherwise the first matching alias.
     const cands = [
       ...new Set(
-        available(currentStage()).flatMap((c) => {
+        available(currentStage(), currentOs()).flatMap((c) => {
           const hit = [c.name, ...(c.aliases ?? [])].find((n) => n.startsWith(rest));
           return hit ? [hit] : [];
         }),
@@ -362,6 +488,16 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
         continue;
       }
       const code = ch.charCodeAt(0);
+      if (ch === '?') {
+        const ios = currentIos();
+        if (ios) {
+          // Like a real switch: `?` is answered at once, it never goes into the line.
+          flush();
+          i += 1;
+          iosQuestion(ios);
+          continue;
+        }
+      }
       if (code >= 0x20 && code !== 0x7f) {
         pending += ch;
         i += 1;
@@ -390,6 +526,12 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
         case '\x03':
           cancel();
           break;
+        case '\x1a': {
+          // Ctrl+Z
+          const ios = currentIos();
+          if (ios && !iosCtrlZ(ios)) return;
+          break;
+        }
         case '\x0c':
           clearScreen();
           break;
@@ -423,7 +565,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     saveDraft();
   };
 
-  return { setLine, handleData };
+  return { setLine, handleData, printAbove };
 }
 
 /**
@@ -434,8 +576,12 @@ const TERM_FONT = "'Nanum Gothic Coding', D2Coding, Menlo, monospace";
 /** Commands every stage has: listed after the ones this stage is about. */
 const BASIC_COMMANDS = new Set(['help', 'clear', 'hint']);
 
-/** The open objectives (the one to do now highlighted), for the side box: the objective panel is behind this window. */
+/**
+ * The open objectives (the one to do now highlighted, with its why and first-time steps as the player
+ * types), for the side box: the objective panel is behind this window.
+ */
 function GoalList({ goals, run }: { goals: ObjectiveStatus; run: StageRun }) {
+  const tight = useTightScreen();
   return (
     <ul className="term-goal-list">
       {goals.open.map((o) => {
@@ -443,10 +589,13 @@ function GoalList({ goals, run }: { goals: ObjectiveStatus; run: StageRun }) {
         return (
           <li key={o.id} className={o === goals.next ? 'current' : ''}>
             <span className="term-goal-check" aria-hidden />
-            <span className="term-goal-text">
-              {o.text}
-              {progress && <span className="term-goal-progress"> ({progress})</span>}
-            </span>
+            <div className="term-goal-main">
+              <span className="term-goal-text">
+                {o.text}
+                {progress && <span className="term-goal-progress"> ({progress})</span>}
+              </span>
+              {o === goals.next && <ObjectiveGuide o={o} run={run} compact={tight} variant="term" />}
+            </div>
           </li>
         );
       })}
@@ -454,9 +603,25 @@ function GoalList({ goals, run }: { goals: ObjectiveStatus; run: StageRun }) {
   );
 }
 
+/** On network gear: the mode the session is in, in plain words, and the way back. */
+function IosModeLine({ mode }: { mode: IosMode }) {
+  const m = iosModeText(mode);
+  return (
+    <p className="term-mode">
+      <span>
+        지금 <code>{m.mark}</code> {m.name}
+      </span>
+      <span className="term-mode-back">↩ {m.back}</span>
+    </p>
+  );
+}
+
 export function Terminal({ host }: { host: string }) {
   const storeHost = useGame((s) => s.terminal.host);
+  const mode = useGame((s) => s.terminal.mode ?? null);
   const run = useGame((s) => s.run);
+  const heldCards = useGame((s) => s.heldConcepts.length);
+  const dayDone = useGame((s) => s.dayDone);
   const screenRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const editorRef = useRef<LineEditor | null>(null);
@@ -520,16 +685,24 @@ export function Terminal({ host }: { host: string }) {
     const cur = s.terminal.host;
     const label = s.run?.world.devices[cur]?.label;
     if (s.terminal.log.length === 0 && !s.terminal.history?.length) {
-      const welcome = [
-        `\x1b[1;33m${cur}\x1b[0m${label ? `(${label})` : ''}에 접속했어요.`,
-        'help를 입력하면 쓸 수 있는 명령어가 나와요.',
-        DIM('Tab 자동완성 · ↑↓ 이전 명령 · Ctrl+C 취소 · Ctrl+L 화면 지우기 · Esc 닫기'),
-        '',
-      ];
+      const welcome = s.run && osOf(s.run.world, cur) === 'ios'
+        ? [
+            // A network device's console port: its own CLI, not the shell.
+            `\x1b[1;33m${label ?? cur}\x1b[0m 콘솔에 연결했어요.`,
+            '?를 누르면 지금 쓸 수 있는 명령이 바로 나와요. 줄임말(sh, conf t)도 돼요.',
+            DIM('? 도움말 · Tab 자동완성 · Ctrl+Z 설정 모드 끝내기 · ↑↓ 이전 명령 · Esc 닫기'),
+            '',
+          ]
+        : [
+            `\x1b[1;33m${cur}\x1b[0m${label && label !== cur ? `(${label})` : ''}에 접속했어요.`,
+            'help를 입력하면 쓸 수 있는 명령어가 나와요.',
+            DIM('Tab 자동완성 · ↑↓ 이전 명령 · Ctrl+C 취소 · Ctrl+L 화면 지우기 · Esc 닫기'),
+            '',
+          ];
       s.appendTerminal(welcome);
       term.write(welcome.map((l) => l + '\r\n').join(''));
     } else {
-      term.write(s.terminal.log.map((l) => crlf(l) + '\r\n').join(''));
+      term.write(s.terminal.log.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
     }
 
     const editor = createLineEditor(term, () => alive);
@@ -537,6 +710,11 @@ export function Terminal({ host }: { host: string }) {
     // Prompt for the host the session is on (still there after ssh), with the line left half-typed.
     editor.setLine(s.terminal.draft ?? '');
     const sub = term.onData((d) => editor.handleData(d));
+    // 쿠사수's answer to `hint` comes after the prompt is back: print it above the line being typed.
+    const unfeed = gameStore.subscribe((st, prev) => {
+      const f = st.terminalFeed;
+      if (alive && f && f !== prev.terminalFeed && f.origin === st.terminalOrigin) editor.printAbove(f.lines);
+    });
 
     const ro = new ResizeObserver(() => requestAnimationFrame(refit));
     ro.observe(el);
@@ -550,6 +728,7 @@ export function Terminal({ host }: { host: string }) {
       cancelAnimationFrame(raf);
       ro.disconnect();
       sub.dispose();
+      unfeed();
       editorRef.current = null;
       termRef.current = null;
       // open() queues a setTimeout that syncs the scroll area; disposing before it runs makes it throw
@@ -560,12 +739,23 @@ export function Terminal({ host }: { host: string }) {
   }, []);
 
   const stage = run?.stage ?? 0;
-  // This stage's new commands first (what the objectives ask for), the always-there basics last.
+  const os: HostOs = run ? osOf(run.world, storeHost) : 'linux';
+  // On network gear the panel is the IOS cheat sheet for the mode the session is in.
+  const iosMode = os === 'ios' ? (mode ?? { level: 'user' as const }) : null;
+  // Today's new commands first (what the missions ask for), the always-there basics last.
   const rank = (c: { name: string; minStage: number }) => (c.minStage === stage ? 0 : BASIC_COMMANDS.has(c.name) ? 2 : 1);
-  const commands = [...available(stage)].sort((a, b) => rank(a) - rank(b));
+  // The sheet's first row is its mode legend: the mode line above the list (IosModeLine) already says it, with
+  // the port or VLAN the session is on, so it isn't repeated as a row.
+  const commands = iosMode
+    ? iosCheatSheet(iosMode)
+        .filter(([usage]) => usage !== MODE_LEGEND[iosMode.level][0])
+        .map(([usage, summary]) => ({ name: usage, usage, summary, minStage: -1 }))
+    : [...available(stage, os)].sort((a, b) => rank(a) - rank(b));
   const incidents = run ? activeScenarios(run) : [];
   // The objective panel is behind this window: with no incident going on, the box shows the objectives instead.
   const goals = run ? objectiveStatus(getStage(run.stage), run) : null;
+  // The box shows the current objective's why / first-time steps: the side column widens a little for them.
+  const guided = !!goals && !dayDone && !!termGuided(goals);
 
   const typeUsage = (usage: string) => {
     editorRef.current?.setLine(usageStub(usage));
@@ -573,19 +763,22 @@ export function Terminal({ host }: { host: string }) {
   };
 
   return (
-    <ModalFrame title={`터미널 — ${storeHost || host}`} icon="💻" size="wide">
-      <p className="term-next muted">명령어를 입력하고 Enter. 모르겠으면 "명령어 도움말"에서 골라보세요.</p>
-      <div className="term-wrap">
+    <ModalFrame title={`터미널 — ${storeHost || host}`} size="wide">
+      <p className="term-next muted">
+        {iosMode ? '명령을 입력하고 Enter. 막히면 ?를 눌러보세요. 줄임말도 돼요.' : '명령어를 입력하고 Enter. 모르겠으면 "명령어 도움말"에서 골라보세요.'}
+      </p>
+      <div className={`term-wrap${guided ? ' has-guide' : ''}`}>
         <div className="term-screen" onMouseDown={() => requestAnimationFrame(() => termRef.current?.focus())}>
           <div ref={screenRef} className="term-xterm" />
         </div>
         <aside className="term-side">
           <section className="term-help">
-            <h3>명령어 도움말</h3>
+            <h3>{iosMode ? '장비 명령 (IOS)' : '명령어 도움말'}</h3>
+            {iosMode && <IosModeLine mode={iosMode} />}
             <p className="term-tip muted">누르면 입력줄에 들어가요.</p>
             <ul>
-              {commands.map((c) => (
-                <li key={c.name}>
+              {commands.map((c, i) => (
+                <li key={`${i}:${c.name}`}>
                   <button type="button" className="term-cmd" onClick={() => typeUsage(c.usage)} title={c.usage}>
                     <code>
                       {c.usage}
@@ -604,26 +797,68 @@ export function Terminal({ host }: { host: string }) {
                 {incidents.map(({ rt, def }) => (
                   <li key={rt.id}>
                     <span className="term-inc-title">
-                      {def.severity === 'critical' ? '🚨' : '⚠️'} {def.title}
+                      <span>
+                        <PixelIcon name={def.severity === 'critical' ? 'siren' : 'warn'} label={SEV_LABEL[def.severity]} className={`term-inc-sev ${def.severity}`} /> {def.title}
+                      </span>
+                      {/* What the caller said (the toast with it may be hidden by this window). */}
+                      {def.alert && (
+                        <small className="term-inc-alert">
+                          <PixelIcon name="phone" /> {def.alert}
+                        </small>
+                      )}
                     </span>
-                    <button
-                      type="button"
-                      className="btn term-hint-btn"
-                      // The radio opens on top of this window: closing it comes back to this session.
-                      onClick={() => gameStore.getState().openModal({ type: 'hint', scenarioId: rt.id })}
-                    >
-                      쿠사수 힌트
-                    </button>
+                    <span className="term-inc-acts">
+                      {/* The alarm the NMS raised for it, not acknowledged yet: ACK from here too (MTTD stops). */}
+                      {run?.alarms
+                        .filter((a) => a.scenarioId === rt.id && a.clearedAt === null && a.ackAt === null)
+                        .slice(0, 1)
+                        .map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            className="btn primary term-hint-btn"
+                            title="경보를 봤다고 표시해요. 여기까지가 탐지 시간(MTTD)이에요."
+                            onClick={() => gameStore.getState().ackAlarm(a.id)}
+                          >
+                            확인(ACK)
+                          </button>
+                        ))}
+                      <button
+                        type="button"
+                        className="btn term-hint-btn"
+                        // The radio opens on top of this window: closing it comes back to this session.
+                        onClick={() => gameStore.getState().openModal({ type: 'hint', scenarioId: rt.id })}
+                      >
+                        쿠사수 힌트
+                      </button>
+                    </span>
                   </li>
                 ))}
               </ul>
               {run && goals?.objectivesFixIncident && goals.open.length > 0 && (
-                // Stage 5: the objectives are the steps that solve the incident, so they stay in view here.
+                // When the missions are the steps that solve the incident, they stay in view here.
                 <>
                   <p className="term-fix-steps">아래 목표를 차례로 하면 해결돼요</p>
                   <GoalList goals={goals} run={run} />
                 </>
               )}
+            </section>
+          ) : dayDone && run ? (
+            <section className="term-incidents term-goals term-done" aria-label="오늘 일 끝">
+              <h3>오늘 일 끝!</h3>
+              {unsavedGear(run.world).length > 0 ? (
+                <p className="term-calm">
+                  저장 안 한 장비: <b>{unsavedGear(run.world).join(', ')}</b>
+                  <br />
+                  <span className="muted">그 장비에서 write memory 하면 재부팅해도 설정이 남아요.</span>
+                </p>
+              ) : (
+                <p className="term-calm muted">바꾼 설정은 다 저장돼 있어요.</p>
+              )}
+              <p className="term-goal-locked">창을 닫으면 퇴근해요.</p>
+              <button type="button" className="btn primary term-leave-btn" onClick={() => gameStore.getState().leaveWork()}>
+                퇴근하기 ▶
+              </button>
             </section>
           ) : (
             <section className="term-incidents term-goals" aria-label="지금 목표">
@@ -632,11 +867,20 @@ export function Terminal({ host }: { host: string }) {
                 <GoalList goals={goals} run={run} />
               ) : (
                 <>
-                  <p className="muted term-calm">{(goals && waitingText(goals)) ?? '지금은 조용해요 ✨'}</p>
-                  {goals && lockedText(goals) && <p className="term-goal-locked">🔒 {lockedText(goals)}</p>}
+                  <p className="muted term-calm">{(goals && waitingText(goals)) ?? '지금은 조용해요'}</p>
+                  {goals && lockedText(goals) && (
+                    <p className="term-goal-locked">
+                      <PixelIcon name="lock" /> {lockedText(goals)}
+                    </p>
+                  )}
                 </>
               )}
             </section>
+          )}
+          {heldCards > 0 && (
+            <p className="term-held" role="status">
+              새 개념 카드 {heldCards}장! {run && cardsWaitForIncident(run) ? '장애를 해결하고 터미널을 닫으면 펼쳐져요.' : '터미널을 닫으면 펼쳐져요.'}
+            </p>
           )}
         </aside>
       </div>

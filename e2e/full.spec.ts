@@ -1,231 +1,288 @@
-// Full UI run: plays stages 0–7 in the real app (Vite dev server), completing objectives and fixing
-// each incident shortly after it fires, opening the stage's windows and taking screenshots.
-// Drives the same store the UI uses (imported through Vite), so the React/Phaser layers render
-// every state a player would see. Fails on any page error or console error.
+// Full UI run: plays all six days (D-5 … D-Day) on seed 1 in the real app (Vite dev server), the way
+// tests/autoplay.ts playDay does: each mission's AUTOPLAY steps, every alarm ACKed 2 s after it shows up
+// and its incident's solution run 2 s after that. It drives the store the UI uses (window.__khuStore, plus
+// the game's own modules imported through Vite), so React and Phaser render every state a player would see.
+// Per day it screenshots the map (also when the first alarm shows), the NOC with that alarm open, an IOS
+// session on the 관리 PC (`show interfaces status` on TOR-01, from D-4) and the daily report; D-Day's
+// report then leads to the ending. Fails on any page error or console error.
 import { expect, test, type Page } from '@playwright/test';
 
-test.setTimeout(15 * 60 * 1000);
+test.setTimeout(20 * 60 * 1000);
+// A click that something covers (a concept card …) fails instead of waiting out the whole run.
+test.use({ actionTimeout: 15_000 });
 
-type Step = { cmd: string; host: string } | { act: string } | { events: string[] };
+type GameStore = (typeof import('../src/store/game'))['gameStore'];
+type StoreWin = Window & { __khuStore: GameStore };
 
-/** How each objective is completed (mirrors tests/autoplay.ts AUTOPLAY). Actions are named, see ACTIONS below. */
-const AUTOPLAY: Record<number, Record<string, Step[]>> = {
-  0: {
-    visit: [{ events: ['room:server', 'room:network', 'room:power', 'room:cooling', 'room:noc'] }],
-    dashboard: [{ events: ['open:dashboard'] }],
-    mentor: [{ events: ['open:mentor'] }],
-    quiz: [{ events: ['quiz:correct'] }],
-  },
-  1: { mount: [{ act: 'mountAll' }], power: [{ act: 'feedA' }], cable: [{ act: 'cableAll' }] },
-  2: { terminal: [{ events: ['open:terminal'] }], dhcp: [{ cmd: 'dhcp on', host: 'ops' }], ping: [{ cmd: 'ping web', host: 'ops' }] },
-  3: { start: [{ cmd: 'server start', host: 'web' }], curl: [{ cmd: 'curl http://web/enroll', host: 'ops' }] },
-  4: { watch: [{ cmd: 'svc list', host: 'ops' }] },
-  5: {
-    log: [{ cmd: 'deploy log', host: 'srv-new' }],
-    recipe: [{ act: 'dockerfile' }],
-    image: [{ cmd: 'docker build -t enroll:1.0 .', host: 'ops' }, { cmd: 'docker push enroll:1.0', host: 'ops' }],
-    run: [{ cmd: 'docker run -p 80:8000 enroll:1.0', host: 'srv-new' }],
-  },
-  6: { desired: [{ act: 'desired' }], observe: [{ cmd: 'pods', host: 'ops' }] },
-  7: { postmortem: [{ events: ['board:postmortem'] }] },
-};
+/** What one driven game second reports back. */
+interface Second {
+  screen: string;
+  day: number | null;
+  t: number;
+  /** The outro is up: the day is over */
+  over: boolean;
+  /** Alarms on the NMS that nobody has ACKed yet */
+  openAlarms: number;
+  /** Red output from solution steps */
+  errors: string[];
+}
 
-/**
- * Windows to open (and screenshot) once per stage, in order: after the given stage second (`at`), or as
- * soon as an incident has fired (`during`). Incidents fire 10 s after the objectives in front of them are
- * done and 10 s after the previous fix (see tests/pacing.test.ts), so with objectives done at once and
- * fixes 3 s after an alert: S3 s3-port ≈10 (fixed ≈13), S4 s4-monolith ≈10 (fixed ≈13),
- * S6 s6-crash ≈11 (resolved ≈15), s6-ip ≈25. The app's own 1 s timer also runs, so times drift a little.
- */
-type Win = { at?: number; during?: string; modal: Record<string, unknown>; name: string };
-const WINDOWS: Record<number, Win[]> = {
-  0: [{ at: 2, modal: { type: 'quiz' }, name: 'quiz' }],
-  1: [
-    { at: 1, modal: { type: 'rack' }, name: 'rack' },
-    { at: 3, modal: { type: 'power' }, name: 'power' },
-    // The broken DB cable.
-    { during: 's1-cable', modal: { type: 'cable', mode: 'build' }, name: 'cable' },
-  ],
-  2: [{ at: 4, modal: { type: 'terminal', host: 'ops' }, name: 'terminal' }],
-  // After the port fix, when the curl step appears.
-  3: [{ at: 15, modal: { type: 'terminal', host: 'ops' }, name: 'terminal' }],
-  // Right after the split that fixes s4-monolith.
-  4: [{ at: 13, modal: { type: 'board', board: 'decompose' }, name: 'decompose' }],
-  5: [{ at: 2, modal: { type: 'board', board: 'dockerfile' }, name: 'dockerfile' }],
-  6: [
-    { at: 1, modal: { type: 'board', board: 'desired' }, name: 'desired' },
-    // Between s6-crash (healed) and s6-ip.
-    { at: 17, modal: { type: 'dashboard' }, name: 'dashboard-pods' },
-  ],
-  7: [
-    { at: 25, modal: { type: 'cable', mode: 'repair' }, name: 'cable-repair' },
-    { at: 45, modal: { type: 'repair', target: 'crac' }, name: 'crac' },
-  ],
-};
+type Driver = { play(day: number): void; second(): Second };
+type DriverWin = Window & { __drive: Driver };
 
-async function setup(page: Page) {
+/** Installs window.__drive on the page: playDay's loop, one game second per call, against the app's store. */
+async function installDriver(page: Page) {
   await page.evaluate(async () => {
-    // The app's own store instance: a dev server that hot-updated the store serves it to the app as
-    // "game.ts?t=…", so import the exact URL App.tsx uses, not a second copy. (The other modules are
-    // stateless, so any copy of them works.)
     const imp = (p: string) => import(/* @vite-ignore */ p);
-    const app = await (await fetch('/src/App.tsx')).text();
-    const storeUrl = /["'](\/src\/store\/game\.ts[^"']*)["']/.exec(app)?.[1] ?? '/src/store/game.ts';
-    const S = (await imp(storeUrl)) as typeof import('../src/store/game');
-    (window as unknown as { __store: typeof S.gameStore }).__store = S.gameStore;
-    const A = (await imp('/src/sim/actions.ts')) as typeof import('../src/sim/actions');
+    const AP = (await imp('/tests/autoplay.ts')) as typeof import('../tests/autoplay');
     const E = (await imp('/src/sim/engine.ts')) as typeof import('../src/sim/engine');
     const C = (await imp('/src/content/stages/index.ts')) as typeof import('../src/content/stages');
-    const store = S.gameStore;
-    type W = Parameters<typeof A.mount>[0];
-    const ACTIONS: Record<string, (w: W) => void> = {
-      mountAll: (w) => ['web', 'db', 'spare'].forEach((id) => A.mount(w, id)),
-      feedA: (w) => ['web', 'db', 'spare'].forEach((id) => A.setFeeds(w, id, ['A'])),
-      cableAll: (w) => ['web', 'db', 'spare'].forEach((id, i) => A.connectCable(w, `${id}:eth0`, `sw1:p${i + 1}`)),
-      dockerfile: (w) => A.writeDockerfile(w, 'enroll'),
-      desired: (w) => A.applyDesired(w, 'enroll', 3, 'enroll:v1'),
-    };
+    const store = (window as unknown as StoreWin).__khuStore;
+    type Step = import('../tests/autoplay').Step | import('../src/sim/scenario').SolutionStep;
+
     const drain = () => {
-      for (let i = 0; i < 50 && store.getState().dialogue; i++) store.getState().nextDialogue();
       for (let i = 0; i < 50 && store.getState().concepts.length; i++) store.getState().dismissConcept();
     };
-    const run = (step: { cmd?: string; host?: string; act?: string; events?: string[] } | { label: string; action: (w: W) => void }) => {
+    /**
+     * One step, like tests/autoplay.ts apply(). Commands run in a throwaway session on the step's host (IOS
+     * lines from the device's `>` prompt), then the player's own session is put back: the terminal windows
+     * this test opens show the desk's session, not the driver's. Returns the red lines.
+     */
+    const run = (step: Step): string[] => {
       const s = store.getState();
-      if ('action' in step) return s.act(step.action);
-      if (step.cmd) {
-        // Run on the step's host in a throwaway session, then put the player's session back: the terminal
-        // windows this test opens (and screenshots) show the desk's own session, not the driver's.
-        const saved = store.getState().terminal;
-        store.setState({ terminal: { host: step.host!, log: [] } });
-        const out = store.getState().command(step.cmd);
+      if ('ios' in step || 'cmd' in step) {
+        const saved = s.terminal;
+        store.setState({ terminal: { host: step.host, log: [], mode: 'ios' in step ? { level: 'user' } : null } });
+        const bad: string[] = [];
+        for (const line of 'ios' in step ? step.ios : [step.cmd]) {
+          const out = store.getState().command(line, false);
+          bad.push(...out.lines.filter((l) => l.startsWith(AP.RED)).map((l) => `${step.host}: ${line} → ${l}`));
+        }
         store.setState({ terminal: saved });
-        return out.lines.filter((l) => l.startsWith('\x1b[31m'));
+        return bad;
       }
-      if (step.act) return s.act(ACTIONS[step.act]);
-      if (step.events) return s.event(...step.events);
+      if ('action' in step) s.act(step.action, ...('events' in step ? (step.events ?? []) : []));
+      else s.event(...step.events);
+      return [];
     };
-    const fixed = new Set<string>();
-    const reported = new Set<string>();
-    (window as unknown as Record<string, unknown>).__drive = {
-      play(stage: number) {
-        try {
-          localStorage.setItem('khu-dc-save-v1', JSON.stringify({ unlocked: 7, best: {}, cards: [] }));
-        } catch {
-          /* ignore */
-        }
-        store.getState().play(stage as 0);
-        fixed.clear();
-        reported.clear();
-        drain();
+
+    /** Incidents whose solution already ran, in the run of `epoch` (every play() starts a new one). */
+    const solved = new Set<string>();
+    let epoch = -1;
+    (window as unknown as DriverWin).__drive = {
+      play(day) {
+        store.getState().play(day as 0);
+        for (let i = 0; i < 50 && store.getState().dialogue; i++) store.getState().nextDialogue();
       },
-      /** One game second: objectives → tick → incident fixes. Returns what happened. */
-      second(autoplay: Record<string, unknown[]>) {
-        const s = store.getState();
-        const r = s.run;
-        if (!r) return { screen: s.screen, activated: [], errors: [] };
-        const def = C.getStage(r.stage);
+      second() {
         const errors: string[] = [];
-        for (const o of E.visibleObjectives(def, r)) {
-          if (o.id in store.getState().run!.objectivesDone) continue;
-          for (const st of (autoplay[o.id] ?? []) as Parameters<typeof run>[0][]) run(st);
+        if (store.getState().stageEpoch !== epoch) {
+          epoch = store.getState().stageEpoch;
+          solved.clear();
         }
-        store.getState().tick();
-        drain();
-        const now = store.getState().run;
-        // Report every incident that fired since the last report, including ones the app's own
-        // 1-second timer fired between our calls.
-        const activated = now ? now.scenarios.filter((x) => x.state !== 'waiting' && !reported.has(x.id)).map((x) => x.id) : [];
-        activated.forEach((id) => reported.add(id));
-        if (now) {
-          for (const rt of now.scenarios) {
-            if (rt.state !== 'active' || fixed.has(rt.id) || now.ctx.stageTime < (rt.activatedAt ?? 0) + 3) continue;
-            const sc = def.scenarios.find((x) => x.id === rt.id)!;
-            for (const step of sc.solutionSteps) {
-              const bad = run(step as Parameters<typeof run>[0]);
-              if (Array.isArray(bad) && bad.length) errors.push(`${rt.id}: ${bad.join(' | ')}`);
-            }
-            fixed.add(rt.id);
+        const r0 = store.getState().run;
+        if (store.getState().screen === 'playing' && r0 && !store.getState().dialogue) {
+          const def = C.getStage(r0.stage);
+          for (const o of E.visibleObjectives(def, r0)) {
+            if (o.id in store.getState().run!.objectivesDone) continue;
+            for (const st of AP.AUTOPLAY[r0.stage]?.[o.id] ?? []) run(st);
           }
+          drain();
+          store.getState().tick();
+          drain();
+          const now = () => store.getState().run!.ctx.stageTime;
+          for (const a of store.getState().run!.alarms) {
+            if (a.ackAt === null && a.clearedAt === null && now() >= a.raisedAt + 2) store.getState().ackAlarm(a.id);
+          }
+          for (const a of store.getState().run!.alarms) {
+            const r = store.getState().run!.scenarios.find((x) => x.id === a.scenarioId);
+            if (!r || r.state !== 'active' || a.ackAt === null || solved.has(r.id) || now() < a.ackAt + 2) continue;
+            for (const st of E.scenarioOf(def, r.id).solutionSteps) errors.push(...run(st).map((e) => `${r.id} ${e}`));
+            solved.add(r.id);
+          }
+          drain();
         }
-        drain();
-        const st = store.getState();
-        return { screen: st.screen, stage: st.run?.stage, t: st.run?.ctx.stageTime, activated, errors };
-      },
-      open(modal: Record<string, unknown>) {
-        store.getState().openModal(modal as never);
-      },
-      close() {
-        store.getState().closeModal();
-      },
-      async hint(id: string) {
-        store.getState().openModal({ type: 'hint', scenarioId: id });
-        await store.getState().askHint(id);
-      },
-      resultsNext() {
-        drain();
-        return store.getState().screen;
+        const s = store.getState();
+        return {
+          screen: s.screen,
+          day: s.run?.stage ?? null,
+          t: s.run?.ctx.stageTime ?? 0,
+          over: s.dialogue?.then === 'results',
+          openAlarms: s.run?.alarms.filter((a) => a.ackAt === null && a.clearedAt === null).length ?? 0,
+          errors,
+        };
       },
     };
   });
 }
 
-test('모든 스테이지를 끝까지 플레이 (UI)', async ({ page }) => {
+const title = (page: Page) => page.locator('.modal-head h2');
+
+/** Visible terminal rows, with xterm's non-breaking spaces made plain. */
+async function rows(page: Page): Promise<string[]> {
+  const text = await page.locator('.xterm-rows').innerText();
+  return text.replace(/ /g, ' ').split('\n').map((l) => l.trimEnd());
+}
+
+/** The row the cursor is on (the last non-empty one). */
+async function inputRow(page: Page): Promise<string> {
+  const all = (await rows(page)).filter((l) => l.trim());
+  return all[all.length - 1] ?? '';
+}
+
+/** Closes every open window and clicks concept cards away. */
+async function closeWindows(page: Page) {
+  await page.evaluate(() => {
+    const s = (window as unknown as StoreWin).__khuStore;
+    for (let i = 0; i < 10 && s.getState().modal; i++) s.getState().closeModal();
+    for (let i = 0; i < 20 && s.getState().concepts.length; i++) s.getState().dismissConcept();
+  });
+  await expect(page.locator('.modal-backdrop')).toHaveCount(0);
+}
+
+/**
+ * Holds the game clock (the app's own 1 s timer too) while `fn` looks around, so no mission finishes and no
+ * concept card pops up over a window the test is typing into or taking a picture of.
+ */
+async function holdClock(page: Page, fn: () => Promise<void>) {
+  const setPaused = (p: boolean) =>
+    page.evaluate((v) => {
+      const s = (window as unknown as StoreWin).__khuStore;
+      for (let i = 0; i < 20 && s.getState().concepts.length; i++) s.getState().dismissConcept();
+      s.getState().setPaused(v);
+    }, p);
+  await setPaused(true);
+  try {
+    await fn();
+  } finally {
+    await setPaused(false);
+  }
+}
+
+/**
+ * At the 관리 PC desk: ssh to TOR-01 and look at its ports (`show interfaces status`), typed through the
+ * real terminal, then a screenshot.
+ */
+async function iosSession(page: Page, shot: (name: string) => Promise<unknown>, name: string) {
+  await page.evaluate(() => (window as unknown as StoreWin).__khuStore.getState().interact('desk'));
+  await expect(title(page)).toHaveText(/터미널 — ops/);
+  const type = async (line: string, prompt: string) => {
+    await page.locator('.term-screen').click();
+    await page.keyboard.type(line, { delay: 10 });
+    await page.keyboard.press('Enter');
+    await expect.poll(() => inputRow(page)).toBe(prompt);
+    // A mission this finishes (D-4's ssh) pops its card: click it away so the next line goes to the terminal.
+    await page.evaluate(() => {
+      const s = (window as unknown as StoreWin).__khuStore;
+      for (let i = 0; i < 20 && s.getState().concepts.length; i++) s.getState().dismissConcept();
+    });
+  };
+  await type('ssh TOR-01', 'TOR-01>');
+  await type('enable', 'TOR-01#');
+  await type('show interfaces status', 'TOR-01#');
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('Gi1/0/1');
+  await page.waitForTimeout(300);
+  await shot(name);
+  // Back to the shell, so the desk's session is as the driver expects to find it.
+  await type('end', 'TOR-01#');
+  await type('exit', 'ops@khu-dc:~$');
+  await closeWindows(page);
+}
+
+test('D-5 … D-Day를 끝까지 플레이 (seed 1, UI)', async ({ page }) => {
   const problems: string[] = [];
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
-    // /api/hint is expected to be missing without the Worker → canned hints.
-    if (m.type() === 'error' && !/api\/hint|Failed to load resource/.test(m.text())) problems.push(`console: ${m.text()}`);
+    // Without the hint Worker /api/hint is missing; nothing here asks for a hint, but don't count it if it happens.
+    if (m.type() === 'error' && !/api\/hint/.test(m.text())) problems.push(`console: ${m.text()}`);
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await setup(page);
+  // Seed 1, every day open, no cards yet.
+  await page.evaluate(() => localStorage.setItem('khu-dc-save-v2', JSON.stringify({ unlocked: 5, seed: 1, best: {}, cards: [] })));
+  await page.reload();
+  await installDriver(page);
   const shot = (name: string) => page.screenshot({ path: test.info().outputPath(`${name}.png`) });
+  const drive = () => page.evaluate(() => (window as unknown as DriverWin).__drive.second());
 
-  for (let stage = 0; stage <= 7; stage++) {
-    await page.evaluate((s) => (window as never as { __drive: { play(n: number): void } }).__drive.play(s), stage);
-    await page.waitForTimeout(700);
-    await shot(`s${stage}-00-start`);
-    const windows = [...(WINDOWS[stage] ?? [])];
-    const seen = new Set<string>();
-    let screen = 'playing';
-    for (let i = 0; i < 600 && screen === 'playing'; i++) {
-      const r = await page.evaluate(
-        (a) => (window as never as { __drive: { second(x: unknown): { screen: string; t: number; activated: string[]; errors: string[] } } }).__drive.second(a),
-        AUTOPLAY[stage],
-      );
-      screen = r.screen;
-      problems.push(...r.errors.map((e) => `stage ${stage} solution error: ${e}`));
-      for (const id of r.activated) {
-        if (seen.has(id)) continue;
-        seen.add(id);
-        await page.waitForTimeout(250);
-        await shot(`s${stage}-${id}-alert`);
-        await page.evaluate((x) => (window as never as { __drive: { hint(id: string): Promise<void> } }).__drive.hint(x), id);
-        await page.waitForTimeout(250);
-        await shot(`s${stage}-${id}-hint`);
-        await page.evaluate(() => (window as never as { __drive: { close(): void } }).__drive.close());
+  await page.evaluate(() => (window as unknown as DriverWin).__drive.play(0));
+  for (let day = 0; day <= 5; day++) {
+    const tag = `d${day}`;
+    await expect(page.locator('.hud')).toContainText(day === 5 ? 'D-Day' : `D-${5 - day}`);
+    await page.waitForTimeout(800);
+    await shot(`${tag}-00-map`);
+
+    let r: Second = await drive();
+    let nocShot = false;
+    let iosShot = day === 0; // D-5 has no terminal at the desk yet
+    let mapShot = false;
+    for (let i = 0; i < 1200 && r.screen === 'playing' && !r.over; i++) {
+      problems.push(...r.errors.map((e) => `${tag} solution: ${e}`));
+      if (!iosShot && r.t >= 3) {
+        iosShot = true;
+        await holdClock(page, () => iosSession(page, shot, `${tag}-02-ios`));
       }
-      const due = (w: Win) => (w.during ? seen.has(w.during) : r.t >= (w.at ?? 0));
-      while (windows.length && due(windows[0]) && screen === 'playing') {
-        const w = windows.shift()!;
-        await page.evaluate((m) => (window as never as { __drive: { open(m: unknown): void } }).__drive.open(m), w.modal);
-        await page.waitForTimeout(400);
-        // A terminal window opens on its own place's session (the desk is "ops" until the player sshes away).
-        if (w.modal.type === 'terminal') await expect(page.locator('.modal-head h2')).toHaveText(new RegExp(`터미널 — ${w.modal.host}`));
-        await shot(`s${stage}-w-${w.name}`);
-        await page.evaluate(() => (window as never as { __drive: { close(): void } }).__drive.close());
+      // The NOC while an alarm is up and not ACKed yet (the driver ACKs it 2 s after it shows).
+      if (!nocShot && r.openAlarms > 0) {
+        nocShot = true;
+        await holdClock(page, async () => {
+          // The map first: the phone report and the NMS alarm as toasts, the HUD gone red.
+          await page.waitForTimeout(400);
+          await shot(`${tag}-01-map-alarm`);
+          await page.evaluate(() => (window as unknown as StoreWin).__khuStore.getState().openModal({ type: 'noc', tab: 'nms' }));
+          await expect(page.locator('.nms-map')).toBeVisible();
+          await page.waitForTimeout(500);
+          await shot(`${tag}-01-noc-alarm`);
+          await closeWindows(page);
+        });
       }
+      if (!mapShot && r.t >= 40) {
+        mapShot = true;
+        await page.waitForTimeout(300);
+        await shot(`${tag}-03-map-later`);
+      }
+      r = await drive();
     }
-    expect(screen, `stage ${stage} did not reach results`).toBe('results');
-    await page.waitForTimeout(500);
-    await shot(`s${stage}-99-results`);
+    problems.push(...r.errors.map((e) => `${tag} solution: ${e}`));
+    if (!r.over && r.screen !== 'results') {
+      // What is still going on, for the failure message.
+      const left = await page.evaluate(() => {
+        const run = (window as unknown as StoreWin).__khuStore.getState().run!;
+        return JSON.stringify({
+          alarms: run.alarms.filter((a) => a.clearedAt === null),
+          scenarios: run.scenarios.filter((x) => x.state !== 'resolved').map((x) => ({ id: x.id, state: x.state })),
+        });
+      });
+      expect(r.over, `${tag} did not end (t=${r.t}): ${left}`).toBe(true);
+    }
+    expect(nocShot, `${tag}: no alarm showed up`).toBe(true);
+
+    // The sign-off lines, with Enter as a player would, then the daily report.
+    const report = page.getByRole('dialog', { name: /일일 리포트/ });
+    for (let i = 0; i < 30 && !(await report.isVisible()); i++) {
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(250);
+    }
+    await expect(report).toBeVisible();
+    await expect(page.locator('.res-sub')).toContainText('일일 리포트');
+    await expect(page.locator('.res-stats')).toContainText('MTTD');
+    await page.waitForTimeout(1200);
+    await shot(`${tag}-04-report`);
+
+    // 다음 날 출근 ▶ (D-Day: 엔딩 보기).
+    await page.locator('.res-primary').click();
+    if (day < 5) {
+      await expect(page.locator('.hud')).toContainText(day + 1 === 5 ? 'D-Day' : `D-${4 - day}`);
+      await page.evaluate(() => {
+        const s = (window as unknown as StoreWin).__khuStore;
+        for (let i = 0; i < 50 && s.getState().dialogue; i++) s.getState().nextDialogue();
+      });
+    }
   }
-  // Ending screen
-  await page.evaluate(() => {
-    const store = (window as unknown as { __store: (typeof import('../src/store/game'))['gameStore'] }).__store;
-    store.getState().finishResults('next');
-  });
-  await page.waitForTimeout(600);
+
+  // The ending certificate.
+  await expect(page.getByRole('heading', { name: '수료증' })).toBeVisible();
+  await page.waitForTimeout(800);
   await shot('ending');
-  expect(problems).toEqual([]);
+  expect(problems, problems.join('\n')).toEqual([]);
 });

@@ -65,6 +65,7 @@
 
 .obj-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .obj-item { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.45; }
+.obj-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .obj-check {
   flex-shrink: 0;
   width: 18px;
@@ -86,7 +87,7 @@
 .obj-progress { color: var(--muted); font-variant-numeric: tabular-nums; }
 .obj-item.current .obj-progress { color: var(--tan); }
 .obj-item.locked { opacity: 0.6; font-size: 13px; color: var(--muted); }
-.obj-item.locked .obj-check { border-style: dashed; font-size: 10px; }
+.obj-item.locked .obj-check { border: 0; color: inherit; }
 .obj-fold-btn {
   padding: 0;
   border: 0;
@@ -103,43 +104,94 @@
   50% { box-shadow: 0 0 0 3px rgba(233, 183, 124, 0.3); }
 }
 
-.obj-incidents h3 { margin: 4px 0 6px; font-family: var(--pixel); font-weight: 400; font-size: 14px; color: var(--red-2); }
-.obj-incidents h3.calm { color: var(--muted); }
-/* Several incidents at once: one line of alert each, so the panel stays off the map. */
-.obj-incidents.compact .obj-alert { -webkit-line-clamp: 1; margin-bottom: 4px; }
-.obj-incidents.compact .obj-incident { padding: 6px 10px; margin-bottom: 6px; }
-.obj-calm { margin: 0; font-size: 13px; color: var(--muted); }
+/* ----- The current objective's guide (also in the terminal's side box): why, then the first-time steps ----- */
+.og { display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--text); }
+.og-why-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--blue);
+  cursor: pointer;
+  text-align: left;
+}
+.og-why-btn:hover, .og-why-btn:focus-visible { text-decoration: underline; outline: none; }
+.og-caret { color: var(--muted); }
+.og-why-text {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--blue);
+  border-radius: 0 6px 6px 0;
+  background: rgba(106, 183, 255, 0.1);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.og-guide {
+  padding: 6px 8px;
+  border: 1px solid rgba(233, 183, 124, 0.45);
+  border-radius: 6px;
+  background: rgba(233, 183, 124, 0.06);
+}
+.og-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--muted); }
+.og-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--tan);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.og-more:hover, .og-more:focus-visible { text-decoration: underline; outline: none; }
+.og-steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+/* (specific enough to beat the terminal side box's own `li` rules) */
+.og .og-steps > .og-step { display: flex; gap: 6px; align-items: flex-start; justify-content: flex-start; font-size: 13px; line-height: 1.5; }
+.og-mark { flex-shrink: 0; width: 14px; text-align: center; font-size: 12px; }
+.og-steps li.done { color: var(--muted); }
+.og-steps li.done .og-mark { color: var(--green); }
+.og-steps li.done .og-text { text-decoration: line-through; text-decoration-color: rgba(244, 236, 228, 0.4); }
+.og-steps li.todo { color: var(--muted); }
+.og-steps li.todo .og-mark::before { content: '·'; }
+.og-steps li.next .og-mark { color: var(--tan); }
+.og-steps li.next .og-text { color: var(--tan); }
+.og-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.og-cmd {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #100d13;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--tan);
+  overflow-wrap: anywhere;
+}
+.og-step-why { font-size: 12px; color: var(--muted); line-height: 1.4; }
 
-.obj-incident {
-  border: 2px solid var(--amber);
-  border-left-width: 6px;
-  border-radius: 8px;
+.obj-alarm {
+  width: 100%;
   padding: 8px 10px;
-  margin-bottom: 8px;
-  background: rgba(255, 181, 71, 0.08);
-  animation: obj-in 0.3s ease-out;
+  border-radius: 8px;
+  border: 2px solid var(--line);
+  background: var(--panel-2);
+  font-family: var(--pixel);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
 }
-.obj-incident.critical { border-color: var(--red-2); background: rgba(215, 38, 43, 0.12); }
-.obj-incident-top { display: flex; gap: 6px; align-items: flex-start; justify-content: space-between; }
-.obj-incident-top strong { font-size: 14px; line-height: 1.4; }
-.obj-room { flex-shrink: 0; color: var(--text); }
-.obj-alert {
-  margin: 4px 0 6px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.obj-incident-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.obj-elapsed, .obj-hintlv { font-size: 12px; color: var(--muted); }
-.obj-hintlv { color: var(--amber); }
-.obj-ask { margin-left: auto; padding: 4px 8px; font-size: 12px; }
+.obj-alarm kbd { font-size: 10px; }
+.obj-alarm-go { font-family: var(--body); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.obj-alarm:hover, .obj-alarm:focus-visible { border-color: var(--tan); outline: none; }
+.obj-alarm.calm { color: var(--muted); }
+.obj-alarm.warn { border-color: var(--amber); background: rgba(255, 181, 71, 0.12); }
+.obj-alarm.critical { border-color: var(--red-2); background: rgba(215, 38, 43, 0.18); }
+.obj-alarm.critical b { color: var(--red-2); font-weight: 400; }
+.obj-alarm.unacked { animation: obj-ring 1s steps(2) infinite; }
 
-@keyframes obj-in {
-  from { transform: translateX(-12px); opacity: 0; }
+@keyframes obj-ring {
+  50% { box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.3); }
 }
 
 .obj-controls {

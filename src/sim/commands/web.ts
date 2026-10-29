@@ -1,4 +1,4 @@
-import { isLoopback, ping, resolveName } from '../network';
+import { httpStatus, isLoopback, lbShares, listening, reach, resolve } from '../network';
 import { own } from '../util';
 import type { Command } from './types';
 import { bold, dim, err, green, ok, out, red, yellow } from './types';
@@ -14,9 +14,9 @@ const CURL_VALUE_FLAGS = new Set(['-o', '-X', '-H', '-d', '--data', '-m', '--max
 export const webCommands: Command[] = [
   {
     name: 'server status',
-    maxStage: 3,
+    maxStage: 2,
     aliases: ['server config', 'server'],
-    minStage: 3,
+    minStage: 2,
     usage: 'server status',
     summary: '웹 서버 설정 보기 (포트, 스레드, 경로)',
     run(_a, { w, host }) {
@@ -33,9 +33,9 @@ export const webCommands: Command[] = [
   },
   {
     name: 'server start',
-    maxStage: 3,
+    maxStage: 2,
     aliases: ['server restart'],
-    minStage: 3,
+    minStage: 2,
     usage: 'server start',
     summary: '웹 서버 실행',
     run(_a, { w, host }) {
@@ -47,8 +47,8 @@ export const webCommands: Command[] = [
   },
   {
     name: 'server stop',
-    maxStage: 3,
-    minStage: 3,
+    maxStage: 2,
+    minStage: 2,
     usage: 'server stop',
     summary: '웹 서버 중지',
     run(_a, { w, host }) {
@@ -60,8 +60,8 @@ export const webCommands: Command[] = [
   },
   {
     name: 'server set',
-    maxStage: 3,
-    minStage: 3,
+    maxStage: 2,
+    minStage: 2,
     usage: 'server set port <번호> | server set threads single|multi',
     summary: '웹 서버 포트·스레드 방식 바꾸기',
     run(args, { w, host }) {
@@ -70,7 +70,9 @@ export const webCommands: Command[] = [
       const [key, value] = args;
       if (key === 'port' && value && /^\d+$/.test(value)) {
         w.web!.port = parseInt(value, 10);
-        return { lines: [green(`포트를 ${value} 로 바꾸고 재시작했어요.`)], events: ['server_port'] };
+        // 80으로 · 8081로: the particle follows how the number is read (ends in 영/삼/육/십/백… → 으로).
+        const ro = /[036]$/.test(value) ? '으로' : '로';
+        return { lines: [green(`포트를 ${value}${ro} 바꾸고 재시작했어요.`)], events: ['server_port'] };
       }
       if (key === 'threads' && (value === 'single' || value === 'multi')) {
         w.web!.threads = value;
@@ -81,9 +83,9 @@ export const webCommands: Command[] = [
   },
   {
     name: 'ports',
-    maxStage: 3,
+    maxStage: 2,
     aliases: ['ss -lt', 'netstat', 'ss'],
-    minStage: 3,
+    minStage: 2,
     usage: 'ports',
     summary: '이 장비에서 열려 있는(손님을 기다리는) 포트 보기',
     run(_a, { w, host }) {
@@ -96,8 +98,7 @@ export const webCommands: Command[] = [
   },
   {
     name: 'curl',
-    maxStage: 3,
-    minStage: 3,
+    minStage: 2,
     usage: 'curl [-v] http://<이름>[:포트]/<경로>',
     summary: '로봇 손님처럼 웹 요청(HTTP) 보내기',
     run(args, { w, host }) {
@@ -108,23 +109,49 @@ export const webCommands: Command[] = [
       if (!m) return err('사용법: curl [-v] http://web/enroll');
       const [, name, portStr, path = '/'] = m;
       const port = portStr ? parseInt(portStr, 10) : 80;
-      // localhost / 127.0.0.1 is the machine you are on.
-      const ip = isLoopback(name) ? '127.0.0.1' : resolveName(w, name);
-      if (!ip) return { lines: [red(`curl: (6) Could not resolve host: ${name}`), dim('(이름을 IP 주소로 바꾸지 못했어요)')] };
-      const p = ping(w, host, name);
       const lines: string[] = [];
-      if (verbose) lines.push(dim(`*   Trying ${ip}:${port}...`));
-      if (!p.ok) {
-        lines.push(red(`curl: (28) Failed to connect to ${name} port ${port}: Timed out`), dim('(기다려도 대답이 없어서 포기했어요)'));
-        return { lines };
+      // localhost / 127.0.0.1 is the machine you are on.
+      let ip = '127.0.0.1';
+      if (!isLoopback(name)) {
+        const r = resolve(w, name, host);
+        if (!r.ip) return { lines: [red(`curl: (6) Could not resolve host: ${name}`), dim(r.failure === 'dns_down' ? '(이름을 물어볼 DNS 서버에 닿지 않아요)' : '(이름을 IP 주소로 바꾸지 못했어요)')], events: ['curl:dns'] };
+        ip = r.ip;
       }
-      const s = w.web;
-      const serves = s && s.running && p.targetId === s.host && s.port === port;
-      if (!serves) {
+      if (verbose) lines.push(dim(`*   Trying ${ip}:${port}...`));
+      let server = host;
+      if (ip !== '127.0.0.1') {
+        const r = reach(w, host, ip, { port });
+        if (!r.ok || !r.targetId) {
+          lines.push(red(`curl: (28) Failed to connect to ${name} port ${port} after 3002 ms: Timed out`), dim('(기다려도 대답이 없어서 포기했어요)'));
+          return { lines, events: ['curl:timeout'] };
+        }
+        server = r.targetId;
+      }
+      let serverPort = port;
+      const lb = w.net?.lb;
+      const refused = () => {
         if (verbose) lines.push(dim('> SYN  →'), dim('< RST  ← (그 포트에서 기다리는 프로그램이 없어요)'));
-        lines.push(red(`curl: (7) Failed to connect to ${name} port ${port}: Connection refused`));
+        lines.push(red(`curl: (7) Failed to connect to ${name} port ${port} after 1 ms: Connection refused`));
         if (!verbose) lines.push(dim('(연결 거부: 문을 두드렸는데 아무도 안 열어줬어요)'));
         return { lines, events: ['curl:refused'] };
+      };
+      // The L4's VIP: the active unit hands the connection to a healthy pool member.
+      if (lb && (ip === lb.vip || ip === lb.publicIp)) {
+        if (port !== lb.port) return refused();
+        const pick = lbShares(w).sort((a, b) => b.share - a.share)[0]?.member;
+        if (!pick) {
+          if (verbose) lines.push(dim(`* Connected to ${name} (${ip}) port ${port}`), dim(`> GET ${path} HTTP/1.1`), dim('< HTTP/1.1 503 Service Unavailable'));
+          lines.push(red('<html><body><h1>503 Service Unavailable</h1>No server is available to handle this request.</body></html>'), dim('(L4가 요청을 넘길 건강한 서버가 하나도 없대요)'));
+          return { lines, events: ['curl:503'] };
+        }
+        server = pick.host;
+        serverPort = pick.port;
+      }
+      const status = httpStatus(w, server, serverPort, path);
+      if (status === 0) {
+        if (!listening(w, server, serverPort)) return refused();
+        lines.push(red('curl: (1) Received HTTP/0.9 when not allowed'), dim('(웹 서버가 아닌 프로그램이 대답했어요)'));
+        return { lines, events: ['curl:not-http'] };
       }
       if (verbose) {
         lines.push(
@@ -134,39 +161,41 @@ export const webCommands: Command[] = [
           dim(`* Connected to ${name} (${ip}) port ${port}`),
           dim(`> GET ${path} HTTP/1.1`),
           dim(`> Host: ${name}`),
+          dim(`< HTTP/1.1 ${status === 200 ? '200 OK' : '404 Not Found'}`),
+          dim('< Content-Type: application/json'),
         );
       }
-      const found = s!.routes.includes(path);
-      if (verbose) lines.push(dim(`< HTTP/1.1 ${found ? '200 OK' : '404 Not Found'}`), dim('< Content-Type: application/json'));
-      if (!found) {
-        lines.push(yellow(`{"error":"Not Found","path":"${path}"}`));
+      if (status !== 200) {
+        lines.push(yellow(`{"error":"Not Found","path":"${path}"}`), dim('(404 Not Found = 서버는 대답했지만 그런 경로(페이지)가 없대요)'));
         return { lines, events: [`curl:404:${path}`] };
       }
       const body: Record<string, string> = {
         '/': '{"service":"KHU 수강신청","status":"ok"}',
         '/enroll': '{"message":"수강신청 페이지","open":true}',
         '/courses': '{"courses":["대학 글쓰기","컴퓨터 개론","교양 영어"]}',
+        '/health': '{"status":"UP"}',
       };
-      lines.push(green(own(body, path) ?? '{"status":"ok"}'));
-      return { lines, events: [`curl:200:${path}`] };
+      lines.push(green(own(body, path) ?? '{"status":"ok"}'), dim('(200 OK = 정상 응답 · { } 안은 서버가 보내 준 데이터(JSON))'));
+      // The name asked for is in the event ('curl:200:sugang/enroll'): a mission can tell whose 200 it was.
+      return { lines, events: [`curl:200:${name.toLowerCase()}${path}`] };
     },
   },
   {
     name: 'notice show',
-    maxStage: 3,
+    maxStage: 2,
     aliases: ['notice'],
-    minStage: 3,
+    minStage: 2,
     usage: 'notice show',
     summary: '학생 공지에 적힌 수강신청 주소 보기',
     run(_a, { w }) {
       if (!w.notice) return out(dim('아직 올라온 학생 공지가 없어요.'));
-      return out(`📢 학생 공지: "수강신청은 http://web${w.notice.url} 에서!"`);
+      return out(`[학생 공지] "수강신청은 http://web${w.notice.url} 에서!"`);
     },
   },
   {
     name: 'notice set',
-    maxStage: 3,
-    minStage: 3,
+    maxStage: 2,
+    minStage: 2,
     usage: 'notice set <경로>',
     summary: '학생 공지의 주소 고치기',
     run(args, { w }) {

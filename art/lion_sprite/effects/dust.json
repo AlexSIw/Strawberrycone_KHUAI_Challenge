@@ -1,0 +1,83 @@
+{
+  "frameWidth": 16,
+  "frameHeight": 16,
+  "frames": 6,
+  "loop": false,
+  "durationsMs": [
+    100,
+    100,
+    150,
+    150,
+    150,
+    150
+  ],
+  "anchor": [
+    8,
+    15
+  ],
+  "sheets": {
+    "dust_puff": "dust_puff.png",
+    "dust_side_right": "dust_side_right.png",
+    "dust_side_left": "dust_side_left.png"
+  },
+  "spawn": {
+    "when": "on run frames 0 and 3 (each foot landing) - about every 12px of travel",
+    "position": "lion frame top-left + feet[i] (i alternates 0,1); place the dust so its anchor sits on that point",
+    "layer": "ground effects layer: below the character, above the ground tiles",
+    "world_space": "the puff stays where it was spawned and does not follow the character",
+    "directions": {
+      "right": {
+        "effect": "dust_side_right",
+        "feet": [
+          [
+            14,
+            31
+          ],
+          [
+            14,
+            31
+          ]
+        ]
+      },
+      "left": {
+        "effect": "dust_side_left",
+        "feet": [
+          [
+            17,
+            31
+          ],
+          [
+            17,
+            31
+          ]
+        ]
+      },
+      "down": {
+        "effect": "dust_puff",
+        "feet": [
+          [
+            13,
+            31
+          ],
+          [
+            18,
+            31
+          ]
+        ]
+      },
+      "up": {
+        "effect": "dust_puff",
+        "feet": [
+          [
+            13,
+            31
+          ],
+          [
+            18,
+            31
+          ]
+        ]
+      }
+    }
+  }
+}

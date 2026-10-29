@@ -1,7 +1,19 @@
-/* 쿠사수 무전기: incident tabs, chat thread with the mentor, hint ladder controls. */
-.hc-next {
+/* 쿠사수 무전기: incident tabs, chat thread with the mentor, hint and answer controls. */
+.hc-next-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 10px;
+}
+.hc-next {
+  margin: 0;
   font-size: 13px;
+}
+.hc-key-btn {
+  flex: none;
+  font-size: 12px;
+  padding: 3px 10px;
 }
 
 /* ----- tabs ----- */
@@ -21,12 +33,19 @@
   padding: 6px 10px;
   cursor: pointer;
   color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .hc-tab:hover { background: #3a2f43; }
 .hc-tab.on { color: var(--text); background: #3a2f43; }
 .hc-tab.on.critical { border-bottom-color: var(--red-2); }
 .hc-tab.on.warning { border-bottom-color: var(--amber); }
 .hc-tab.on.resolved { border-bottom-color: var(--green); }
+/* Status icon: siren / warning / check, the main cue on a tab that isn't open */
+.hc-tab.critical .pxi { color: var(--red-2); }
+.hc-tab.warning .pxi { color: var(--amber); }
+.hc-tab.resolved .pxi { color: var(--green); }
 
 /* ----- incident header ----- */
 .hc-incident {
@@ -70,25 +89,6 @@
   font-size: 12px;
 }
 
-/* ----- ladder note ----- */
-.hc-ladder {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #2a2a3a;
-  border: 1px dashed var(--blue);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-.hc-ladder p {
-  margin: 0;
-  flex: 1;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.hc-ladder b { color: var(--blue); font-family: var(--pixel); font-weight: 400; }
-.hc-ladder-ok { font-size: 12px; padding: 4px 10px; }
-
 /* ----- thread ----- */
 .hc-thread {
   display: flex;
@@ -131,6 +131,38 @@
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
+/* 상황 / 할 일 / 명령: labels in a narrow column, the command in code type */
+.hc-guide {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.hc-guide dt {
+  font-family: var(--pixel);
+  font-size: 12px;
+  color: var(--tan);
+  padding-top: 2px;
+}
+.hc-guide dd {
+  margin: 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.hc-guide code {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--blue);
+}
+/* Why the answer is the game's own (no ChatKHU connection …) */
+.hc-bubble p.hc-notice {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
 .hc-meta {
   display: flex;
   align-items: center;
@@ -154,7 +186,6 @@
 }
 .hc-badge.ai { color: var(--blue); border-color: #3a5f86; }
 .hc-badge.canned { color: var(--muted); }
-.hc-badge.lv { color: var(--amber); border-color: #8a6a2c; }
 .hc-badge.ok { color: var(--green); border-color: #2c8a4b; }
 .hc-badge.sol { color: #15121a; background: var(--amber); border-color: var(--amber); font-weight: 700; }
 
@@ -257,7 +288,7 @@
   font-size: 14px;
 }
 
-/* ----- calm view (no incidents) ----- */
+/* ----- no run yet ----- */
 .hc-calm {
   display: flex;
   flex-direction: column;
@@ -265,30 +296,9 @@
   align-items: stretch;
 }
 .hc-calm > .hc-calm-say { margin: 0; text-align: center; }
-.hc-calm-top {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-.hc-objectives {
-  background: var(--panel-2);
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-.hc-objectives h4 {
-  margin: 0 0 6px;
-  font-family: var(--pixel);
-  font-weight: 400;
-  font-size: 14px;
-}
-.hc-objectives ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.hc-objectives li { font-size: 14px; line-height: 1.5; }
-.hc-objectives li.done { color: var(--muted); text-decoration: line-through; }
+
+/* ----- mission mode (the mission being built; free questions) ----- */
+.hc-tab.mission { color: var(--muted); }
+.hc-tab.mission.on { color: var(--text); border-bottom-color: var(--tan); }
+.hc-head.mission { border-left-color: var(--tan); }
+.hc-sev.mission { color: var(--tan); border-color: #8a6a3c; }

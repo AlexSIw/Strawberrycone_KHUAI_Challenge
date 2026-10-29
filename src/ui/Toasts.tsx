@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { gameStore, useGame, type Toast } from '../store/game';
+import { PixelIcon } from './PixelIcon';
+import { toastHead } from './toastHead';
 import './Toasts.css';
 
 // The objective panel keeps every active incident and objective listed, so toasts only need to catch the eye.
 const LIFETIME: Record<Toast['kind'], number> = { alert: 7000, resolved: 5000, objective: 4000, info: 6000 };
 const LEAVE_MS = 260;
 
-const LABEL: Record<Toast['kind'], string> = { alert: '장애 발생', resolved: '해결 완료', objective: '목표 달성', info: '알림' };
-
-function ToastItem({ toast }: { toast: Toast }) {
+function ToastItem({ toast, under }: { toast: Toast; under: boolean }) {
   const [leaving, setLeaving] = useState(false);
+  const head = toastHead(toast);
 
   useEffect(() => {
     const life = LIFETIME[toast.kind];
@@ -28,17 +29,20 @@ function ToastItem({ toast }: { toast: Toast }) {
   }, [leaving, toast.id]);
 
   return (
-    <li className="toast-li" role={toast.kind === 'alert' ? 'alert' : 'status'}>
+    <li className={`toast-li${under ? ' toast-under' : ''}`} role={toast.kind === 'alert' ? 'alert' : 'status'}>
       <button
         type="button"
-        className={`toast-item toast-${toast.kind} ${leaving ? 'leaving' : ''}`}
+        className={`toast-item toast-${toast.kind}${toast.source ? ` toast-src-${toast.source}` : ''} ${leaving ? 'leaving' : ''}`}
         onClick={(e) => {
           e.currentTarget.blur();
           setLeaving(true);
         }}
         title="클릭하면 닫혀요"
       >
-        <span className="toast-kind">{LABEL[toast.kind]}</span>
+        <span className="toast-kind">
+          {head.icon && <PixelIcon name={head.icon} />}
+          {head.label}
+        </span>
         <span className="toast-text">{toast.text}</span>
         <span className="toast-timer" style={{ animationDuration: `${LIFETIME[toast.kind]}ms` }} aria-hidden />
       </button>
@@ -46,14 +50,24 @@ function ToastItem({ toast }: { toast: Toast }) {
   );
 }
 
-/** Top-right notifications: alerts, fixes, objectives. They disappear on their own. */
+/** Kinds that still show over an open window: a call or alarm about a new incident, and notices (day done…). */
+const OVER_WINDOW: Toast['kind'][] = ['alert', 'info'];
+
+/**
+ * Top-right notifications: alerts, fixes, objectives. They disappear on their own. With a window open,
+ * alerts and notices go on top of it (top left, over its title), so a user's call is never hidden behind
+ * the terminal; the others stay out of the way (hidden, their timers still running).
+ */
 export function Toasts() {
   const toasts = useGame((s) => s.toasts);
+  const windowOpen = useGame((s) => !!s.modal);
   if (!toasts.length) return null;
+  // Over a window, at most the two newest: the stack must not reach down to a fresh terminal's prompt.
+  const over = toasts.filter((t) => OVER_WINDOW.includes(t.kind)).slice(-2);
   return (
-    <ol className="toast-stack" aria-live="polite">
+    <ol className={`toast-stack${windowOpen ? ' over-window' : ''}`} aria-live="polite">
       {toasts.map((t) => (
-        <ToastItem key={t.id} toast={t} />
+        <ToastItem key={t.id} toast={t} under={!over.includes(t)} />
       ))}
     </ol>
   );

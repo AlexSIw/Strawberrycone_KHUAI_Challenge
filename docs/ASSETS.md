@@ -50,9 +50,9 @@
 | `@xterm/xterm`, `@xterm/addon-fit` | 5.5.0, 0.10.0 | 게임 속 터미널 | MIT |
 | `recharts` | 2.15.4 | 관제 대시보드 그래프 | MIT |
 
-개발 도구 (배포 파일에는 들어가지 않음): `vite` 7.3.7 (MIT), `@vitejs/plugin-react` 5.2.0 (MIT), `vitest` 4.1.12 (MIT), `typescript` 5.9.3 (Apache-2.0), `@playwright/test` 1.64.1 (Apache-2.0), `sharp` 0.35.5 (Apache-2.0).
+개발 도구 (배포 파일에는 들어가지 않음): `vite` 7.3.7 (MIT), `@vitejs/plugin-react` 5.2.0 (MIT), `vitest` 4.1.12 (MIT), `typescript` 5.9.3 (Apache-2.0), `@playwright/test` 1.64.1 (Apache-2.0).
 
 ## 4. 팀 자체 제작
 
-- **사자 캐릭터 그림**은 팀이 직접 만든 것이에요. 원본은 `art/`에 있고 `npm run sprites`(`scripts/prepare-sprites.mjs`)로 `public/assets/sprites/`, `public/assets/portraits/`의 게임용 이미지를 만들어요.
-- 쿠사수·팀장님 초상화와 맵 타일·장비 그림은 외부 이미지 없이 코드로 그린 픽셀 아트예요 (`src/ui/Portrait.tsx`, `src/game/`).
+- **사자 캐릭터**는 팀이 직접 만든 32×32 픽셀 스프라이트예요. 원본 시트 · 메타데이터 · 생성 스크립트(Python Pillow)는 `art/lion_sprite/`에 있고, 게임은 `public/assets/sprites/lion.png`와 먼지 효과 시트(`dust_*.png`)를 그대로 써요.
+- 대화 초상화(사자 · 쿠사수 · 팀장님 · 안내), 맵 타일 · 장비 그림, 타이틀 배경은 외부 이미지 없이 코드로 그린 픽셀 아트예요 (`src/game/art/`).

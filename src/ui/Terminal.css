@@ -12,6 +12,23 @@
   min-height: 320px;
 }
 
+/* The current objective's why and steps are in the side box: a little wider, and the cheat sheet keeps a few rows. */
+.term-wrap.has-guide {
+  grid-template-columns: minmax(0, 1fr) 330px;
+}
+.term-wrap.has-guide .term-help {
+  min-height: 120px;
+}
+.term-wrap.has-guide .og-why-text {
+  padding: 4px 8px;
+}
+.term-wrap.has-guide .term-goals .og {
+  font-size: 12px;
+}
+.term-wrap.has-guide .term-goals .og .og-steps > .og-step {
+  font-size: 12px;
+}
+
 .term-screen {
   min-width: 0;
   min-height: 0;
@@ -58,6 +75,26 @@
 .term-tip {
   margin: 2px 0 6px;
   font-size: 12px;
+}
+/* IOS: the mode the session is in, in plain words, and the way back */
+.term-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  margin: 6px 0 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(95, 212, 208, 0.1);
+  border: 1px solid rgba(95, 212, 208, 0.4);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.term-mode code {
+  font-family: var(--mono);
+  color: #8ee6e2;
+}
+.term-mode-back {
+  color: var(--muted);
 }
 .term-help ul {
   list-style: none;
@@ -139,8 +176,26 @@
   justify-content: space-between;
 }
 .term-inc-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   font-size: 13px;
   line-height: 1.35;
+}
+/* Severity icon before the title: a red siren for Critical, an amber warning sign otherwise */
+.term-inc-sev { color: var(--amber); }
+.term-inc-sev.critical { color: var(--red-2); }
+/* The caller's words, under the incident's title */
+.term-inc-alert {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #f1c9cb;
+}
+.term-inc-acts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
 }
 .term-hint-btn {
   font-size: 12px;
@@ -156,6 +211,21 @@
 /* No incident: the box lists the objectives (the objective panel is behind this window). */
 .term-goals h3 {
   color: var(--tan);
+}
+/* With the current objective's why and steps it can grow: it scrolls before the cheat sheet is squeezed out. */
+.term-goals {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.term-goal-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .term-incidents .term-goal-list {
   gap: 5px;
@@ -197,9 +267,27 @@
   font-size: 12px;
   color: var(--muted);
 }
+/* Today's work is done: what is left to save, and the way home */
+.term-done {
+  border-color: var(--tan);
+}
+.term-leave-btn {
+  margin-top: 8px;
+  width: 100%;
+}
+/* Cards earned here wait until the window closes (a card never takes the keyboard mid-command) */
+.term-held {
+  margin: 0;
+  padding: 6px 10px;
+  border: 2px dashed var(--tan);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--tan);
+}
 
 @media (max-width: 760px) {
-  .term-wrap {
+  .term-wrap,
+  .term-wrap.has-guide {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(260px, 1fr) auto;
     height: auto;

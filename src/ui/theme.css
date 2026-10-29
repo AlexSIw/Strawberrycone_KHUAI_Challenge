@@ -38,6 +38,9 @@ button { font: inherit; color: inherit; }
 
 .pixel { font-family: var(--pixel); letter-spacing: 0.02em; }
 
+/* 8 x 8 pixel icons (PixelIcon): sit on the text baseline, never squash in flex rows */
+.pxi { display: inline-block; flex-shrink: 0; vertical-align: -3px; }
+
 .btn {
   font-family: var(--pixel);
   background: var(--panel-2);

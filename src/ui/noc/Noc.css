@@ -1,0 +1,346 @@
+/* NOC console: tabs (noc-), NMS map/alarms/device (nms-), SMS extras (sms-), FMS gauges (fms-). */
+
+/* ----- tabs ----- */
+.noc-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-bottom: 12px;
+  border-bottom: 2px solid var(--line);
+  flex-wrap: wrap;
+}
+.noc-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 14px 7px;
+  margin-bottom: -2px;
+  border: 2px solid var(--line);
+  border-bottom-color: transparent;
+  border-radius: 8px 8px 0 0;
+  background: var(--panel);
+  cursor: pointer;
+  font-family: var(--pixel);
+}
+.noc-tab b { font-weight: 400; font-size: 15px; }
+.noc-tab small { font-family: var(--body); font-size: 11px; color: var(--muted); }
+.noc-tab.on { background: var(--panel-2); border-color: var(--tan); border-bottom-color: var(--panel-2); }
+.noc-tab.on b { color: var(--tan); }
+.noc-tab:focus-visible { outline: 3px solid var(--blue); }
+.noc-count {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  min-width: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  border: 2px solid #8d1519;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+.noc-keys { margin-left: auto; align-self: center; font-size: 12px; }
+.noc-keys kbd { font-size: 10px; }
+
+/* ----- shared section head ----- */
+.nms-sec-head { margin-bottom: 8px; }
+.nms-sec-head h3 { margin: 0; font-family: var(--pixel); font-weight: 400; font-size: 15px; }
+.nms-sec-head p { margin: 3px 0 0; font-size: 12px; }
+
+/* ----- NMS layout ----- */
+.nms { display: flex; flex-direction: column; gap: 12px; }
+.nms-top { display: flex; flex-direction: column; gap: 12px; }
+/* The whole map (down to the TOR rows) fits on a 720-px screen under a calm alarm box. */
+.nms-map { max-height: min(560px, calc(100vh - 380px)); min-height: 240px; }
+.nms-mapbox, .nms-detail, .nms-alarms {
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+.nms-pick { margin: 8px 0; font-size: 13px; line-height: 1.6; }
+
+/* ----- topology map ----- */
+.nms-map { display: block; width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.nms-link { stroke-width: 3; stroke-linecap: round; }
+.nms-link.po { stroke-width: 6; }
+.nms-link.green { stroke: #4fd17a; }
+.nms-link.yellow { stroke: #ffb547; }
+.nms-link.red { stroke: #ff5a5f; animation: nms-flash 0.8s steps(2) infinite; }
+.nms-link.down { stroke: #5f5866; stroke-width: 2; }
+/* A spare switched off on purpose: thin and dotted, so it doesn't read as a broken (끊김) link */
+.nms-link.spare { stroke: #6f6878; stroke-width: 1.5; stroke-dasharray: 2 5; }
+.nms-link.blocked { stroke-dasharray: 7 6; opacity: 0.85; }
+@keyframes nms-flash {
+  50% { stroke: #a52a2e; }
+}
+.nms-note { font-family: var(--mono); font-size: 11.5px; fill: var(--muted); }
+.nms-caption { font-family: var(--body); font-size: 12px; fill: var(--muted); text-anchor: middle; }
+.nms-offtext { font-family: var(--body); font-size: 12px; fill: var(--red-2); text-anchor: middle; }
+
+.nms-cloud ellipse { fill: #2a2f45; stroke: #6ab7ff; stroke-width: 1.5; }
+.nms-cloud text { font-family: var(--pixel); font-size: 14px; fill: var(--text); text-anchor: middle; }
+
+.nms-node { cursor: pointer; }
+.nms-node rect { fill: #22305e; stroke: #4c5f9a; stroke-width: 2; }
+.nms-node.kind-router rect { fill: #3a2f4a; stroke: #7a6497; }
+.nms-node.kind-firewall rect { fill: #4a2a2e; stroke: #9a5a5f; }
+.nms-node.kind-lb rect { fill: #24443a; stroke: #4f9a7d; }
+.nms-node text { font-family: var(--mono); font-size: 12.5px; fill: var(--text); text-anchor: middle; pointer-events: none; }
+.nms-node.off rect { fill: #1b171f; stroke: #4a3c52; stroke-dasharray: 4 3; }
+.nms-node.off > text:first-of-type { fill: var(--muted); }
+.nms-node:hover rect, .nms-node:focus-visible rect { stroke: var(--tan); }
+.nms-node.sel rect { stroke: var(--tan); stroke-width: 3; }
+.nms-node:focus { outline: none; }
+
+.nms-badge circle { stroke: #15121a; stroke-width: 2; }
+.nms-badge.bad circle { fill: #d7262b; }
+.nms-badge.warn circle { fill: #ffb547; }
+.nms-badge text { font-family: var(--pixel); font-size: 12px; fill: #fff; text-anchor: middle; }
+.nms-badge.warn text { fill: #2a1410; }
+.nms-badge.pulse { animation: nms-pulse 0.9s steps(2) infinite; }
+@keyframes nms-pulse {
+  50% { opacity: 0.45; }
+}
+
+.nms-bus { stroke: #5f5866; stroke-width: 1.5; }
+.nms-stub { stroke-width: 2; }
+.nms-stub.green { stroke: #4fd17a; }
+.nms-stub.yellow { stroke: #ffb547; }
+.nms-stub.down { stroke: #5f5866; }
+.nms-stub.none { stroke: #5f5866; stroke-dasharray: 2 2; }
+.nms-srv { cursor: pointer; }
+.nms-srv rect { fill: #2f6b45; stroke: #4fd17a; stroke-width: 1; }
+.nms-srv.off rect { fill: #2a2330; stroke: #5f5866; }
+.nms-srv.absent rect { fill: transparent; stroke: #ffb547; stroke-dasharray: 2 2; }
+.nms-srv.alarm-bad rect { stroke: #ff5a5f; stroke-width: 2.5; }
+.nms-srv.alarm-warn rect { stroke: #ffb547; stroke-width: 2.5; }
+.nms-srv.sel rect, .nms-srv:hover rect, .nms-srv:focus-visible rect { stroke: var(--tan); stroke-width: 2.5; }
+.nms-srv:focus { outline: none; }
+
+.nms-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12px; }
+.nms-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.nms-legend .sw { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
+.nms-legend .sw.green { background: #4fd17a; }
+.nms-legend .sw.yellow { background: #ffb547; }
+.nms-legend .sw.red { background: #ff5a5f; }
+.nms-legend .sw.down { background: #5f5866; }
+.nms-legend .sw.spare { height: 2px; background: repeating-linear-gradient(90deg, #8a8294 0 2px, transparent 2px 6px); }
+.nms-legend .sw.dashed { background: repeating-linear-gradient(90deg, #4fd17a 0 5px, transparent 5px 9px); }
+
+/* ----- alarm list ----- */
+.nms-calm { margin: 4px 0; font-size: 13px; color: var(--green); }
+/* No alarm: title and "no alarm" on one line */
+.nms-alarms.calm { padding: 8px 12px; }
+.nms-alarms.calm .nms-sec-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0; }
+.nms-alarms.calm .nms-calm { margin: 0; }
+.nms-alarm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.nms-alarm {
+  display: grid;
+  grid-template-columns: 74px 64px minmax(80px, 110px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-left-width: 5px;
+  background: var(--panel);
+  font-size: 13px;
+}
+.nms-alarm.critical { border-left-color: #ff5a5f; background: #34202a; }
+.nms-alarm.major { border-left-color: #ff7a50; }
+.nms-alarm.minor { border-left-color: #ffb547; }
+.nms-alarm.warning { border-left-color: #6ab7ff; }
+.nms-alarm.acked { opacity: 0.6; background: var(--panel); }
+.nms-alarm.cleared { opacity: 0.55; border-left-color: var(--green); background: var(--panel); }
+.nms-sev {
+  font-family: var(--pixel);
+  font-size: 11px;
+  text-align: center;
+  padding: 2px 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+.nms-sev.critical { background: #d7262b; color: #fff; }
+.nms-sev.major { background: #c4502e; color: #fff; }
+.nms-sev.minor { background: #ffb547; color: #2a1410; }
+.nms-sev.warning { background: #22305e; color: #cfe4ff; border-color: #4c5f9a; }
+.nms-alarm-time { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.nms-alarm-dev {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--tan);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nms-alarm-dev:hover, .nms-alarm-dev:focus-visible { text-decoration: underline; outline: none; }
+.nms-alarm-text { line-height: 1.4; }
+.nms-alarm-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; font-size: 12px; }
+.nms-act { padding: 3px 8px; font-size: 12px; }
+.nms-fold {
+  margin: 8px 0 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.nms-fold:hover, .nms-fold:focus-visible { color: var(--text); text-decoration: underline; outline: none; }
+.nms-poll { margin: 8px 0 0; font-size: 12px; }
+
+/* ----- device detail ----- */
+.nms-dev { display: flex; flex-direction: column; gap: 8px; scroll-margin: 12px; }
+.nms-dev-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.nms-dev-head h3 { margin: 0; font-family: var(--pixel); font-weight: 400; font-size: 17px; }
+.nms-dev-head p { margin: 2px 0 0; font-size: 12px; }
+.nms-power { font-family: var(--pixel); font-size: 12px; white-space: nowrap; }
+.nms-mgmt { margin: 0; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nms-mgmt code, .nms-facts code, .nms-ports code, .sms-pool code, .sms-facts code, .sms-card code { font-family: var(--mono); font-size: 12px; color: var(--tan); }
+.nms-dirty { color: var(--amber); border-color: #8a6a2c; }
+
+.nms-panel-face {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  background: linear-gradient(180deg, #2b3446, #1f2635);
+  border: 2px solid #0b0e15;
+  border-radius: 6px;
+}
+.nms-port { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; width: 18px; }
+.nms-port small { font-family: var(--mono); font-size: 9px; color: #9fb4d4; }
+.nms-led { display: block; width: 12px; height: 8px; border-radius: 2px; background: #2c2e36; border: 1px solid #0b0910; }
+.nms-led.green { background: var(--green); box-shadow: 0 0 6px rgba(79, 209, 122, 0.7); animation: nms-blink 0.8s steps(2) infinite; }
+.nms-led.amber { background: var(--amber); box-shadow: 0 0 6px rgba(255, 181, 71, 0.6); }
+.nms-led.red { background: var(--red-2); }
+.nms-led.crc { background: var(--green); animation: nms-crc 0.7s steps(2) infinite; }
+@keyframes nms-blink {
+  50% { opacity: 0.35; }
+}
+@keyframes nms-crc {
+  50% { background: var(--amber); box-shadow: 0 0 6px rgba(255, 181, 71, 0.7); }
+}
+
+.nms-table-wrap { overflow-x: auto; }
+.nms-ports { margin-top: 0; font-size: 11.5px; }
+.nms-ports td, .nms-ports th { padding: 3px 5px; white-space: nowrap; }
+/* Trunk VLAN lists and peers may wrap so the counters stay in view. */
+.nms-ports td:nth-child(3), .nms-ports td:nth-child(4) { white-space: normal; }
+.nms-sub { margin: 4px 0 0; font-family: var(--pixel); font-weight: 400; font-size: 13px; }
+.nms-empty { margin: 0; font-size: 12px; }
+.nms-syslog {
+  margin: 0;
+  max-height: 170px;
+  overflow: auto;
+  padding: 8px;
+  background: #0d0b11;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #d7cfe0;
+}
+.nms-syslog .bad { color: var(--red-2); }
+.nms-syslog .warn { color: var(--amber); }
+.nms-ssh { align-self: flex-start; }
+.nms-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+.nms-facts dt { color: var(--muted); }
+.nms-facts dd { margin: 0; }
+
+/* ----- SMS extras ----- */
+.sms-grid { margin-bottom: 12px; }
+.sms-meter { display: block; height: 7px; border-radius: 4px; background: #3b3340; overflow: hidden; }
+.sms-meter i { display: block; height: 100%; border-radius: 4px; background: var(--green); transition: width 0.4s; }
+.sms-meter.warn i { background: var(--amber); }
+.sms-meter.bad i { background: var(--red-2); }
+.sms-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.sms-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-top-width: 5px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.sms-card.ok { border-top-color: var(--green); }
+.sms-card.warn { border-top-color: var(--amber); }
+.sms-card.bad { border-top-color: var(--red-2); }
+.sms-card.alert { border-color: var(--red-2); background: #34202a; }
+.sms-card span { font-family: var(--pixel); font-size: 12px; }
+.sms-server { margin: 0 0 8px; font-family: var(--pixel); font-size: 13px; }
+.sms-pool { margin-bottom: 8px; display: flex; flex-direction: column; gap: 3px; }
+.sms-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.sms-row .sms-meter { flex: 1; max-width: 50%; }
+.sms-pool-nums { font-size: 12px; color: var(--muted); }
+.sms-facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0 0 8px; font-size: 13px; }
+.sms-facts dt { color: var(--muted); }
+.sms-facts dd { margin: 0; }
+.sms-members { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.sms-chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); }
+.sms-chip.ok { border-color: #2c8a4b; color: var(--green); }
+.sms-chip.bad { border-color: #a52a2e; color: var(--red-2); background: #34202a; }
+.sms-chip.off { color: var(--muted); border-style: dashed; }
+
+/* ----- FMS ----- */
+.fms-note {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(106, 183, 255, 0.1);
+  border: 1px solid rgba(106, 183, 255, 0.4);
+  font-size: 13px;
+}
+.fms-gauges { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+/* A rack the facility cut off (fire): above the gauges, wide enough for its explanation */
+.fms-alert { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); margin-bottom: 12px; }
+.fms-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 5px;
+  border-radius: 8px;
+  min-width: 0;
+}
+.fms-gauge.ok { border-left-color: var(--green); }
+.fms-gauge.warn { border-left-color: var(--amber); }
+.fms-gauge.bad { border-left-color: var(--red-2); background: #34202a; }
+.fms-label { font-size: 12px; color: var(--muted); }
+.fms-value { font-size: 16px; font-variant-numeric: tabular-nums; }
+.fms-gauge.ok .fms-value { color: var(--green); }
+.fms-gauge.warn .fms-value { color: var(--amber); }
+.fms-gauge.bad .fms-value { color: var(--red-2); }
+.fms-gauge small { font-size: 11px; line-height: 1.35; }
+.fms-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; font-size: 13px; }
+
+@media (max-width: 980px) {
+  .nms-alarm { grid-template-columns: 70px 56px minmax(0, 1fr); }
+  .nms-alarm-text { grid-column: 1 / -1; }
+  .nms-alarm-acts { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nms-link.red, .nms-badge.pulse, .nms-led.green, .nms-led.crc { animation: none; }
+}
+
+/* Plain-Korean help under the port table and the syslog, and the gloss line under each syslog entry. */
+.nms-gloss { margin: 4px 0 6px; font-size: 12px; line-height: 1.5; }
+.nms-syslog-gloss { color: var(--muted); }

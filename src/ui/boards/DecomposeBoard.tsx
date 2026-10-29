@@ -12,19 +12,18 @@ import './DecomposeBoard.css';
 interface Card {
   id: string;
   label: string;
-  icon: string;
   kind: 'feature' | 'layer';
 }
 
 const CARDS: Card[] = [
-  { id: 'login', label: '로그인', icon: '🔑', kind: 'feature' },
-  { id: 'course', label: '과목조회', icon: '📚', kind: 'feature' },
-  { id: 'cart', label: '장바구니', icon: '🛒', kind: 'feature' },
-  { id: 'enroll', label: '수강신청', icon: '📝', kind: 'feature' },
-  { id: 'notify', label: '알림', icon: '🔔', kind: 'feature' },
-  { id: 'ui', label: '화면(UI)', icon: '🖥️', kind: 'layer' },
-  { id: 'logic', label: '비즈니스 로직', icon: '⚙️', kind: 'layer' },
-  { id: 'db', label: '데이터베이스', icon: '🗄️', kind: 'layer' },
+  { id: 'login', label: '로그인', kind: 'feature' },
+  { id: 'course', label: '과목조회', kind: 'feature' },
+  { id: 'cart', label: '장바구니', kind: 'feature' },
+  { id: 'enroll', label: '수강신청', kind: 'feature' },
+  { id: 'notify', label: '알림', kind: 'feature' },
+  { id: 'ui', label: '화면(UI)', kind: 'layer' },
+  { id: 'logic', label: '비즈니스 로직', kind: 'layer' },
+  { id: 'db', label: '데이터베이스', kind: 'layer' },
 ];
 
 const BY_ID: Record<string, Card> = Object.fromEntries(CARDS.map((c) => [c.id, c]));
@@ -43,26 +42,15 @@ function shuffle<T>(xs: T[]): T[] {
 
 export function DecomposeBoard() {
   const app = useGame((s) => s.run?.world.app);
-  const crashed = useGame((s) => s.run?.scenarios.find((x) => x.id === 's4-monolith')?.state !== 'waiting');
   if (!app) {
     return (
-      <ModalFrame title="설계 보드" icon="📋" size="narrow">
-        <p className="muted">이 단계에서는 설계 보드를 쓰지 않아요.</p>
+      <ModalFrame title="설계 보드" size="narrow">
+        <p className="muted">오늘은 설계 보드를 쓰지 않아요.</p>
       </ModalFrame>
     );
   }
   if (app.arch === 'msa') return <ArchView services={app.services} />;
-  if (!crashed) {
-    // Redesigning before anything goes wrong would skip the stage's lesson.
-    return (
-      <ModalFrame title="설계 보드" icon="📋" size="narrow">
-        <p style={{ lineHeight: 1.7, margin: 0 }}>
-          지금 구조: 수강신청 앱 하나(모놀리스)가 로그인·과목조회·장바구니·신청·알림을 전부 맡고 있어요.
-        </p>
-        <p className="muted">아직은 설계를 바꿀 이유가 없어요. 수강신청이 시작되면 대시보드를 지켜보세요.</p>
-      </ModalFrame>
-    );
-  }
+  // v2: splitting the monolith is D-3's own build mission (it opens after the SMS look), not a fix after a crash.
   return <Puzzle />;
 }
 
@@ -120,7 +108,6 @@ function Puzzle() {
     return (
       <ModalFrame
         title="설계 보드 · 서비스 분리"
-        icon="📋"
         size="wide"
         footer={
           <>
@@ -137,22 +124,20 @@ function Puzzle() {
         <div className="dcb-done-grid">
           {CARDS.filter((c) => c.kind === 'feature').map((c) => (
             <div key={c.id} className="dcb-done-shop">
-              <div className="dcb-done-name">
-                {c.icon} {c.label}
-              </div>
-              <div className="dcb-db">🗄️ {c.id}-db</div>
+              <div className="dcb-done-name">{c.label}</div>
+              <div className="dcb-db">{c.id}-db</div>
             </div>
           ))}
         </div>
         <ul className="dcb-explain">
           <li>
-            <b>🏪 매장마다 자기 창고(DB)</b> — 각 서비스는 자기 데이터베이스만 써요. 남의 창고엔 들어가지 않아요.
+            <b>매장마다 자기 창고(DB)</b> — 각 서비스는 자기 데이터베이스만 써요. 남의 창고엔 들어가지 않아요.
           </li>
           <li>
-            <b>📞 대화는 카운터(API)로</b> — 수강신청이 과목 정보가 필요하면 과목조회 서비스에 API로 물어봐요.
+            <b>대화는 카운터(API)로</b> — 수강신청이 과목 정보가 필요하면 과목조회 서비스에 API로 물어봐요.
           </li>
           <li>
-            <b>📻 "신청 완료" 방송</b> — 수강신청은 "신청 완료!"라고 라디오처럼 방송만 해요. 알림은 그 방송을 구독(subscribe)해서
+            <b>"신청 완료" 방송</b> — 수강신청은 "신청 완료!"라고 라디오처럼 방송만 해요. 알림은 그 방송을 구독(subscribe)해서
             메일을 보내요. 이게 <b>pub-sub</b>! 알림이 죽어도 신청은 계속돼요.
           </li>
         </ul>
@@ -233,14 +218,13 @@ function Puzzle() {
       }}
       title="끌어서 매장에 놓거나, 클릭한 뒤 매장을 클릭하세요"
     >
-      <span aria-hidden>{c.icon}</span> {c.label}
+      {c.label}
     </div>
   );
 
   return (
     <ModalFrame
       title="설계 보드 · 모놀리스 쪼개기"
-      icon="📋"
       size="wide"
       footer={
         <>
@@ -254,11 +238,11 @@ function Puzzle() {
       <div className="dcb-now">
         <span className="tag">지금</span>
         <span>
-          <b>모놀리스</b> = 주방 하나인 큰 식당. 🔑📚🛒📝🔔 가 전부 한 덩어리라, 알림 하나가 터지면 다 멈춰요.
+          <b>모놀리스</b> = 주방 하나인 큰 식당. 로그인·과목조회·장바구니·수강신청·알림이 전부 한 덩어리라, 알림 하나가 터지면 다 멈춰요.
         </span>
       </div>
       <p className="dcb-todo">
-        👉 기능 카드를 끌어서 빈 매장(서비스)에 하나씩 넣어주세요. <span className="muted">(클릭 → 매장 클릭도 돼요)</span>
+        기능 카드를 끌어서 빈 매장(서비스)에 하나씩 넣어주세요. <span className="muted">(클릭 → 매장 클릭도 돼요)</span>
       </p>
 
       <div className="dcb-shops">
@@ -272,10 +256,10 @@ function Puzzle() {
               aria-label={`매장 ${i + 1}`}
               {...spotProps(i)}
             >
-              <div className="dcb-shop-head">🏪 매장 {i + 1}</div>
+              <div className="dcb-shop-head">매장 {i + 1}</div>
               <div className="dcb-shop-body">
                 {cards.length ? cards.map(cardEl) : <span className="dcb-empty">비어 있음</span>}
-                {putButton(i, '👇 여기에 놓기')}
+                {putButton(i, '여기에 놓기')}
               </div>
             </div>
           );
@@ -289,7 +273,7 @@ function Puzzle() {
         {...spotProps(null)}
       >
         <div className="dcb-pool-head">
-          🃏 카드 더미 {putButton(null, '↩ 더미로 되돌리기')}
+          카드 더미 {putButton(null, '↩ 더미로 되돌리기')}
         </div>
         <div className="dcb-pool-cards">{pool.length ? pool.map(cardEl) : <span className="dcb-empty">모든 카드를 배치했어요</span>}</div>
       </div>
@@ -302,7 +286,7 @@ function Puzzle() {
 function MentorSays({ text, tone }: { text: string; tone?: 'bad' | 'warn' }) {
   return (
     <div className={`dcb-mentor ${tone ? `is-${tone}` : ''}`}>
-      <Portrait who="mentor" size={44} />
+      <Portrait who="mentor" size={32} />
       <p>{text}</p>
     </div>
   );
@@ -323,8 +307,6 @@ const POS: Record<string, { x: number; y: number }> = {
   notify: { x: 500, y: 370 },
   cart: { x: 860, y: 370 },
 };
-
-const ICON: Record<string, string> = { login: '🔑', course: '📚', cart: '🛒', enroll: '📝', notify: '🔔' };
 
 const STATUS = {
   up: { label: '정상', color: 'var(--green)' },
@@ -390,19 +372,19 @@ function ArchView({ services }: { services: Record<string, AppService> }) {
       const b = at.get(owner);
       if (a && b) {
         links.push(
-          flagForeignDb ? makeLink(`db-${s.name}-${owner}`, a, b, 'db', '⚠ 남의 DB', 28) : makeLink(`db-${s.name}-${owner}`, a, b, 'dbPlain', `${db} 읽기`, 28),
+          flagForeignDb ? makeLink(`db-${s.name}-${owner}`, a, b, 'db', '남의 DB', 28) : makeLink(`db-${s.name}-${owner}`, a, b, 'dbPlain', `${db} 읽기`, 28),
         );
       }
     }
   }
   const enroll = at.get('enroll');
   const notify = at.get('notify');
-  if (enroll && notify) links.push(makeLink('pubsub', enroll, notify, 'pubsub', '📻 "신청 완료" 방송', 0));
+  if (enroll && notify) links.push(makeLink('pubsub', enroll, notify, 'pubsub', '"신청 완료" 방송', 0));
 
   const foreignDb = flagForeignDb && list.some((s) => s.dbAccess.some((d) => d !== `${s.name}-db`));
 
   return (
-    <ModalFrame title="설계 보드 · 현재 구조 (MSA)" icon="📋" size="wide">
+    <ModalFrame title="설계 보드 · 현재 구조 (MSA)" size="wide">
       <p className="dcb-todo">
         이미 기능별 서비스로 나눴어요. 이 그림은 보기 전용이고, 조치는 <b>관리 PC 터미널</b>에서 해요.
       </p>
@@ -450,7 +432,7 @@ function ArchView({ services }: { services: Record<string, AppService> }) {
               <g key={s.name} className="dcb-svc">
                 <rect x={x} y={y} width={BOX_W} height={BOX_H} rx={12} className="dcb-svc-box" style={{ stroke: st.color }} />
                 <text x={x + 16} y={y + 32} className="dcb-svc-name">
-                  {ICON[s.name] ?? '📦'} {s.label}
+                  {s.label}
                 </text>
                 <rect x={x + BOX_W - 82} y={y + 14} width={68} height={26} rx={13} style={{ fill: st.color }} opacity={0.22} />
                 <text x={x + BOX_W - 48} y={y + 32} textAnchor="middle" className="dcb-svc-status" style={{ fill: st.color }}>
@@ -461,13 +443,13 @@ function ArchView({ services }: { services: Record<string, AppService> }) {
                   {s.installing.length ? ` · 설치 중 ${s.installing.length}` : ''}
                 </text>
                 <text x={x + 16} y={y + 94} className="dcb-svc-db">
-                  🗄️ {own}
+                  {own}
                 </text>
                 {s.dbAccess
                   .filter((d) => d !== own)
                   .map((d, k) => (
                     <text key={d} x={x + 16} y={y + 118 + k * 20} className={`dcb-svc-db ${flagForeignDb ? 'bad' : ''}`}>
-                      {flagForeignDb ? `⚠ ${d} 직접 읽는 중` : `🗄️ ${d} 사용`}
+                      {flagForeignDb ? `${d} 직접 읽는 중` : `${d} 사용`}
                     </text>
                   ))}
               </g>
