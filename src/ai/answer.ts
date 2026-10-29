@@ -45,6 +45,22 @@ export function commandLine(sc: Pick<Scenario, 'solutionSteps' | 'checks' | 'fix
     .join(' / ');
 }
 
+/** How 쿠사수's lines start in the terminal: the name in bright yellow, then the text. */
+export const MENTOR_TAG = '\x1b[93m쿠사수>\x1b[0m ';
+/**
+ * The lines after the first sit under its text ('쿠사수> ' is 8 cells wide). The leading reset is invisible; it
+ * tells the terminal's word wrap these are 쿠사수's lines, not some other output that starts with spaces.
+ */
+export const MENTOR_INDENT = `\x1b[0m${' '.repeat(8)}`;
+
+/** An answer as terminal lines: the first after the name, the rest lined up under it. */
+export const terminalLines = (text: string): string[] =>
+  text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l, i) => (i === 0 ? MENTOR_TAG : MENTOR_INDENT) + l);
+
 /** The answer when the AI can't give one: the incident's title, its 할 일, and the blank-shape 명령 line. */
 export const incidentGuide = (sc: Pick<Scenario, 'title' | 'todo' | 'solutionSteps' | 'checks' | 'fixHow'>, from?: string): string =>
   formatGuide({ situation: sc.title, todo: sc.todo, command: commandLine(sc, from) });

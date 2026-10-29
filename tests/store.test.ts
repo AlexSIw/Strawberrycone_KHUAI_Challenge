@@ -20,6 +20,9 @@ import { cardAccess, dayRecap, FIRST_STAGE, fixedIncidentCards, missionCards, st
 import { CONCEPTS } from '../src/content/concepts';
 import { getStage } from '../src/content/stages';
 import type { Objective } from '../src/content/types';
+import { hintTarget } from '../src/ai/client';
+import { runCommand } from '../src/sim/commands';
+import { startStage } from '../src/sim/engine';
 import { initRuntime, type Scenario, type Trigger } from '../src/sim/scenario';
 import { LAST_DAY, type StageId } from '../src/sim/types';
 import {
@@ -71,7 +74,15 @@ function synth(id: string, over: Partial<Scenario> = {}): Scenario {
     ...over,
   };
 }
-DAY.scenarios.push(synth('s-trap'), synth('s-poll', { severity: 'critical', alarm: { source: 'poll', device: 'TOR-01', text: '업링크 사용률 100%' } }));
+DAY.scenarios.push(
+  synth('s-trap'),
+  synth('s-poll', { severity: 'critical', alarm: { source: 'poll', device: 'TOR-01', text: '업링크 사용률 100%' } }),
+  synth('s-hint', {
+    todo: '꺼진 포트 다시 켜기',
+    checks: ['show logging'],
+    solutionSteps: [{ ios: ['enable', 'configure terminal', 'interface Gi1/0/5', 'no shutdown', 'end'], host: 'TOR-01' }],
+  }),
+);
 
 /** Starts a day with its briefing (and the first missions' 미션 브리핑) clicked through; on D-5 only `plan` happens. */
 function play(stage: StageId, plan: { id: string; trigger: Trigger }[] = []) {
@@ -88,6 +99,99 @@ const tickUntil = (until: () => boolean, max = 120) => {
 };
 const scState = (id: string) => S().run?.scenarios.find((x) => x.id === id)?.state;
 const fixIt = (id: string) => S().act((w) => void (w.flags[id] = false));
+
+// eslint-disable-next-line no-control-regex
+const plain = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+
+describe('the terminal `hint`', () => {
+  /** fetch that waits until `release()` (then fails, as with no Worker running). */
+  let release: () => void = () => {};
+  const lateFetch = () => vi.stubGlobal('fetch', () => new Promise((_res, rej) => (release = () => rej(new Error('no worker')))));
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    play(0, [{ id: 's-hint', trigger: { type: 'stageStart' } }]);
+    tickUntil(() => scState('s-hint') === 'active');
+    S().openModal({ type: 'terminal', host: 'ops' });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('answers in the terminal, no window: 생각 중 now, then 상황·할 일·명령 in the log and in the radio thread', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('no worker')));
+    const out = S().command('hint');
+    expect(windows()).toEqual(['terminal:ops']);
+    expect(out.lines.map(plain)).toEqual(['쿠사수> 생각 중…']);
+    await vi.waitFor(() => expect(S().hintPending).toBe(false));
+    expect(S().terminal.log.slice(-3).map(plain)).toEqual([
+      '쿠사수> 상황: s-hint 장애',
+      '        할 일: 꺼진 포트 다시 켜기',
+      '        명령: ssh TOR-01 → (확인) show logging → (고치기) enable → conf t → interface <포트> → no shutdown → end → wr',
+    ]);
+    expect(S().terminalFeed).toMatchObject({ origin: 'ops' });
+    expect(S().hints['s-hint'].map((m) => m.from)).toEqual(['player', 'mentor']);
+    // H opens the radio on that incident.
+    expect(S().windowState['hint:tab']).toEqual({ v: 's-hint' });
+    expect(S().terminal.history).toEqual(['hint']);
+    expect(S().run!.ctx.events).not.toContain('open:mentor');
+  });
+
+  it('one question at a time: a second `hint` while the first is on its way says so', async () => {
+    lateFetch();
+    S().command('hint');
+    expect(S().hintThread).toBe('s-hint');
+    expect(S().command('hint').lines.map(plain)[0]).toContain('다른 질문에 답하는 중');
+    release();
+    await vi.waitFor(() => expect(S().hintPending).toBe(false));
+    expect(S().hintThread).toBeNull();
+  });
+
+  it('a late answer: dropped after a restart; kept out of a terminal that has moved to another host', async () => {
+    lateFetch();
+    S().command('hint');
+    play(0, [{ id: 's-hint', trigger: { type: 'stageStart' } }]);
+    release();
+    await settle();
+    expect(S().terminal.log.map(plain).join('\n')).not.toContain('쿠사수> 상황');
+    expect(S().hints).toEqual({});
+
+    tickUntil(() => scState('s-hint') === 'active');
+    S().openModal({ type: 'terminal', host: 'ops' });
+    lateFetch();
+    S().command('hint');
+    gameStore.setState({ terminal: { ...S().terminal, host: 'TOR-01' } });
+    release();
+    await vi.waitFor(() => expect(S().hintPending).toBe(false));
+    expect(S().terminal.log.map(plain).join('\n')).not.toContain('쿠사수> 상황');
+    expect(S().hints['s-hint'].at(-1)).toMatchObject({ from: 'mentor', source: 'canned' });
+  });
+
+  it('works on a switch prompt too, in any mode, and leaves the mode as it was', () => {
+    const w = startStage(1).world;
+    for (const level of ['user', 'exec', 'config', 'config-if'] as const) {
+      const r = runCommand('hint', w, 'TOR-01', 1, { level });
+      expect(r).toMatchObject({ hint: true, lines: [], mode: { level } });
+      expect(r.host).toBeUndefined();
+    }
+  });
+
+  it('is about the incident fixed on this host, else the one that started first; else the open mission', () => {
+    const run = startStage(1);
+    run.scenarios = initRuntime([
+      { id: 'd4-dns:0', trigger: { type: 'stageStart' } },
+      { id: 'd4-vlan:0', trigger: { type: 'stageStart' } },
+    ]);
+    const [dns, vlan] = run.scenarios;
+    Object.assign(dns, { state: 'active', activatedAt: 10 });
+    Object.assign(vlan, { state: 'active', activatedAt: 20 });
+    expect(hintTarget(run, 'TOR-01')).toEqual({ kind: 'incident', id: 'd4-vlan:0' });
+    expect(hintTarget(run, 'ops')).toEqual({ kind: 'incident', id: 'd4-dns:0' });
+    // One handed to another team is not ours to hint at.
+    dns.escalatedAt = 30;
+    expect(hintTarget(run, 'ops')).toEqual({ kind: 'incident', id: 'd4-vlan:0' });
+    vlan.state = 'resolved';
+    expect(hintTarget(run, 'ops')).toEqual({ kind: 'mission' });
+  });
+});
 
 describe('window stack', () => {
   beforeEach(() => play(0));
@@ -120,16 +224,6 @@ describe('window stack', () => {
     expect(S().modal).toEqual({ type: 'terminal', host: 'ops' });
     expect(S().terminal).toBe(session);
     expect(S().terminalOrigin).toBe('ops');
-  });
-
-  it('the `hint` command opens the radio on top of the terminal', () => {
-    S().openModal({ type: 'terminal', host: 'ops' });
-    S().command('hint');
-    expect(windows()).toEqual(['hint', 'terminal:ops']);
-    expect(S().run!.ctx.events).toContain('open:mentor');
-    S().closeModal();
-    expect(windows()).toEqual(['terminal:ops']);
-    expect(S().terminal.history).toEqual(['hint']);
   });
 
   it('the same window again is updated in place, not stacked', () => {

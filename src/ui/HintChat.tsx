@@ -44,13 +44,6 @@ const CALM_LINES: Record<number, string> = {
 /** Severity tone for the colors (the stylesheet has two: red and amber). */
 const tone = (sev: AlarmSev) => (sev === 'critical' || sev === 'major' ? 'critical' : 'warning');
 
-/**
- * Incident the pending answer belongs to. The store only keeps a yes/no `hintPending`, so without
- * this the "typing…" bubble would show in whichever tab is open. Lives outside React so it
- * survives closing and reopening the radio while the answer is on its way.
- */
-let askingFor: string | null = null;
-
 /** 상황 / 할 일 / 명령 as three labelled rows, the command in code type; anything else as a paragraph. */
 function MentorText({ text }: { text: string }) {
   const g = parseGuide(text);
@@ -171,7 +164,7 @@ function AskBox({ inputRef, text, setText, onAsk, pending, placeholder }: {
 function MissionView({ run, tabbed }: { run: StageRun; tabbed: boolean }) {
   const thread = useGame((s) => s.hints[MISSION_THREAD]) ?? [];
   const pending = useGame((s) => s.hintPending);
-  const typingHere = pending && askingFor === MISSION_THREAD;
+  const typingHere = useGame((s) => s.hintPending && s.hintThread === MISSION_THREAD);
   // A question typed but not sent yet stays in the box after closing the radio.
   const [text, setText] = useStageState('hint:ask:mission', '');
   const listRef = useRef<HTMLDivElement>(null);
@@ -193,7 +186,6 @@ function MissionView({ run, tabbed }: { run: StageRun; tabbed: boolean }) {
 
   const send = (question?: string) => {
     if (gameStore.getState().hintPending) return;
-    askingFor = MISSION_THREAD;
     void gameStore.getState().askMission(question);
   };
 
@@ -253,8 +245,8 @@ function MissionView({ run, tabbed }: { run: StageRun; tabbed: boolean }) {
 function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; resolved: boolean }) {
   const thread = useGame((s) => s.hints[sc.id]) ?? [];
   const pending = useGame((s) => s.hintPending);
-  /** The answer being typed is for this incident (not another tab's). */
-  const typingHere = pending && askingFor === sc.id;
+  /** The answer being typed is for this incident (not another tab's; the terminal's `hint` asks too). */
+  const typingHere = useGame((s) => s.hintPending && s.hintThread === sc.id);
   const revealed = run.revealed.includes(sc.id);
   // A question typed but not sent yet stays in the box (per incident) after closing the radio.
   const [text, setText] = useStageState(`hint:ask:${sc.id}`, '');
@@ -277,7 +269,6 @@ function IncidentView({ run, sc, resolved }: { run: StageRun; sc: Scenario; reso
 
   const send = (question?: string) => {
     if (gameStore.getState().hintPending) return;
-    askingFor = sc.id;
     void gameStore.getState().askHint(sc.id, question);
   };
 

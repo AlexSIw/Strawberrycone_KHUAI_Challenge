@@ -20,7 +20,8 @@ export interface CmdResult {
   /** Events for objectives/scenarios, e.g. "dhcp_enabled" */
   events?: string[];
   clear?: boolean;
-  openHint?: boolean;
+  /** The player typed `hint`: 쿠사수 answers in the terminal (the store asks, the answer comes later) */
+  hint?: boolean;
   /** IOS mode after the line: ssh into a switch sets { level: 'user' }; leaving it sets null */
   mode?: IosMode | null;
 }

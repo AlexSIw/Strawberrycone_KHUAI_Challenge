@@ -98,10 +98,28 @@ export function buildSnapshot(run: StageRun, host: string, iosMode?: string | nu
     busiestLinks: busiestLinks(w),
     availability: Math.round(run.health.availability * 100),
     notes: run.health.notes,
-    recentCommands: run.ctx.commands.slice(-6),
+    // Asking 쿠사수 is not something tried on the system.
+    recentCommands: run.ctx.commands.filter((c) => !/^hint$/i.test(c)).slice(-6),
     host,
     ...(iosMode ? { iosMode } : {}),
   };
+}
+
+/** What the terminal's `hint` asks about. */
+export type HintTarget = { kind: 'incident'; id: string } | { kind: 'mission' };
+
+/**
+ * An incident going on (not one handed to another team): the one whose fix is typed on `host`, else the one
+ * that started first. With none, the mission in focus while it is open; else nothing to ask about (null).
+ */
+export function hintTarget(run: StageRun, host: string): HintTarget | null {
+  const live = activeScenarios(run)
+    .filter((a) => a.rt.escalatedAt === null)
+    .sort((a, b) => (a.rt.activatedAt ?? 0) - (b.rt.activatedAt ?? 0));
+  const pick = live.find((a) => a.def.solutionSteps.some((s) => 'host' in s && s.host === host)) ?? live[0];
+  if (pick) return { kind: 'incident', id: pick.rt.id };
+  const o = missionInFocus(getStage(run.stage), run);
+  return o && !(o.id in run.objectivesDone) ? { kind: 'mission' } : null;
 }
 
 export interface HintRequest {

@@ -1,6 +1,8 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
 import { useEffect, useRef } from 'react';
+import { MENTOR_INDENT, MENTOR_TAG } from '../ai/answer';
+import { escapeRe } from '../ai/leak';
 import { getStage } from '../content/stages';
 import { available, osOf, promptFor } from '../sim/commands';
 import type { HostOs } from '../sim/commands/types';
@@ -74,27 +76,22 @@ const crlf = (s: string) => s.replace(/\r?\n/g, '\r\n');
 // eslint-disable-next-line no-control-regex
 const DIM_LINE = /^\x1b\[90m([^\x1b\n]*)\x1b\[0m$/;
 
-/**
- * A dim Korean gloss line wider than the terminal, broken at spaces into lines that fit (xterm itself would
- * cut it mid-word: 'Pr|i', 'Session|s'). Continuation lines are indented one cell. Other lines (output,
- * tables) are left as they are.
- */
-function softWrap(line: string, cols: number): string[] {
-  const m = DIM_LINE.exec(line);
-  if (!m || cols < 20 || cellWidth(m[1]) <= cols - 1) return [line];
-  const max = cols - 1;
+/** One of 쿠사수's lines (answer.ts terminalLines): its lead (the name, or the indent under it), then the text. */
+const MENTOR_LINE = new RegExp(`^(${escapeRe(MENTOR_TAG)}|${escapeRe(MENTOR_INDENT)})(.*)$`);
+
+/** `text` broken at spaces into rows of at most `max` cells (`cont` leads each row after the first); a word longer than a row is cut by cells. */
+function wrapWords(text: string, max: number, cont = ''): string[] {
   const rows: string[] = [];
   let cur = '';
-  for (const word of m[1].split(' ')) {
+  for (const word of text.split(' ')) {
     const next = cur ? `${cur} ${word}` : word;
     if (cur.trim() && cellWidth(next) > max) {
       rows.push(cur);
-      cur = ` ${word}`;
+      cur = `${cont}${word}`;
     } else cur = next;
   }
   if (cur) rows.push(cur);
-  // A single word longer than a line is cut by cells.
-  const fitted = rows.flatMap((r) => {
+  return rows.flatMap((r) => {
     if (cellWidth(r) <= max) return [r];
     const parts: string[] = [];
     let part = '';
@@ -107,7 +104,23 @@ function softWrap(line: string, cols: number): string[] {
     }
     return part ? [...parts, part] : parts;
   });
-  return fitted.map((r) => DIM(r));
+}
+
+/**
+ * A line wider than the terminal, broken at spaces into lines that fit (xterm itself would cut it mid-word:
+ * 'Pr|i', 'Session|s'): a dim Korean gloss (continuation lines indented one cell), or one of 쿠사수's lines
+ * (continuation lines under its text). Other lines (output, tables) are left as they are.
+ */
+function softWrap(line: string, cols: number): string[] {
+  const mentor = MENTOR_LINE.exec(line);
+  if (mentor) {
+    const max = cols - 1 - cellWidth(mentor[1]);
+    if (max < 12 || cellWidth(mentor[2]) <= max) return [line];
+    return wrapWords(mentor[2], max).map((r, i) => (i === 0 ? mentor[1] : MENTOR_INDENT) + r);
+  }
+  const m = DIM_LINE.exec(line);
+  if (!m || cols < 20 || cellWidth(m[1]) <= cols - 1) return [line];
+  return wrapWords(m[1], cols - 1, ' ').map((r) => DIM(r));
 }
 /** Home + erase screen + erase scrollback, sent through the write queue so it lands after earlier output. */
 const CLEAR_ALL = '\x1b[H\x1b[2J\x1b[3J';
@@ -157,6 +170,8 @@ interface LineEditor {
   /** Replace the line being typed (used by the help list, and to draw the prompt with the saved line on open) */
   setLine(text: string): void;
   handleData(data: string): void;
+  /** Lines that came after the prompt was back (쿠사수's answer to `hint`), above it; already in the store's log */
+  printAbove(lines: string[]): void;
 }
 
 /**
@@ -249,7 +264,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     term.write(lines.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
   };
 
-  /** Returns false when the terminal went away (e.g. `hint` opened the radio). */
+  /** Returns false when the terminal went away. */
   const enter = (): boolean => {
     toEnd();
     const line = chars.join('');
@@ -266,8 +281,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     store().setTerminalDraft('');
     stash = '';
     const trimmed = typed.trim();
-    // Runs on this session's host and adds the line to its history.
-    // (`hint` opens the radio in its place through openModal, so "open:mentor" is recorded.)
+    // Runs on this session's host and adds the line to its history. (`hint` answers later: printAbove.)
     const res = store().command(line, record);
     hIndex = history().length;
     // Typing in 한글 mode turns "help" into "ㅗ디ㅔ": tell beginners how to switch.
@@ -285,7 +299,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     }
     print(lines);
     newPrompt();
-    // A command may have opened another window (the hint radio); stop handling pasted lines then.
+    // A command may have opened another window; stop handling pasted lines then.
     return store().modal?.type === 'terminal';
   };
 
@@ -295,6 +309,14 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     store().appendTerminal([prompt + chars.join('') + '^C']);
     hIndex = history().length;
     newPrompt();
+  };
+
+  const printAbove = (lines: string[]) => {
+    if (!lines.length) return;
+    const up = row > 0 ? `\x1b[${row}A` : '';
+    term.write(up + '\r\x1b[J' + lines.flatMap((l) => softWrap(l, term.cols)).map((l) => crlf(l) + '\r\n').join(''));
+    row = 0;
+    render();
   };
 
   /** IOS: `?` lists what can come next for the line so far, then the prompt comes back with the line as it was. */
@@ -543,7 +565,7 @@ function createLineEditor(term: XTerm, isAlive: () => boolean): LineEditor {
     saveDraft();
   };
 
-  return { setLine, handleData };
+  return { setLine, handleData, printAbove };
 }
 
 /**
@@ -688,6 +710,11 @@ export function Terminal({ host }: { host: string }) {
     // Prompt for the host the session is on (still there after ssh), with the line left half-typed.
     editor.setLine(s.terminal.draft ?? '');
     const sub = term.onData((d) => editor.handleData(d));
+    // 쿠사수's answer to `hint` comes after the prompt is back: print it above the line being typed.
+    const unfeed = gameStore.subscribe((st, prev) => {
+      const f = st.terminalFeed;
+      if (alive && f && f !== prev.terminalFeed && f.origin === st.terminalOrigin) editor.printAbove(f.lines);
+    });
 
     const ro = new ResizeObserver(() => requestAnimationFrame(refit));
     ro.observe(el);
@@ -701,6 +728,7 @@ export function Terminal({ host }: { host: string }) {
       cancelAnimationFrame(raf);
       ro.disconnect();
       sub.dispose();
+      unfeed();
       editorRef.current = null;
       termRef.current = null;
       // open() queues a setTimeout that syncs the scroll area; disposing before it runs makes it throw

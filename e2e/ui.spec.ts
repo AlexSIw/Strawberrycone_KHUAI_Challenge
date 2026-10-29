@@ -151,6 +151,25 @@ test('터미널 옆 상자: 조용할 땐 지금 목표, 장애가 나면 지금
   await expect(sideBox(page, '지금 장애').getByRole('button', { name: '쿠사수 힌트' })).toBeVisible();
   await expect(sideBox(page, '지금 목표')).toHaveCount(0);
 
+  // `hint` answers in the terminal (no window opens), about that incident, with the fix's values blank.
+  await run(page, 'hint');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().hintPending)).toBe(false);
+  await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('쿠사수> 상황: 수강신청 사이트 접속 불가');
+  const log = await page.evaluate(() => (window as unknown as Win).__store.getState().terminal.log.join('\n'));
+  expect(log).toContain('lb health set');
+  await expect(title(page)).toHaveText(/터미널 — ops/);
+  await expect.poll(() => inputRow(page)).toBe('ops@khu-dc:~$');
+  // The radio has the same answer as a 상황·할 일·명령 card, and 정답 보기 is there without any hint ladder.
+  await sideBox(page, '지금 장애').getByRole('button', { name: '쿠사수 힌트' }).click();
+  await expect(title(page)).toHaveText(/쿠사수 무전기/);
+  await expect(page.locator('.hc-guide dt').first()).toHaveText('상황');
+  await expect(page.locator('.hc-guide dt')).toHaveText(['상황', '할 일', '명령']);
+  await page.getByRole('button', { name: '정답 보기' }).click();
+  await expect(page.getByRole('alertdialog', { name: '정답 보기 확인' })).toContainText('15점');
+  await page.getByRole('button', { name: '아니요' }).click();
+  await page.keyboard.press('Escape');
+  await expect(title(page)).toHaveText(/터미널 — ops/);
+
   // Fixed (the check's path and port both put right): back to the missions.
   await run(page, 'ssh L4-01');
   await run(page, 'lb health set path /health');
@@ -201,14 +220,15 @@ test('창 위에 연 창은 닫으면 원래 창으로: 터미널 세션 그대�
   await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$ hostname');
 
-  // The `hint` command opens the radio on top of the terminal too.
+  // The `hint` command answers in the terminal itself: no window on top, the prompt back as it was.
   await focusTerminal(page);
   await page.keyboard.press('Control+U');
   await typeLine(page, 'hint');
-  await expect(title(page)).toHaveText(/쿠사수 무전기/);
-  await page.keyboard.press('Escape');
-  await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hint');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().hintPending)).toBe(false);
+  await expect.poll(() => rows(page).then((r) => r.some((l) => l.startsWith('쿠사수>')))).toBe(true);
+  await expect(title(page)).toHaveText(/터미널 — web/);
+  await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
 
   await page.keyboard.press('Escape');
   await expect(page.locator('.modal-backdrop')).toHaveCount(0);

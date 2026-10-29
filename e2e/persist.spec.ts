@@ -157,12 +157,12 @@ test('창 상태 기억: 장소별 터미널 세션 (ssh, 스크롤, ↑ 기록,
   await page.keyboard.press('ArrowDown');
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
 
-  // `hint` opens the radio on top of the terminal; closing it comes back to the same session (still on web).
+  // `hint` answers in the same session (still on web), no window on top; the prompt comes back as it was.
   await typeLine(page, 'hint');
-  await expect(title(page)).toHaveText(/쿠사수 무전기/);
-  await page.keyboard.press('Escape');
-  await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => rows(page).then((r) => r.join('\n'))).toContain('web@khu-dc:~$ hint');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Win).__store.getState().hintPending)).toBe(false);
+  await expect.poll(() => rows(page).then((r) => r.some((l) => l.startsWith('쿠사수>')))).toBe(true);
+  await expect(title(page)).toHaveText(/터미널 — web/);
   await expect.poll(() => inputRow(page)).toBe('web@khu-dc:~$');
   await closeWindow(page);
 

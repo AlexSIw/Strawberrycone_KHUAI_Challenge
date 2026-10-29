@@ -42,7 +42,7 @@ const base: Command[] = [
     }),
   },
   { name: 'clear', aliases: ['cls'], minStage: 0, os: ['linux', 'lb', 'fw'], usage: 'clear', summary: '화면 지우기', run: () => ({ lines: [], clear: true }) },
-  { name: 'hint', minStage: 0, os: ['linux', 'lb', 'fw'], usage: 'hint', summary: '쿠사수에게 힌트 요청', run: () => ({ lines: [dim('쿠사수를 불렀어요…')], openHint: true }) },
+  { name: 'hint', minStage: 0, os: ['linux', 'lb', 'fw'], usage: 'hint', summary: '쿠사수에게 지금 할 일 묻기 (무료)', run: () => ({ lines: [], hint: true }) },
 ];
 
 export const ALL_COMMANDS: Command[] = [...base, ...netCommands, ...infraCommands, ...webCommands, ...svcCommands, ...dockerCommands, ...k8sCommands];
@@ -91,6 +91,8 @@ export function runCommand(line: string, world: World, host: string, stage: Stag
   if (os === 'ios') {
     // `clear` alone clears the screen on the switch too (as on the 관리 PC; IOS's own clear needs more words).
     if (/^\s*(clear|cls)\s*$/i.test(line)) return { lines: [], clear: true, mode, world };
+    // `hint` asks 쿠사수 from any mode, as on the 관리 PC (IOS itself has no such command).
+    if (/^\s*hint\s*$/i.test(line)) return { lines: [], hint: true, mode, world };
     const w = clone(world);
     try {
       const res = runIos(line, w, host, mode ?? USER_MODE, stage);

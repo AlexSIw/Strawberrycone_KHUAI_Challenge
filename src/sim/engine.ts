@@ -235,7 +235,8 @@ export interface CommandOutcome {
   /** IOS mode after the line (null: a shell, or the session left the device) */
   mode: IosMode | null;
   clear: boolean;
-  openHint: boolean;
+  /** The line was `hint` */
+  hint: boolean;
   completed: string[];
 }
 
@@ -254,7 +255,7 @@ export function applyCommand(prev: StageRun, line: string, host: string, mode: I
     host: res.host ?? host,
     mode: res.mode === undefined ? mode : res.mode,
     clear: !!res.clear,
-    openHint: !!res.openHint,
+    hint: !!res.hint,
     completed: evaluateObjectives(def, run),
   };
 }

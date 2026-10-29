@@ -1,13 +1,14 @@
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
-import { GUIDE_ASK } from '../ai/answer';
-import { requestHintText, requestMissionText } from '../ai/client';
+import { GUIDE_ASK, terminalLines } from '../ai/answer';
+import { hintTarget, NO_MISSION, requestHintText, requestMissionText, type Want } from '../ai/client';
 import { missionCards } from '../content/cards';
 import { CONCEPTS } from '../content/concepts';
 import { getStage } from '../content/stages';
 import type { DialogueLine, InteractionKind, NocTab, Objective, SpotId, StageDef } from '../content/types';
 import { alarmLine } from '../sim/alarms';
 import { osOf } from '../sim/commands';
+import { dim } from '../sim/commands/types';
 import {
   ackAlarm,
   activeScenarios,
@@ -190,6 +191,13 @@ export interface GameState {
   stageEpoch: number;
   hints: Record<string, HintMessage[]>;
   hintPending: boolean;
+  /** The thread (incident id or MISSION_THREAD) the pending answer is for, so the "typing…" bubble shows there */
+  hintThread: string | null;
+  /**
+   * Lines that arrived for a terminal place after its command returned (쿠사수's answer to `hint`). They are in
+   * that session's log already; an open Terminal prints them above its prompt. `seq` tells repeats apart.
+   */
+  terminalFeed: { seq: number; origin: string; lines: string[] } | null;
   lastScore: Score | null;
   /** Best points for this stage before the run that just ended (null: first clear) */
   lastPrevBest: number | null;
@@ -550,6 +558,65 @@ export const gameStore = createStore<GameState>()((set, get) => {
    * until no window is open, so whatever the player was doing (a terminal mid-`write memory`, the FMS
    * tab the last mission asked to look at) stays on screen; 퇴근하기 in the HUD ends the day at once.
    */
+  /**
+   * Ask 쿠사수 in a radio thread (an incident id or MISSION_THREAD) and put the answer there. Free. No question:
+   * "what now?" in the player's name. Resolves to the answer, or null when nothing was asked or the stage
+   * started again meanwhile (the answer belongs to the old run).
+   */
+  const askInThread = async (thread: string, question?: string, want?: Want): Promise<HintMessage | null> => {
+    const s = get();
+    if (!s.run || s.hintPending) return null;
+    const run = s.run;
+    const sc = thread === MISSION_THREAD ? undefined : getStage(run.stage).scenarios.find((x) => x.id === thread);
+    if (thread !== MISSION_THREAD && !sc) return null;
+    const history = [...(s.hints[thread] ?? []), { from: 'player' as const, text: question || GUIDE_ASK }];
+    set({ hintPending: true, hintThread: thread, hints: { ...s.hints, [thread]: history } });
+    const term = get().terminal;
+    const where = { question, want, history, host: term.host, iosMode: term.mode?.level ?? null };
+    const reply = sc ? await requestHintText({ run, scenario: sc, ...where }) : await requestMissionText({ run, ...where });
+    const cur = get();
+    if (cur.stageEpoch !== s.stageEpoch) return null;
+    const msg: HintMessage = { from: 'mentor', text: reply.text, source: reply.source };
+    set({ hintPending: false, hintThread: null, hints: { ...cur.hints, [thread]: [...(cur.hints[thread] ?? history), msg] } });
+    return msg;
+  };
+
+  /**
+   * Late lines for a terminal place: into its session's log, and to its open Terminal. Dropped when the stage
+   * started again, or when that session has moved to another host since (the radio thread still has them).
+   */
+  const pushTerminal = (origin: string, host: string, epoch: number, lines: string[]) => {
+    const cur = get();
+    if (cur.stageEpoch !== epoch) return;
+    const active = cur.terminalOrigin === origin;
+    const session = active ? cur.terminal : cur.terminals[origin];
+    if (!session || session.host !== host) return;
+    const next = { ...session, log: [...session.log, ...lines].slice(-MAX_LOG) };
+    if (active) set({ terminal: next, terminalFeed: { seq: (cur.terminalFeed?.seq ?? 0) + 1, origin, lines } });
+    else set({ terminals: { ...cur.terminals, [origin]: next } });
+  };
+
+  /**
+   * The terminal's `hint`: what the player is stuck on (an incident, else the mission), asked as a guide. Returns
+   * the lines to print now; 쿠사수's three lines follow when the answer comes (pushTerminal), and land in the
+   * radio thread too, which H then opens on.
+   */
+  const terminalHint = (): string[] => {
+    const s = get();
+    if (!s.run) return [];
+    if (s.hintPending) return terminalLines('다른 질문에 답하는 중이야. 조금 뒤에 다시 hint 해 줘.');
+    const target = hintTarget(s.run, s.terminal.host);
+    if (!target) return terminalLines(NO_MISSION);
+    const thread = target.kind === 'incident' ? target.id : MISSION_THREAD;
+    if (target.kind === 'incident') get().setWindowState('hint:tab', target.id);
+    const { terminalOrigin: origin, stageEpoch: epoch } = s;
+    const host = s.terminal.host;
+    void askInThread(thread, undefined, 'guide').then((msg) => {
+      if (msg) pushTerminal(origin, host, epoch, terminalLines(msg.text));
+    });
+    return [dim('쿠사수> 생각 중…')];
+  };
+
   const afterChange = (run: StageRun) => {
     const s = get();
     if (s.screen !== 'playing' || s.dialogue) return;
@@ -617,6 +684,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
     stageEpoch: 0,
     hints: {},
     hintPending: false,
+    hintThread: null,
+    terminalFeed: null,
     lastScore: null,
     lastPrevBest: null,
     fixing: false,
@@ -653,6 +722,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
         toasts: [],
         hints: {},
         hintPending: false,
+        hintThread: null,
+        terminalFeed: null,
         // Every place's terminal and every window's half-done work start over with the stage.
         terminal: freshSession('ops'),
         terminalOrigin: 'ops',
@@ -775,10 +846,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
         return { run: res.run, terminal: { ...st.terminal, host, mode, history: next } };
       });
       objectiveToasts(res.run, res.completed);
-      if (res.openHint) {
-        const active = activeScenarios(res.run)[0];
-        get().openModal({ type: 'hint', scenarioId: active?.rt.id });
-      }
+      if (res.hint) lines = [...lines, ...terminalHint()];
       afterChange(res.run);
       return { lines, clear: res.clear };
     },
@@ -845,43 +913,9 @@ export const gameStore = createStore<GameState>()((set, get) => {
     dismissConcept: () => set((s) => ({ concepts: s.concepts.slice(1) })),
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
-    askHint: async (scenarioId, question) => {
-      const s = get();
-      if (!s.run || s.hintPending) return;
-      const def = getStage(s.run.stage);
-      const sc = def.scenarios.find((x) => x.id === scenarioId);
-      if (!sc) return;
-      // Free: the 힌트 받기 button asks "what now?" for the player, a typed question goes as it is.
-      const thread = [...(s.hints[scenarioId] ?? []), { from: 'player' as const, text: question || GUIDE_ASK }];
-      set({ hintPending: true, hints: { ...s.hints, [scenarioId]: thread } });
-      const term = get().terminal;
-      const reply = await requestHintText({ run: s.run, scenario: sc, question, history: thread, host: term.host, iosMode: term.mode?.level ?? null });
-      const cur = get();
-      // The stage was started again while the answer was on its way: it belongs to the old run.
-      if (cur.stageEpoch !== s.stageEpoch) return;
-      const updated = [...(cur.hints[scenarioId] ?? thread), { from: 'mentor' as const, text: reply.text, source: reply.source }];
-      set({ hintPending: false, hints: { ...cur.hints, [scenarioId]: updated } });
-    },
-
-    askMission: async (question) => {
-      const s = get();
-      if (!s.run || s.hintPending) return;
-      const thread = [...(s.hints[MISSION_THREAD] ?? []), { from: 'player' as const, text: question || GUIDE_ASK }];
-      set({ hintPending: true, hints: { ...s.hints, [MISSION_THREAD]: thread } });
-      const term = get().terminal;
-      const reply = await requestMissionText({
-        run: s.run,
-        question,
-        history: thread,
-        host: term.host,
-        iosMode: term.mode?.level ?? null,
-      });
-      const cur = get();
-      // The stage was started again while the answer was on its way: it belongs to the old run.
-      if (cur.stageEpoch !== s.stageEpoch) return;
-      const updated = [...(cur.hints[MISSION_THREAD] ?? thread), { from: 'mentor' as const, text: reply.text, source: reply.source }];
-      set({ hintPending: false, hints: { ...cur.hints, [MISSION_THREAD]: updated } });
-    },
+    // Free: the 힌트 받기 / 다음 단계 buttons ask "what now?" for the player, a typed question goes as it is.
+    askHint: async (scenarioId, question) => void (await askInThread(scenarioId, question)),
+    askMission: async (question) => void (await askInThread(MISSION_THREAD, question)),
 
     reveal: (scenarioId) => {
       const s = get();
