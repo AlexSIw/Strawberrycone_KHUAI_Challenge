@@ -9,6 +9,7 @@ import type { World } from '../../sim/types';
 import { gameStore, interactionAt, type GameState } from '../../store/game';
 import { ARROW_SCREEN_SCALE } from '../art/markers';
 import { MENTOR_ANIM } from '../art/mentor';
+import { canDash, DASH_COOLDOWN_MS, DASH_DIST, DASH_MS, DASH_SPEED, dashDir, GHOST_ALPHA, GHOST_EVERY_MS, GHOST_FADE_MS } from '../dash';
 import { EventBus } from '../EventBus';
 import {
   DECOR,
@@ -201,6 +202,16 @@ export class DataCenter extends Phaser.Scene {
   private facing: Facing = 'down';
   /** The interact gesture already played while windows stayed open (back at the device it holds, not replays). */
   private interactShown: string | null = null;
+  /**
+   * The dash in progress (Space): which way, where the body started (it ends after DASH_DIST, whatever the frame
+   * rate), a time cap in case it gets stuck, and when the next afterimage is due.
+   */
+  private dash: { dx: number; dy: number; x0: number; y0: number; until: number; nextGhost: number } | null = null;
+  /** No new dash before this loop time (the cooldown). */
+  private dashReadyAt = 0;
+  /** Pooled afterimages of the dashing lion (copies of its current frame that fade out). */
+  private ghosts!: Phaser.GameObjects.Group;
+  private reducedMotion = false;
   private area: AreaId | null = null;
   private near: { spot: SpotDef; kind: InteractionKind } | null = null;
   private inputReadyAt = 0;
@@ -269,6 +280,8 @@ export class DataCenter extends Phaser.Scene {
     this.covers = [];
     this.coversAt = 0;
     this.interactShown = null;
+    this.dash = null;
+    this.dashReadyAt = 0;
   }
 
   create(): void {
@@ -576,6 +589,8 @@ export class DataCenter extends Phaser.Scene {
     this.player.setCollideWorldBounds(true);
     // dust lies on the floor: over the room labels, under every y-sorted object (depth = its feet y)
     attachLionDust(this, this.player, DEPTH.label + 1);
+    this.ghosts = this.add.group({ maxSize: 8 });
+    this.reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (this.anims.exists('lion-idle-down')) this.player.play('lion-idle-down');
   }
 
@@ -599,7 +614,8 @@ export class DataCenter extends Phaser.Scene {
     // Use the key's down event rather than polling JustDown: a quick tap whose keydown and keyup
     // land in the same frame would otherwise be lost (Key.onUp clears the just-down flag).
     this.keys.e.on(Phaser.Input.Keyboard.Events.DOWN, this.onActionKey, this);
-    this.keys.space.on(Phaser.Input.Keyboard.Events.DOWN, this.onActionKey, this);
+    // Space dashes; only E interacts.
+    this.keys.space.on(Phaser.Input.Keyboard.Events.DOWN, this.onDashKey, this);
 
     // While walking around (no window open), stop Space/arrows from scrolling the page or re-clicking a focused HUD button.
     const onKeyDown = (e: KeyboardEvent) => {
@@ -611,6 +627,54 @@ export class DataCenter extends Phaser.Scene {
     };
     window.addEventListener('keydown', onKeyDown);
     this.cleanups.push(() => window.removeEventListener('keydown', onKeyDown));
+  }
+
+  /** The movement keys held right now, as -1/0/1 per axis. */
+  private heldDir(): { vx: number; vy: number } {
+    const k = this.keys;
+    return {
+      vx: (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0),
+      vy: (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0),
+    };
+  }
+
+  /** Space: a short leap the way the keys point (or the lion faces), once the last one has cooled down. */
+  private onDashKey(): void {
+    const now = this.game.loop.now;
+    if (this.dash || now < this.inputReadyAt || !canDash(now, this.dashReadyAt) || isBlocked(gameStore.getState())) return;
+    const { vx, vy } = this.heldDir();
+    const { dx, dy } = dashDir(vx, vy, this.facing);
+    const b = this.player.body as Phaser.Physics.Arcade.Body;
+    this.dash = { dx, dy, x0: b.x, y0: b.y, until: now + DASH_MS * 3, nextGhost: now };
+  }
+
+  private endDash(now: number): void {
+    this.dash = null;
+    this.dashReadyAt = now + DASH_COOLDOWN_MS;
+  }
+
+  /** Did the dash run into a wall or a device (the body is stopped on the side it is heading for)? */
+  private dashBlocked(dx: number, dy: number): boolean {
+    const b = this.player.body as Phaser.Physics.Arcade.Body;
+    const hit = (side: 'left' | 'right' | 'up' | 'down') => b.blocked[side] || b.touching[side];
+    return (dx > 0 && hit('right')) || (dx < 0 && hit('left')) || (dy > 0 && hit('down')) || (dy < 0 && hit('up'));
+  }
+
+  /** One afterimage: a copy of the lion's current frame where it stands, fading out (the art itself is untouched). */
+  private spawnGhost(): void {
+    const p = this.player;
+    const g = this.ghosts.get(p.x, p.y, p.texture.key, p.frame.name) as Phaser.GameObjects.Sprite | null;
+    if (!g) return;
+    this.tweens.killTweensOf(g);
+    g.setActive(true)
+      .setVisible(true)
+      .setTexture(p.texture.key, p.frame.name)
+      .setPosition(p.x, p.y)
+      .setOrigin(p.originX, p.originY)
+      .setScale(p.scaleX, p.scaleY)
+      .setDepth(p.depth - 0.5)
+      .setAlpha(GHOST_ALPHA);
+    this.tweens.add({ targets: g, alpha: 0, duration: GHOST_FADE_MS, onComplete: () => this.ghosts.killAndHide(g) });
   }
 
   private onActionKey(): void {
@@ -938,21 +1002,34 @@ export class DataCenter extends Phaser.Scene {
     const s = gameStore.getState();
     const blocked = isBlocked(s);
     if (blocked) this.inputReadyAt = time + 200;
+    // A window opening mid-dash stops it.
+    if (blocked && this.dash) this.endDash(time);
 
-    let vx = 0;
-    let vy = 0;
-    if (!blocked) {
-      const k = this.keys;
-      if (k.left.isDown || k.a.isDown) vx -= 1;
-      if (k.right.isDown || k.d.isDown) vx += 1;
-      if (k.up.isDown || k.w.isDown) vy -= 1;
-      if (k.down.isDown || k.s.isDown) vy += 1;
-    }
+    let { vx, vy } = blocked ? { vx: 0, vy: 0 } : this.heldDir();
     // Walking straight up or down into the wall beside a door: slide toward the opening, so the lion
     // doesn't need lining up to the pixel.
     if (vx === 0 && vy !== 0) vx = this.doorNudge(vy);
-    const moving = vx !== 0 || vy !== 0;
-    if (moving) {
+    // The leap overrides walking. It ends after DASH_DIST (the last step slowed so it lands exactly there), or
+    // early against a wall or a device.
+    if (this.dash) {
+      const d = this.dash;
+      const b = this.player.body as Phaser.Physics.Arcade.Body;
+      const left = DASH_DIST - Math.hypot(b.x - d.x0, b.y - d.y0);
+      if (left < 0.5 || time >= d.until || this.dashBlocked(d.dx, d.dy)) this.endDash(time);
+    }
+    const dash = this.dash;
+    const moving = vx !== 0 || vy !== 0 || dash !== null;
+    if (dash) {
+      const b = this.player.body as Phaser.Physics.Arcade.Body;
+      const left = DASH_DIST - Math.hypot(b.x - dash.x0, b.y - dash.y0);
+      const v = Math.min(DASH_SPEED, left * this.physics.world.fps);
+      this.player.setVelocity(dash.dx * v, dash.dy * v);
+      this.facing = facingFor(dash.dx, dash.dy, this.facing);
+      if (!this.reducedMotion && time >= dash.nextGhost) {
+        this.spawnGhost();
+        dash.nextGhost = time + GHOST_EVERY_MS;
+      }
+    } else if (moving) {
       const len = Math.hypot(vx, vy);
       this.player.setVelocity((vx / len) * SPEED, (vy / len) * SPEED);
       this.facing = facingFor(vx, vy, this.facing);
@@ -963,7 +1040,8 @@ export class DataCenter extends Phaser.Scene {
     // animation
     const fixing = s.fixing && !!s.modal;
     const anim = lionAnim({ moving, facing: this.facing, fixing });
-    this.player.anims.timeScale = 1;
+    // the run cycle hurries through the leap
+    this.player.anims.timeScale = dash ? 1.6 : 1;
     // Only on a change of pose: the interact animation plays once and then holds its last frame. Closing a
     // window opened on top (the radio over the terminal) comes back to the held frame instead of replaying it.
     // (A sheet that failed to load has no animation: don't warn "Missing animation" every frame.)

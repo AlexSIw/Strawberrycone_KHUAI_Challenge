@@ -71,7 +71,7 @@ const buildD5 = (page: Page) =>
     return ids.every((id) => s().run!.world.devices[id].installed);
   });
 
-/** Uses a map hotspot (desk, rack1, board…), as walking up to it and pressing Space does. */
+/** Uses a map hotspot (desk, rack1, board…), as walking up to it and pressing E does. */
 const interact = (page: Page, spot: string) => page.evaluate((s) => (window as unknown as Win).__store.getState().interact(s as never), spot);
 
 const title = (page: Page) => page.locator('.modal-head h2');

@@ -11,7 +11,7 @@
 // Typing and clicking go through the real UI; the app's store (imported through Vite, like e2e/persist.spec.ts)
 // only starts days, skips dialogue, runs the clock, clicks concept cards away and uses map hotspots.
 import { expect, test, type Page } from '@playwright/test';
-import { PLAYER_SPAWN_PX } from '../src/game/map';
+import { PLAYER_SPAWN_PX, TILE } from '../src/game/map';
 
 type GameStore = (typeof import('../src/store/game'))['gameStore'];
 /** The page's window with the app's store on it (see exposeStore). */
@@ -65,7 +65,7 @@ const runUntilIncident = (page: Page, want: boolean) =>
     return now();
   }, want);
 
-/** Uses a map hotspot (desk, rack1, board…), as walking up to it and pressing Space does. */
+/** Uses a map hotspot (desk, rack1, board…), as walking up to it and pressing E does. */
 const interact = (page: Page, spot: string) => page.evaluate((s) => (window as unknown as Win).__store.getState().interact(s as never), spot);
 
 const title = (page: Page) => page.locator('.modal-head h2');
@@ -354,6 +354,74 @@ test('걷기 속도: 한 가지 속도, 걷기 동작은 기본 속도로', asyn
   expect(walk.speed).toBeGreaterThan(200);
   expect(walk.speed).toBeLessThan(360);
   expect(walk.timeScale).toBe(1);
+
+  expect(problems).toEqual([]);
+});
+
+type DashScene = {
+  player: Lion;
+  facing: string;
+  modal?: unknown;
+  ghosts: { getChildren(): { visible: boolean }[] };
+};
+const dashScene = (page: Page) =>
+  page.evaluate(() => {
+    const sc = (window as GameWin).__khuGame!.scene.getScene('DataCenter') as unknown as DashScene;
+    return { x: sc.player.x, y: sc.player.y, ghosts: sc.ghosts.getChildren().filter((g) => g.visible).length };
+  });
+
+test('Space 대시: 앞으로 2칸 도약, 잔상, 0.5초 쿨다운, Space로는 상호작용 안 함', async ({ page }) => {
+  const problems = watchProblems(page);
+  await start(page);
+  await play(page, 3);
+  await waitForLion(page);
+  // Standing still in the corridor, facing right: a dash goes the way the lion faces.
+  await page.evaluate((spawn) => {
+    const sc = (window as GameWin).__khuGame!.scene.getScene('DataCenter') as unknown as DashScene;
+    sc.player.body.reset(spawn.x, spawn.y);
+    sc.facing = 'right';
+  }, PLAYER_SPAWN_PX);
+  await page.waitForTimeout(300);
+  const a = await dashScene(page);
+  await page.keyboard.press('Space');
+  // afterimages while it leaps
+  await expect.poll(async () => (await dashScene(page)).ghosts).toBeGreaterThan(0);
+  await page.waitForTimeout(250);
+  const b = await dashScene(page);
+  expect(b.x - a.x).toBeGreaterThan(1.6 * TILE);
+  expect(b.x - a.x).toBeLessThan(2.4 * TILE);
+  expect(b.y).toBeCloseTo(a.y, 0);
+
+  // Still cooling down: a second press does nothing.
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(250);
+  const c = await dashScene(page);
+  expect(Math.abs(c.x - b.x)).toBeLessThan(4);
+  // The afterimages have faded.
+  expect(c.ghosts).toBe(0);
+
+  // Once cooled down it dashes again.
+  await page.waitForTimeout(400);
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(300);
+  expect((await dashScene(page)).x - c.x).toBeGreaterThan(1.6 * TILE);
+
+  // Next to the 관리 PC desk: Space doesn't open it, E does.
+  const nearDesk = async () => {
+    await page.evaluate((t) => {
+      const sc = (window as GameWin).__khuGame!.scene.getScene('DataCenter') as unknown as DashScene;
+      sc.player.body.reset(26 * t, 19.4 * t);
+      sc.facing = 'down';
+    }, TILE);
+    await page.waitForTimeout(700);
+  };
+  await nearDesk();
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => (window as unknown as Win).__store.getState().modal)).toBeNull();
+  await nearDesk();
+  await page.keyboard.press('e');
+  await expect(title(page)).toHaveText(/터미널/);
 
   expect(problems).toEqual([]);
 });
