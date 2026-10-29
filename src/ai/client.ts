@@ -256,7 +256,7 @@ export function cannedMission(run: StageRun, o: Objective | undefined, question 
     o ? missionShown(o) : [],
   );
   const safe = parts.filter((p) => !leaks(p, banned));
-  return safe.length ? safe.join('\n') : '그건 지금 난 장애랑 얽혀 있어. 장애 탭에서 힌트를 받아보자!';
+  return safe.length ? safe.join('\n') : '그건 지금 터진 장애랑 얽혀 있어서 여기선 말 못 해. 장애 탭에서 힌트를 받아 보자!';
 }
 
 export interface MissionRequest {
