@@ -10,6 +10,26 @@ import { zoomFor } from '../game/view';
 import { ledLook, type LedState } from '../game/worldView';
 
 const SPECS = new Map(textureSpecs().map((s) => [s.key, s]));
+
+/** Width the menu's own column needs in the middle (logo, pitch line, buttons): racks stay outside it. */
+const CENTER_W = 720;
+
+/** How many racks fit on each side of the menu column at zoom z (at most two). */
+function racksPerSide(width: number, z: number): number {
+  const T = TILE * z;
+  const side = (width - CENTER_W) / 2 - Math.max(T / 2, width * 0.03);
+  return Math.max(0, Math.min(2, Math.floor((side + T / 4) / (RACK_TEX.w * z + T / 4))));
+}
+
+/**
+ * The backdrop is drawn half a zoom step bigger than the map would be on this screen (3 screen px per art px at
+ * 1080p) so the racks fill the empty sides of the menu; half steps keep every art pixel a whole number of screen
+ * px. Where not even one rack would fit at that size, it keeps the map's size.
+ */
+export function backdropZoom(width: number, height: number): number {
+  const base = zoomFor(width, height);
+  return racksPerSide(width, base + 0.5) > 0 ? base + 0.5 : base;
+}
 const BLINK_MS = 400;
 const BG = '#120f17';
 
@@ -32,8 +52,6 @@ interface Led {
   phase: number;
 }
 
-/** Racks per side for this width: two on wide screens, one on narrow ones, none on phones. */
-const racksPerSide = (width: number) => (width <= 560 ? 0 : width <= 900 ? 1 : 2);
 
 /** Draws the static scene and returns where its LEDs are. */
 function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, z: number): Led[] {
@@ -52,7 +70,7 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
 
   // racks standing on the floor at both sides, half full of servers
   const leds: Led[] = [];
-  const n = racksPerSide(width);
+  const n = racksPerSide(width, z);
   const rw = RACK_TEX.w * z;
   const rh = RACK_TEX.h * z;
   const gap = snap(T / 4);
@@ -128,7 +146,10 @@ export function TitleBackdrop() {
         c.height = h;
       }
       a.imageSmoothingEnabled = false;
-      leds = drawScene(a, w, h, zoomFor(window.innerWidth, window.innerHeight));
+      const z = backdropZoom(window.innerWidth, window.innerHeight);
+      // the menu keeps its buttons above the painted wall + floor (two tiles)
+      el.closest<HTMLElement>('.title-screen')?.style.setProperty('--title-floor-h', `${2 * TILE * z}px`);
+      leds = drawScene(a, w, h, z);
       drawLeds(b, leds, blink);
     };
     layout();
