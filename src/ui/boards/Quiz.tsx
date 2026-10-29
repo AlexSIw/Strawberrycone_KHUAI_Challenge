@@ -74,14 +74,19 @@ export function Quiz() {
   const answered = phase === 'right' || phase === 'cleared';
   const dots = view.questions.map((_, i) => (i < at || (i === at && answered) ? '●' : '○')).join('');
 
+  // The progress sits in the title bar, so it stays in sight when the explanation scrolls the body.
+  const title = (
+    <>
+      {TITLE}
+      <span className="qz-progress">
+        문제 {at + 1}/{view.questions.length} <span aria-hidden>{dots}</span>
+      </span>
+    </>
+  );
+
   return (
-    <ModalFrame title={TITLE} onClose={close} footer={footer}>
-      <div className="qz-top">
-        <span className="qz-progress">
-          문제 {at + 1}/{view.questions.length} <span aria-hidden>{dots}</span>
-        </span>
-        <p className="qz-todo">{TODO[phase]}</p>
-      </div>
+    <ModalFrame title={title} onClose={close} footer={footer}>
+      <p className="qz-todo">{TODO[phase]}</p>
       <div className="qz-board">
         <div className="qz-q" data-q={view.questions[at]}>
           Q. {question.question}
