@@ -612,24 +612,24 @@ describe('walking speed', () => {
 describe('toasts: the call from users, then the NMS alarm', () => {
   const texts = () => S().toasts.map((t) => `${t.source ?? '-'}|${t.text}`);
 
-  it('a trap: the 📞 complaint and the 🚨 alarm together; both go when the incident is fixed', () => {
+  it('a trap: the call and the NMS alarm together; both go when the incident is fixed', () => {
     play(0, [{ id: 's-trap', trigger: { type: 'stageStart', delay: 2 } }]);
     tickUntil(() => scState('s-trap') === 'active');
-    expect(texts()).toEqual(['user|📞 s-trap: 포털이 안 열려요', 'nms|🚨 Major(중요) · CAMPUS-ENG: s-trap 링크 다운']);
+    expect(texts()).toEqual(['user|s-trap: 포털이 안 열려요', 'nms|Major(중요) · CAMPUS-ENG: s-trap 링크 다운']);
     expect(S().toasts.every((t) => t.kind === 'alert' && t.scenarioId === 's-trap')).toBe(true);
     fixIt('s-trap');
     S().tick();
     expect(scState('s-trap')).toBe('resolved');
-    expect(texts()).toEqual(["-|🎉 's-trap 장애' 장애를 해결했어요!"]);
+    expect(texts()).toEqual(["-|'s-trap 장애' 장애를 해결했어요!"]);
   });
 
   it('a polled metric: users call first, the alarm only shows at the next poll', () => {
     play(0, [{ id: 's-poll', trigger: { type: 'stageStart', delay: 2 } }]);
     tickUntil(() => scState('s-poll') === 'active');
-    expect(texts()).toEqual(['user|📞 s-poll: 포털이 안 열려요']);
+    expect(texts()).toEqual(['user|s-poll: 포털이 안 열려요']);
     tickUntil(() => S().run!.alarms.length > 0);
     expect(S().run!.ctx.stageTime % 15).toBe(0);
-    expect(texts()).toEqual(['user|📞 s-poll: 포털이 안 열려요', 'nms|🚨 Critical(긴급) · TOR-01: 업링크 사용률 100%']);
+    expect(texts()).toEqual(['user|s-poll: 포털이 안 열려요', 'nms|Critical(긴급) · TOR-01: 업링크 사용률 100%']);
   });
 
   it('fixed before the poll: no alarm toast ever', () => {

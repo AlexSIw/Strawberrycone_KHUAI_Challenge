@@ -6,6 +6,7 @@ import { LAST_DAY } from '../sim/types';
 import { cardsWaitForIncident, gameStore, missionPreview, useGame } from '../store/game';
 import { availLevel, latencyLevel, type Level } from './levels';
 import { ModalFrame } from './ModalFrame';
+import { PixelIcon } from './PixelIcon';
 import { SoundToggle } from './SoundToggle';
 import './Hud.css';
 
@@ -98,9 +99,9 @@ export function Hud() {
     screen !== 'playing' || busy || modal === 'terminal' || !waiting
       ? null
       : modal
-        ? `📬 ${waiting} 대기 중 · ${incidentHold && held ? '장애를 해결하고 ' : ''}이 창을 닫으면 펼쳐져요`
+        ? `${waiting} 대기 중 · ${incidentHold && held ? '장애를 해결하고 ' : ''}이 창을 닫으면 펼쳐져요`
         : incidentHold
-          ? `🃏 ${waiting} 대기 중 · 장애를 해결하면 펼쳐져요`
+          ? `${waiting} 대기 중 · 장애를 해결하면 펼쳐져요`
           : null;
 
   /** Run a HUD action and drop focus, so a later Enter/Space doesn't press this button again. */
@@ -166,9 +167,10 @@ export function Hud() {
             className={`btn hud-btn ${modal === 'noc' ? 'on' : ''}`}
             onClick={press(toggle('noc'))}
             title="관제 화면(NOC) 열기 (N 또는 Tab)"
+            aria-label="관제 화면"
             aria-pressed={modal === 'noc'}
           >
-            <span aria-hidden>🖥️</span>
+            <PixelIcon name="monitor" />
             <span className="hud-btn-label">관제</span>
             <kbd>N</kbd>
           </button>
@@ -176,9 +178,10 @@ export function Hud() {
             className={`btn hud-btn ${modal === 'hint' ? 'on' : ''}`}
             onClick={press(toggle('hint'))}
             title="쿠사수에게 힌트 받기 (H)"
+            aria-label="쿠사수 무전기"
             aria-pressed={modal === 'hint'}
           >
-            <span aria-hidden>📻</span>
+            <PixelIcon name="radio" />
             <span className="hud-btn-label">쿠사수</span>
             <kbd>H</kbd>
           </button>
@@ -186,9 +189,10 @@ export function Hud() {
             className={`btn hud-btn ${modal === 'concepts' ? 'on' : ''}`}
             onClick={press(toggle('concepts'))}
             title="모은 개념 카드 보기 (C)"
+            aria-label="개념 도감"
             aria-pressed={modal === 'concepts'}
           >
-            <span aria-hidden>📖</span>
+            <PixelIcon name="book" />
             <span className="hud-btn-label">도감</span>
             <kbd>C</kbd>
           </button>
@@ -196,17 +200,16 @@ export function Hud() {
             <kbd>M</kbd>
           </SoundToggle>
           <button className="btn hud-btn hud-speed" onClick={press(() => store.cycleMoveSpeed())} title="이동 속도" aria-label={`이동 속도 ${speed}x`}>
-            <span aria-hidden>🏃</span>
+            <span className="hud-btn-label">속도</span>
             <span className="hud-speed-value">{speed}x</span>
           </button>
           {dayDone ? (
             <button className="btn primary hud-btn hud-leave" onClick={press(() => store.leaveWork())} title="오늘 일을 마치고 일일 리포트 보기">
-              <span aria-hidden>🏠</span>
               <span className="hud-btn-label">퇴근하기 ▶</span>
             </button>
           ) : (
-            <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="처음 화면으로 나가기">
-              <span aria-hidden>🚪</span>
+            <button className="btn hud-btn hud-exit" onClick={press(() => setConfirmExit(true))} title="처음 화면으로 나가기" aria-label="나가기">
+              <PixelIcon name="door" />
               <span className="hud-btn-label">나가기</span>
             </button>
           )}

@@ -33,9 +33,9 @@ export const SEV_LABEL: Record<AlarmSev, string> = {
   warning: 'Warning(주의)',
 };
 
-/** Toast / alarm-list line: '🚨 Major(중요) · TOR-01: 포트 Gi1/0/5 링크 다운'. */
+/** Toast / alarm-list line: 'Major(중요) · TOR-01: 포트 Gi1/0/5 링크 다운'. */
 export function alarmLine(a: Pick<Alarm, 'sev' | 'device' | 'text'>, deviceLabel = a.device): string {
-  return `🚨 ${SEV_LABEL[a.sev]} · ${deviceLabel}: ${a.text}`;
+  return `${SEV_LABEL[a.sev]} · ${deviceLabel}: ${a.text}`;
 }
 
 /**

@@ -4,7 +4,7 @@
 //    backdrop), with the terminal session as it was;
 //  - IOS sessions: ssh into gear shows its prompt, `?` is answered on the keystroke, Ctrl+Z, exit, and a
 //    switch's own console stays on the switch;
-//  - the 🏃 speed button cycles 1x → 1.5x → 2x, is remembered, and the lion really walks faster;
+//  - the 속도 button cycles 1x → 1.5x → 2x, is remembered, and the lion really walks faster;
 //  - the quiz keeps its answer while the concept book or the radio is opened on top of it;
 //  - the HUD fits narrow screens.
 // Typing and clicking go through the real UI; the app's store (imported through Vite, like e2e/persist.spec.ts)
@@ -331,7 +331,7 @@ test('이동 속도 버튼: 1x → 1.5x → 2x, 기억, 실제로 빨라짐', as
   await waitForLion(page);
 
   const button = page.getByRole('button', { name: /이동 속도/ });
-  await expect(button).toHaveText(/🏃\s*1x/);
+  await expect(button).toHaveText(/1x/);
   await expect(button).toHaveAttribute('title', '이동 속도');
 
   // 1x: the normal walk.

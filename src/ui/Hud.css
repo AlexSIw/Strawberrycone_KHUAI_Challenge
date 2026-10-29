@@ -138,8 +138,6 @@
   .hud-stage-title { display: none; }
   .hud-kpi { min-width: 0; padding: 2px 7px; }
   .hud-date { display: none; }
-  /* Just "1x" (like the other buttons, icon-sized): its tooltip and label still say 이동 속도 */
-  .hud-speed > [aria-hidden] { display: none; }
 }
 @media (max-width: 660px) {
   .hud-kpi:nth-child(2) { display: none; }

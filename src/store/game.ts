@@ -58,7 +58,7 @@ export interface Toast {
   text: string;
   /** Incident an alert toast belongs to (dropped once that incident is solved) */
   scenarioId?: string;
-  /** Who raised an alert: a user / the 팀장 calling in (📞), or the NMS (🚨) */
+  /** Who raised an alert: a user / the 팀장 calling in, or the NMS */
   source?: 'user' | 'nms';
 }
 
@@ -89,7 +89,7 @@ export interface ConceptPopup {
   /** The card was already in the collection (an earlier run, or earlier today): shown as a review, not as new */
   review?: boolean;
   /**
-   * Unset: an incident's card. 'recap': a mission's card on completion ('✅ 배운 것 정리', awarded).
+   * Unset: an incident's card. 'recap': a mission's card on completion ('배운 것 정리', awarded).
    * 'preview': the 미션 브리핑 when a mission first appears (its why and the cards to read first; nothing awarded).
    */
   kind?: 'recap' | 'preview';
@@ -113,7 +113,7 @@ export interface SaveData {
 /** 'select' is 완료한 날 다시 하기 (Calendar.tsx): the days cleared on this save, to play again. */
 export type Screen = 'title' | 'select' | 'playing' | 'results' | 'ending';
 
-/** Lion walking speed multiplier (the HUD's 🏃 button). */
+/** Lion walking speed multiplier (the HUD's 속도 button). */
 export type MoveSpeed = 1 | 1.5 | 2;
 export const MOVE_SPEEDS: readonly MoveSpeed[] = [1, 1.5, 2];
 
@@ -548,7 +548,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
     for (const id of ids) {
       const o = def.objectives.find((x) => x.id === id);
       if (!o) continue;
-      toast('objective', `✅ ${o.text}`);
+      toast('objective', o.text);
       popups.push(...missionRecaps(o));
     }
     awardCards(popups);
@@ -575,8 +575,8 @@ export const gameStore = createStore<GameState>()((set, get) => {
         toast(
           'info',
           unsaved.length
-            ? `🎉 오늘 일 끝! 저장 안 한 장비(${unsaved.join(', ')})는 write memory로 저장하고, 창을 닫거나 위의 '퇴근하기'를 누르면 퇴근해요.`
-            : `🎉 오늘 일 끝! 창을 닫거나 위의 '퇴근하기'를 누르면 퇴근해요.`,
+            ? `오늘 일 끝! 저장 안 한 장비(${unsaved.join(', ')})는 write memory로 저장하고, 창을 닫거나 위의 '퇴근하기'를 누르면 퇴근해요.`
+            : `오늘 일 끝! 창을 닫거나 위의 '퇴근하기'를 누르면 퇴근해요.`,
         );
       }
     }
@@ -716,7 +716,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
       // Users and the 팀장 call in about the symptom as soon as it starts…
       for (const id of activated) {
         const sc = scenarioOf(def, id);
-        if (sc.alert) toast('alert', `📞 ${sc.alert}`, id, 'user');
+        if (sc.alert) toast('alert', sc.alert, id, 'user');
       }
       // …the NMS only once its trap / syslog / poll sees it.
       for (const id of raised) {
@@ -730,7 +730,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
           const sc = scenarioOf(def, id);
           // The alerts for a solved incident (the call and the alarm) would read as if it were still going on.
           set((st) => ({ toasts: st.toasts.filter((t) => t.scenarioId !== id) }));
-          toast('resolved', `🎉 '${sc.title}' 장애를 해결했어요!`);
+          toast('resolved', `'${sc.title}' 장애를 해결했어요!`);
           return { concept: sc.concept, lesson: sc.lesson, scenarioId: id };
         }),
       );
@@ -929,7 +929,7 @@ export const gameStore = createStore<GameState>()((set, get) => {
       if (run === s.run) return;
       set({ run });
       const team = scenarioOf(getStage(run.stage), scenarioId).escalate?.team;
-      if (team) toast('info', `📨 ${team}에 이관했어요. 처리될 때까지 지켜봐요.`);
+      if (team) toast('info', `${team}에 이관했어요. 처리될 때까지 지켜봐요.`);
     },
   };
 });
