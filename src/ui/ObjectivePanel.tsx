@@ -344,6 +344,9 @@ export function ObjectivePanel() {
               <kbd>WASD</kbd>/<kbd>방향키</kbd> 이동
             </span>
             <span>
+              <kbd>Space</kbd> 대시
+            </span>
+            <span>
               <kbd>E</kbd> 상호작용
             </span>
             <span>
