@@ -199,6 +199,8 @@ export class DataCenter extends Phaser.Scene {
   private shadow!: Phaser.GameObjects.Image;
   private keys!: Record<KeyName, Phaser.Input.Keyboard.Key>;
   private facing: Facing = 'down';
+  /** The interact gesture already played while windows stayed open (back at the device it holds, not replays). */
+  private interactShown: string | null = null;
   private area: AreaId | null = null;
   private near: { spot: SpotDef; kind: InteractionKind } | null = null;
   private inputReadyAt = 0;
@@ -266,6 +268,7 @@ export class DataCenter extends Phaser.Scene {
     this.goalSpot = null;
     this.covers = [];
     this.coversAt = 0;
+    this.interactShown = null;
   }
 
   create(): void {
@@ -962,9 +965,15 @@ export class DataCenter extends Phaser.Scene {
     const anim = lionAnim({ moving, facing: this.facing, fixing });
     // The run cycle speeds up with the walk, so the paws keep pace with the floor instead of sliding.
     this.player.anims.timeScale = moving ? mul : 1;
-    // Only on a change of pose: the interact animation plays once and then holds its last frame.
+    // Only on a change of pose: the interact animation plays once and then holds its last frame. Closing a
+    // window opened on top (the radio over the terminal) comes back to the held frame instead of replaying it.
     // (A sheet that failed to load has no animation: don't warn "Missing animation" every frame.)
-    if (this.player.anims.currentAnim?.key !== anim && this.anims.exists(anim)) this.player.play(anim);
+    if (!s.modal) this.interactShown = null;
+    if (this.player.anims.currentAnim?.key !== anim && this.anims.exists(anim)) {
+      const held = fixing && this.interactShown === anim;
+      this.player.play(held ? { key: anim, startFrame: this.anims.get(anim).frames.length - 1 } : anim);
+      if (fixing) this.interactShown = anim;
+    }
     // The body has already moved this frame (the sprite catches up after update): its bottom is where the
     // feet are drawn, so the shadow doesn't trail behind a running lion.
     const feet = this.player.body as Phaser.Physics.Arcade.Body;
