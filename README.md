@@ -305,18 +305,6 @@ Playwright는 `http://localhost:5173` 의 개발 서버를 쓰고, 꺼져 있으
 </details>
 
 <details>
-<summary><b>사자 그림 바꾸기</b></summary>
-
-사자는 32×32 픽셀 시트 한 장이에요: `public/assets/sprites/lion.png` (원본 · 메타데이터 · 생성 스크립트는 `art/lion_sprite/`).
-
-- 6열 × 12행, 한 칸 32×32. 행 순서 = idle 아래·왼쪽·오른쪽·위 (4프레임) → run 아래·왼쪽·오른쪽·위 (6프레임) → interact 아래·왼쪽·오른쪽·위 (4프레임, 한 번 재생). 재생 속도는 `src/game/sprites/lion.ts`.
-- 맵 한 칸 = 32×32 아트 픽셀 = 화면 64px(2배). 시트를 고칠 때도 32×32 격자를 지켜 주세요.
-- 먼지 효과: `dust_puff.png` · `dust_side_left.png` · `dust_side_right.png` (16×16 × 6프레임, `art/lion_sprite/effects/dust.json`).
-- 대화 초상화와 맵의 나머지 그림은 이미지 파일 없이 코드로 그린 같은 밀도의 픽셀 아트예요: `src/game/art/` (`portraits.ts`, 공용 색 `palette.ts`).
-
-</details>
-
-<details>
 <summary><b>배포 (Cloudflare Workers)</b></summary>
 
 Worker 하나가 게임 정적 파일(`dist/`)과 `/api/hint` 를 함께 서빙해요. 지금 공개된 버전: [khu-dc-game.khu-dc-game-worker.workers.dev](https://khu-dc-game.khu-dc-game-worker.workers.dev) (Cloudflare Workers 무료 플랜).
